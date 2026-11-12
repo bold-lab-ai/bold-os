@@ -1,14 +1,28 @@
-// The home letter (docs/home-letter-prompt.md): its inputs, and checking a letter. Who writes it is two
-// switches: the lab's (settings/homeLetter.writer: 'claude' or 'rules') and each person's
-// (prefs/{uid}.homeLetter: 'bold' or 'rules'); BOLD LLM writes it (functions/bold-llm.js) when both say so.
+// The home letter (docs/home-letter-prompt.md): its inputs, and checking a letter. Who writes it is the lab's
+// switch (settings/homeLetter.writer: 'claude', BOLD LLM, functions/bold-llm.js, or 'rules'), for everyone.
 // Pure, for bold-llm.js, the agents' API (letterInputs) and tests.
 'use strict';
 
-// How often BOLD LLM writes the letters (settings/homeLetter.refresh, Settings › BOLD Agent): the hours (London) it writes at.
-const REFRESH = { daily: [6], twice: [6, 13], working: [6, 9, 12, 15, 18] };
-const refreshHours = (r) => REFRESH[r] || REFRESH.daily;
+// How often BOLD LLM writes the letters, and which is current: letter-due.js (shared with the home page).
+const { REFRESH, refreshHours, lastDue, isFresh } = require('./letter-due');
 // Pure: does BOLD LLM write the letters at this hour (0–23, London), with refresh r?
 function writesAt(r, hour){ return refreshHours(r).indexOf(Number(hour)) >= 0; }
+// Pure: the London date (YYYY-MM-DD) of a time.
+function londonDate(t){ return new Intl.DateTimeFormat('en-CA', { timeZone: 'Europe/London', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date(t)); }
+// Pure: whose letters the morning writes, in order (people: [{ email, name, lastSeen (ms, Firebase Auth), days (London
+// dates they came, visits/{email}) }]). Only those on BOLD.OS in the past week (their last day, or Auth's last visit);
+// those who came on most of the last 14 days first, then the latest visit, then by email (a fixed order).
+function letterOrder(people, now){
+  const week = londonDate(now - 7 * 24 * 3600000), fortnight = londonDate(now - 14 * 24 * 3600000);
+  return (people || []).map((p) => {
+    const days = (p.days || []).filter((d) => typeof d === 'string');
+    const last = days.reduce((a, d) => (d > a ? d : a), '');
+    const seen = Math.max(p.lastSeen || 0, last ? Date.parse(last + 'T12:00:00Z') : 0);
+    return { p, often: new Set(days.filter((d) => d > fortnight)).size, seen, recent: (last && last > week) || (p.lastSeen && now - p.lastSeen <= 7 * 24 * 3600000) };
+  }).filter((x) => x.recent && x.p.email)
+    .sort((a, b) => b.often - a.often || b.seen - a.seen || (a.p.email < b.p.email ? -1 : 1))
+    .map((x) => x.p);
+}
 // Pure: what a letter written now covers: since the previous one, if it's from the last day, else the last 24 hours.
 function sinceFor(prev, now){ const day = now - 24 * 3600000; return prev && prev.at > day && prev.at < now ? prev.at : day; }
 const SHORT_MAX = 4000, LONG_MAX = 40000;
@@ -24,8 +38,6 @@ function checkLetter(a){
   return { letter: { short, long } };
 }
 
-// Today's letter, written within the last 24 hours (what a morning letter covers).
-function isFresh(doc, now){ return !!(doc && doc.at && (now || Date.now()) - doc.at < 24 * 3600000); }
 
 // The date and time in London: { date, weekday, time, time_zone }.
 function londonNow(now){
@@ -61,4 +73,18 @@ function inputsOf(p){
   };
 }
 
-module.exports = { REFRESH, refreshHours, writesAt, sinceFor, SHORT_MAX, LONG_MAX, checkLetter, isFresh, londonNow, inputsOf };
+// Who writes the letters, as a ladder (settings/homeLetter.ladder, Settings › BOLD Agent): each tried in turn until one
+// writes it; 'rules', the page's own letter, always does, so whatever is below it is never reached. Without a ladder (set
+// before 2026-11-11), from writer and model. Pure. → e.g. ['sofya', 'claude', 'rules'].
+const WRITERS = ['sofya', 'claude', 'rules'];
+function ladderOf(x){
+  x = x || {};
+  let l = Array.isArray(x.ladder) ? x.ladder.filter((w, i, a) => WRITERS.indexOf(w) >= 0 && a.indexOf(w) === i) : null;
+  if (!l || !l.length) l = x.writer !== 'claude' ? ['rules'] : x.model === 'sofya' ? ['sofya', 'claude', 'rules'] : ['claude', 'rules'];
+  WRITERS.forEach((w) => { if (l.indexOf(w) < 0) l.push(w); });
+  return l;
+}
+// Pure: the models above 'rules', in order (none: the rule-based letter for everyone).
+function modelsOf(ladder){ return ladder.slice(0, ladder.indexOf('rules') < 0 ? ladder.length : ladder.indexOf('rules')); }
+
+module.exports = { WRITERS, ladderOf, modelsOf, REFRESH, refreshHours, writesAt, lastDue, londonDate, letterOrder, sinceFor, SHORT_MAX, LONG_MAX, checkLetter, isFresh, londonNow, inputsOf };

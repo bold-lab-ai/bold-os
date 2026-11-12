@@ -214,6 +214,11 @@ body:has(.gd-viewing){padding-bottom:72px;}
 .cm-discussion .cm-comment:last-of-type{border-bottom:none;}
 .cm-discussion textarea{display:block; width:100%; box-sizing:border-box; margin:4px 0 8px; font-family:var(--sans); font-size:14px; padding:6px 8px; border:1px solid var(--line); border-radius:var(--radius); resize:vertical;}
 .gd-draft-empty{margin:10px 0 0; color:var(--muted);}
+/* On a branch of the site (#324): a line saying so, with its page; the rebase's conflict under it. */
+.gd-on-branch{max-width:var(--article-max); margin:0 0 24px; padding:10px 14px; border:1px solid var(--line); border-left:3px solid var(--accent); border-radius:var(--radius); font-family:var(--sans); font-size:14px; color:var(--ink-soft);}
+.gd-on-branch > p{margin:0;}
+.gd-on-branch a{color:var(--accent); font-weight:600;}
+.gd-on-branch .gd-resolve{margin-top:12px; max-width:none;}
 /* Proposals as branches (#177): one behind the page (it merges). */
 .gd-proposal-behind{margin:6px 0 0; font-family:var(--sans); font-size:13px; color:var(--ink-soft);}
 /* Rebasing a proposal on main (#177): a conflict to resolve, its text with git's markers. */

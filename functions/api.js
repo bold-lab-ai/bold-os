@@ -20,6 +20,7 @@
 // RATE_PER_MINUTE requests a minute. Every call is logged in apiLog { email, token
 // (prefix), tool, args, at, expireAt } (expireAt: for a Firestore TTL policy, 90 days).
 const crypto = require('crypto');
+const keycloak = require('./keycloak');
 const { seesEvent } = require('./access');
 // Search ranking, shared with the site: copied here at deploy (firebase.json's predeploy),
 // else the site's copy (run as a script: the repo's root package is an ES module).
@@ -57,7 +58,7 @@ module.exports = function(deps){
     const email = callerEmail(request);
     const d = request.data || {};
     const mine = async () => (await db.collection('apiTokens').where('email', '==', email).get()).docs;
-    const view = (doc) => { const x = doc.data(); return { id: doc.id, label: x.label || '', prefix: x.prefix, write: !!x.write, act: (x.actRequest && x.actRequest.status) || '', createdAt: x.createdAt || 0, lastUsedAt: x.lastUsedAt || 0 }; };
+    const view = (doc) => { const x = doc.data(); return { id: doc.id, label: (x.label || '') + (x.revoked ? ' (turned off)' : ''), prefix: x.prefix, write: !!x.write, act: x.revoked ? '' : (x.actRequest && x.actRequest.status) || '', createdAt: x.createdAt || 0, lastUsedAt: x.lastUsedAt || 0, kind: x.kind || '', off: !!x.revoked }; };
     const myName = async () => ((await personByEmail(email)) || {}).name || email;
     const askAct = async (ref, label, note) => {
       const n = String(note || '').trim().slice(0, 1000);
@@ -85,6 +86,7 @@ module.exports = function(deps){
     if (d.action === 'askAct') {
       const ref = tokenRef(d.id), x = (await ref.get()).data();
       if (!x || x.email !== email) throw new HttpsError('not-found', 'No such token.');
+      if (x.revoked) throw new HttpsError('failed-precondition', 'It’s turned off.');
       if (x.write) throw new HttpsError('failed-precondition', 'It acts already.');
       if (x.actRequest && x.actRequest.status === 'open') throw new HttpsError('already-exists', 'You’ve asked already: a PI or admin will decide.');
       await askAct(ref, x.label, d.note);
@@ -127,7 +129,9 @@ module.exports = function(deps){
       const ref = db.collection('apiTokens').doc(id), snap = await ref.get();
       if (!snap.exists) return { ok: true };
       if (snap.data().email !== email && !(await isFullWrite(email))) throw new HttpsError('permission-denied', 'That’s not your token.');
-      await ref.delete();
+      // Sofya's access (sofyaAccess): kept, off, so using the chat doesn't make it again.
+      if (snap.data().kind === 'sofya') await ref.update({ revoked: true, write: false, revokedAt: Date.now(), revokedBy: email });
+      else await ref.delete();
       return { ok: true };
     }
     if (d.action === 'activity') {
@@ -163,8 +167,11 @@ module.exports = function(deps){
     return snap.docs[0].data();
   }
 
-  // The token in the request → its owner's email, or an error with an HTTP status.
+  // The token in the request → its owner's email, or an error with an HTTP status. A BOLD.OS token (bold_…), or the
+  // Keycloak sign-in of whoever is using Sofya's chat (chat.bold-lab.ai: functions/keycloak.js; sofyaAccess).
   async function authorize(req){
+    const jwt = /^Bearer\s+(\S+)\s*$/.exec(req.get('authorization') || '');
+    if (jwt && keycloak.looksLikeJwt(jwt[1])) return sofyaAccess(jwt[1]);
     const m = /^Bearer\s+(bold_[A-Za-z0-9_-]{20,})\s*$/.exec(req.get('authorization') || '');
     if (!m) throw httpError(401, 'Send your BOLD.OS token: Authorization: Bearer bold_…  Make one on your BOLD.OS profile, in its Agents tab.');
     const ref = db.collection('apiTokens').doc(sha(m[1]));
@@ -181,6 +188,34 @@ module.exports = function(deps){
     if (t.limited) throw httpError(429, 'At most ' + RATE_PER_MINUTE + ' requests a minute: wait a moment.');
     if (!(await personByEmail(t.email))) throw httpError(403, 'Only people in the BOLD Slack can use BOLD.OS.');
     return { email: t.email, prefix: t.prefix, name: t.name || '', label: t.label || '', write: !!t.write };
+  }
+  // Someone using BOLD.OS through Sofya's chat: their access is an entry among their tokens (apiTokens/<sha of
+  // 'sofya:' + email>, kind 'sofya', made the first time), so their profile's Agents tab shows it and its activity, and
+  // acting is asked for and approved as for any token. Revoked, it stays, off (revoked: true), so it isn't made again.
+  async function sofyaAccess(token){
+    let p;
+    try { p = await keycloak.verify(token); }
+    catch (err){ throw httpError(401, 'Sofya’s sign-in couldn’t be checked: ' + String((err && err.message) || err).slice(0, 120)); }
+    const person = await personByEmail(p.email);
+    if (!person) throw httpError(403, 'Only people in the BOLD Slack can use BOLD.OS (no BOLD.OS member has ' + p.email + ').');
+    const ref = db.collection('apiTokens').doc(sha('sofya:' + p.email)), minute = Math.floor(Date.now() / 60000);
+    const t = await db.runTransaction(async (tx) => {
+      const snap = await tx.get(ref);
+      if (!snap.exists) {
+        const x = { email: p.email, name: person.name || p.name || '', label: 'Sofya (chat.bold-lab.ai)', kind: 'sofya', write: false, prefix: 'sofya', createdAt: Date.now(), lastUsedAt: Date.now(), minute, count: 1 };
+        tx.set(ref, x);
+        return x;
+      }
+      const x = snap.data();
+      if (x.revoked) return x;
+      const count = x.minute === minute ? (x.count || 0) + 1 : 1;
+      if (count > RATE_PER_MINUTE) return Object.assign({ limited: true }, x);
+      tx.update(ref, { minute, count, lastUsedAt: Date.now() });
+      return x;
+    });
+    if (t.revoked) throw httpError(403, 'You turned off Sofya’s access to BOLD.OS (your profile, Agents tab).');
+    if (t.limited) throw httpError(429, 'At most ' + RATE_PER_MINUTE + ' requests a minute: wait a moment.');
+    return { email: t.email, prefix: 'sofya', name: t.name || '', label: t.label || 'Sofya', write: !!t.write };
   }
   function httpError(status, message){ const e = new Error(message); e.status = status; return e; }
 
@@ -311,7 +346,7 @@ module.exports = function(deps){
         url: url(e.page || 'event.html?event=' + encodeURIComponent(e._id)) }));
       // Lab meetings (eventSeries): the released ones they aren't invited to.
       (await lab.seriesFor(email)).filter((x) => x.hidden === false && x.meeting && (x.eventId || x.pausedAt) && (x.guests || []).indexOf(email) < 0).forEach((x) => {
-        meetings.push({ id: 'series-' + x._id, title: x.title, meeting: x.meeting, start: x.eventStart, pausedAt: x.pausedAt,
+        meetings.push({ id: 'series-' + x._id, title: x.title, meeting: x.meeting, moved: x.meetingMoved, start: x.eventStart, pausedAt: x.pausedAt,
           description: plain(x.description), url: url('series.html?series=' + encodeURIComponent(x._id)) });
       });
     }
@@ -320,13 +355,13 @@ module.exports = function(deps){
       // Ids without anyone's address in them.
       const hid = (s) => crypto.createHash('sha256').update(String(s)).digest('hex').slice(0, 20);
       workspaces.filter((w) => w.meeting && (w.eventId || w.pausedAt) && w.group !== 'completed' && !w.completedAt && !mine(w.members)).forEach((w) => {
-        meetings.push({ id: 'project-' + w._id, title: (w.title || 'Untitled') + ' · project meeting', meeting: w.meeting, start: w.eventStart, pausedAt: w.pausedAt,
+        meetings.push({ id: 'project-' + w._id, title: (w.title || 'Untitled') + ' · project meeting', meeting: w.meeting, moved: w.meetingMoved, start: w.eventStart, pausedAt: w.pausedAt,
           description: Array.from(new Set((w.members || []).map(name))).join(', '), url: url(projectHref(w.cardId || w._id, w.boardId)) });
       });
       studies.filter((s) => s.meeting && (s.eventId || s.pausedAt) &&
         !mine([s._id].concat(s.everyone || [], (s.people || []).map((p) => p.email)))).forEach((s) => {
         meetings.push({ id: 'study-' + hid(s._id), title: (s.name || name(s._id)) + ' · ' + (s.degree === 'Master student' ? 'Master' : 'PhD') + ' supervision',
-          meeting: s.meeting, start: s.eventStart, pausedAt: s.pausedAt, description: s.title || '', url: url('calendar.html') });
+          meeting: s.meeting, moved: s.meetingMoved, start: s.eventStart, pausedAt: s.pausedAt, description: s.title || '', url: url('calendar.html') });
       });
     }
     return require('./calendar-ics').buildCalendar({ name: 'BOLD Lab', events, meetings });

@@ -36,7 +36,7 @@
 
 module.exports = function series(deps){
   const { db, onCall, onDocumentWritten, HttpsError, logger, callerEmail, isFullWrite, access, rolesEmails,
-    googleFetch, CAL, calendarUpdates, isCalendarLimit, CALENDAR_LIMIT_MSG, eventConference, eventTimes, conferenceChange, meetingRecurrence, sameMeetingTimes, seriesStart,
+    googleFetch, syncMoves, CAL, calendarUpdates, isCalendarLimit, CALENDAR_LIMIT_MSG, eventConference, eventTimes, conferenceChange, meetingRecurrence, sameMeetingTimes, seriesStart,
     normalizeMeeting, googleAddressesFor, groupOf, tellStaff, slackText, linkedTitle, SITE_URL,
     GOOGLE_OAUTH, SLACK_BOT_TOKEN, FieldValue, crypto, onSchedule, tellPeople } = deps;
   const { rank, VISIBILITY, VIS_RANK, VISIBILITY_NAMES } = require('./access');
@@ -156,7 +156,9 @@ module.exports = function series(deps){
       };
       if (want && !s.eventId) {
         const ev = await googleFetch('POST', CAL + '?conferenceDataVersion=1&sendUpdates=all', Object.assign({
-          summary, description, attendees: attendees([]), guestsCanModify: false, guestsCanSeeOtherGuests: s.invite.mode !== 'group',
+          // Every guest can change it (2026-11-11), as a project's meeting; not when a whole group is invited, whose
+          // guests don't see each other (changing it would show them).
+          summary, description, attendees: attendees([]), guestsCanModify: s.invite.mode !== 'group', guestsCanSeeOtherGuests: s.invite.mode !== 'group',
         }, eventConference(s.meeting, 'bold-series-' + crypto.randomBytes(6).toString('hex')), eventTimes(s.meeting, s.pausedAt)));
         Object.assign(patch, { eventId: ev.id, eventLink: ev.htmlLink, meetUrl: s.meeting.link || ev.hangoutLink || '', eventMeeting: s.meeting,
           eventPausedAt: s.pausedAt || FieldValue.delete(), eventStart: seriesStart(ev), guests });
@@ -165,13 +167,14 @@ module.exports = function series(deps){
         ['eventId', 'eventLink', 'meetUrl', 'eventMeeting', 'eventPausedAt', 'eventStart', 'guests'].forEach((k) => { patch[k] = FieldValue.delete(); });
       } else if (s.eventId) {
         const ev = await googleFetch('GET', CAL + '/' + s.eventId);
-        const change = {};
+        const change = {}, timesChanged = !sameMeetingTimes(s.eventMeeting, s.meeting);
         const want2 = attendees(ev.attendees);
         if (JSON.stringify(want2.map((a) => a.email)) !== JSON.stringify((ev.attendees || []).map((a) => a.email))) change.attendees = want2;
         if (ev.summary !== summary) change.summary = summary;
         if (ev.description !== description) change.description = description;
         if (!sameMeetingTimes(s.eventMeeting, s.meeting)) Object.assign(change, eventTimes(s.meeting, s.pausedAt));
         else if ((s.eventMeeting.until || '') !== (s.meeting.until || '') || (s.pausedAt || 0) !== (s.eventPausedAt || 0)) change.recurrence = meetingRecurrence(s.meeting, s.pausedAt);
+        if (!!ev.guestsCanModify !== (s.invite.mode !== 'group')) change.guestsCanModify = s.invite.mode !== 'group';
         Object.assign(change, conferenceChange(ev, s.meeting, 'bold-series-' + crypto.randomBytes(6).toString('hex')));
         let now = ev;
         if (Object.keys(change).length) {
@@ -181,6 +184,10 @@ module.exports = function series(deps){
         const url = s.meeting.link || now.hangoutLink || '';
         if (url !== (s.meetUrl || '')) patch.meetUrl = url;
         patch.guests = guests;
+        if (!s.pausedAt) {
+          const moves = await syncMoves(s.eventId, s.meeting, s.meetingMoved, timesChanged ? {} : s.eventMoved);
+          if (moves) patch.eventMoved = moves; else if (timesChanged && s.eventMoved) patch.eventMoved = FieldValue.delete();
+        }
       }
       patch.error = FieldValue.delete(); patch.calendarLimitAt = FieldValue.delete();
     } catch (err) {

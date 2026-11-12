@@ -5,7 +5,7 @@
 // functions/api.js). Pure: data in, text out.
 //   events:   [{ id, title, start, end (YYYY-MM-DD, inclusive), place, description, url }]
 //   meetings: [{ id, title, meeting { day, time, minutes, every, until }, start (YYYY-MM-DD:
-//              the series' first day), pausedAt (ms), description, url }]
+//              the series' first day), pausedAt (ms), moved (its dates moved: meeting-moves.js), description, url }]
 // Meetings repeat weekly in London time, as BOLD.OS makes them in Google Calendar; a
 // paused one ends when it was paused, as it does there.
 
@@ -74,12 +74,20 @@ function meetingLines(x, stamp, today){
   const ends = [x.pausedAt || 0, isoDay.test(m.until || '') ? Date.parse(m.until + 'T23:59:59Z') : 0].filter(Boolean);
   const rule = 'RRULE:FREQ=WEEKLY' + (m.every > 1 ? ';INTERVAL=' + m.every : '') + ';BYDAY=' + m.day +
     (ends.length ? ';UNTIL=' + utc(Math.min.apply(null, ends)) : '');
+  // Its dates moved one by one (meeting-moves.js): each an event of its own, the same UID with the date it
+  // replaces (RECURRENCE-ID), which takes that date's place, as Google Calendar sends them.
+  const moved = x.moved || {}, keys = Object.keys(moved).filter((k) => isoDay.test(k) && moved[k] && isoDay.test(moved[k].date || '') && /^\d\d:\d\d$/.test(moved[k].time || '')).sort();
+  // Its dates cancelled one by one: left out (EXDATE).
+  const off = Object.keys(moved).filter((k) => isoDay.test(k) && moved[k] && moved[k].cancelled).sort();
+  const desc = 'DESCRIPTION:' + text([x.description, x.url].filter(Boolean).join('\n\n'));
+  const tail = (x.url ? ['URL:' + x.url] : []).concat(['TRANSP:TRANSPARENT', 'END:VEVENT']);
   return ['BEGIN:VEVENT', 'UID:' + x.id + '@bold-os', 'DTSTAMP:' + stamp,
     'DTSTART;TZID=' + TZ + ':' + local(first, m.time), 'DTEND;TZID=' + TZ + ':' + local(first, m.time, m.minutes || 60),
-    rule, 'SUMMARY:' + text(x.title),
-    'DESCRIPTION:' + text([x.description, x.url].filter(Boolean).join('\n\n'))]
-    .concat(x.url ? ['URL:' + x.url] : [])
-    .concat(['TRANSP:TRANSPARENT', 'END:VEVENT']);
+    rule].concat(off.map((k) => 'EXDATE;TZID=' + TZ + ':' + local(k, m.time))).concat(['SUMMARY:' + text(x.title), desc]).concat(tail)
+    .concat([].concat.apply([], keys.map((k) => ['BEGIN:VEVENT', 'UID:' + x.id + '@bold-os', 'DTSTAMP:' + stamp,
+      'RECURRENCE-ID;TZID=' + TZ + ':' + local(k, m.time),
+      'DTSTART;TZID=' + TZ + ':' + local(moved[k].date, moved[k].time), 'DTEND;TZID=' + TZ + ':' + local(moved[k].date, moved[k].time, Number(moved[k].minutes) || m.minutes || 60),
+      'SUMMARY:' + text(x.title), desc].concat(tail))));
 }
 
 function buildCalendar({ name, events, meetings, now }){

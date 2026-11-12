@@ -16,11 +16,22 @@ test('a letter needs both lengths, within their limits', () => {
   assert.match(HL.checkLetter(null).error, /short/);
 });
 
-test('a letter is today’s for 24 hours', () => {
-  const now = Date.parse('2026-11-08T12:00:00Z');
-  assert.ok(HL.isFresh({ at: now - 23 * 3600000 }, now));
-  assert.ok(!HL.isFresh({ at: now - 25 * 3600000 }, now));
-  assert.ok(!HL.isFresh(null, now));
+test('a letter is current once written since the letters were last due (05:00 London), not just in the last day', () => {
+  // 2026-11-12, 10:00 London (GMT): yesterday afternoon's isn't this morning's; one from 05:00 on is.
+  const now = Date.parse('2026-11-12T10:00:00Z');
+  assert.strictEqual(new Date(HL.lastDue('daily', now)).toISOString(), '2026-11-12T05:00:00.000Z');
+  assert.ok(!HL.isFresh({ at: Date.parse('2026-11-11T15:00:00Z') }, 'daily', now));
+  assert.ok(HL.isFresh({ at: Date.parse('2026-11-12T05:03:00Z') }, 'daily', now));
+  assert.ok(!HL.isFresh(null, 'daily', now));
+  // Before 05:00: yesterday's 05:00 one is still current.
+  const early = Date.parse('2026-11-12T04:30:00Z');
+  assert.strictEqual(new Date(HL.lastDue('daily', early)).toISOString(), '2026-11-11T05:00:00.000Z');
+  // Twice a day: after 13:00, the 13:00 one; through the working day before 05:00, yesterday's 18:00.
+  assert.strictEqual(new Date(HL.lastDue('twice', Date.parse('2026-11-12T14:10:20Z'))).toISOString(), '2026-11-12T13:00:00.000Z');
+  assert.strictEqual(new Date(HL.lastDue('working', early)).toISOString(), '2026-11-11T18:00:00.000Z');
+  // Summer time (BST): 05:00 London is 04:00 UTC.
+  assert.strictEqual(new Date(HL.lastDue('daily', Date.parse('2026-07-01T09:00:00Z'))).toISOString(), '2026-07-01T04:00:00.000Z');
+  assert.ok(HL.writesAt('daily', 5) && !HL.writesAt('daily', 6));
 });
 
 test('the inputs: their week is the meetings they’re in, not paused; dates as ISO; London time', () => {
@@ -59,10 +70,10 @@ test('a tool’s result is JSON, cut when long', () => {
 });
 
 test('how often: the hours BOLD LLM writes at, once a day by default', () => {
-  assert.ok(HL.writesAt('daily', 6) && !HL.writesAt('daily', 13));
+  assert.ok(HL.writesAt('daily', 5) && !HL.writesAt('daily', 13));
   assert.ok(HL.writesAt('twice', 13) && !HL.writesAt('twice', 9));
-  assert.deepStrictEqual(HL.REFRESH.working.filter((h) => HL.writesAt('working', h)), [6, 9, 12, 15, 18]);
-  assert.ok(HL.writesAt(undefined, 6) && !HL.writesAt('nonsense', 7));
+  assert.deepStrictEqual(HL.REFRESH.working.filter((h) => HL.writesAt('working', h)), [5, 9, 12, 15, 18]);
+  assert.ok(HL.writesAt(undefined, 5) && !HL.writesAt('nonsense', 7));
 });
 
 test('a letter covers what changed since the previous one, at most a day', () => {
@@ -70,4 +81,31 @@ test('a letter covers what changed since the previous one, at most a day', () =>
   assert.strictEqual(HL.sinceFor({ at: now - 7 * 3600000 }, now), now - 7 * 3600000);
   assert.strictEqual(HL.sinceFor({ at: now - 30 * 3600000 }, now), now - 24 * 3600000);
   assert.strictEqual(HL.sinceFor(null, now), now - 24 * 3600000);
+});
+
+test('who writes the letters: a ladder, tried in turn; nothing below rule-based', () => {
+  assert.deepStrictEqual(HL.ladderOf({ ladder: ['sofya', 'claude', 'rules'] }), ['sofya', 'claude', 'rules']);
+  assert.deepStrictEqual(HL.ladderOf({ ladder: ['claude', 'claude', 'nonsense'] }), ['claude', 'sofya', 'rules']);
+  // Set before ladders: from writer and model.
+  assert.deepStrictEqual(HL.ladderOf({ writer: 'rules' }), ['rules', 'sofya', 'claude']);
+  assert.deepStrictEqual(HL.ladderOf({ writer: 'claude' }), ['claude', 'rules', 'sofya']);
+  assert.deepStrictEqual(HL.ladderOf({ writer: 'claude', model: 'sofya' }), ['sofya', 'claude', 'rules']);
+  assert.deepStrictEqual(HL.ladderOf(null), ['rules', 'sofya', 'claude']);
+  assert.deepStrictEqual(HL.modelsOf(['sofya', 'rules', 'claude']), ['sofya']);
+  assert.deepStrictEqual(HL.modelsOf(['rules', 'claude', 'sofya']), []);
+  assert.deepStrictEqual(HL.modelsOf(['claude', 'sofya', 'rules']), ['claude', 'sofya']);
+});
+
+test('the morning’s line: the past week only, whoever comes most often first, then the latest visit', () => {
+  const now = Date.parse('2026-11-12T05:00:00Z'), D = 86400000;
+  const line = HL.letterOrder([
+    { email: 'daily@x', days: ['2026-11-05', '2026-11-06', '2026-11-07', '2026-11-08', '2026-11-09', '2026-11-10', '2026-11-11'] },
+    { email: 'twice@x', days: ['2026-11-04', '2026-11-11'] },
+    { email: 'twice-earlier@x', days: ['2026-11-03', '2026-11-09'] },
+    { email: 'auth-only@x', days: [], lastSeen: now - 2 * D },          // before visits were kept: Auth's last visit counts
+    { email: 'away@x', days: ['2026-10-30', '2026-11-01', '2026-11-02'], lastSeen: now - 10 * D },   // not this past week
+    { email: 'gone@x', lastSeen: now - 20 * D },
+  ], now).map((p) => p.email);
+  assert.deepStrictEqual(line, ['daily@x', 'twice@x', 'twice-earlier@x', 'auth-only@x']);
+  assert.strictEqual(HL.londonDate(Date.parse('2026-07-01T23:30:00Z')), '2026-07-02');   // London, in summer time
 });

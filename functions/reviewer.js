@@ -92,13 +92,17 @@ module.exports = function({ db, onDocumentWritten, logger, ANTHROPIC_API_KEY, SL
     const blocked = await db.runTransaction(async (tx) => {
       const now = (await tx.get(ref)).data();
       if (!now || now.status !== 'open' || (now.editedAt || now.at) !== version) return false;
-      const block = r.verdict === 'block';
-      tx.update(ref, Object.assign({ review: result }, block ? { status: 'declined', decidedBy: 'reviewer', decidedByName: 'Claude (the reviewer)', decidedAt: Date.now() } : {}));
+      const block = r.verdict === 'block', closed = { status: 'declined', decidedBy: 'reviewer', decidedByName: 'Claude (the reviewer)', decidedAt: Date.now() };
+      // On a branch (functions/branches.js), blocking it declines the whole branch, every page of it.
+      const bref = block && now.branch ? db.collection('branches').doc(now.branch) : null, b = bref ? (await tx.get(bref)).data() : null;
+      const others = b && b.status === 'open' ? await Promise.all((b.pages || []).map((p) => db.doc(p + '/proposals/' + now.branch)).filter((x) => x.path !== ref.path).map((x) => tx.get(x))) : [];
+      tx.update(ref, Object.assign({ review: result }, block ? closed : {}));
+      if (b && b.status === 'open') { tx.update(bref, closed); others.forEach((o) => { if (o.exists && o.data().status === 'open') tx.update(o.ref, closed); }); }
       return block;
     });
     // A decline is told as any decision is (onToolProposalDecided); a concern, to the PIs and admins.
     if (r.verdict === 'concern' && !blocked) {
-      const page = linkedTitle(slackText(name), SITE_URL + 'tool.html?tool=' + encodeURIComponent(name) + '#proposals');
+      const page = linkedTitle(slackText(name), (q.branch ? SITE_URL + 'proposal.html?b=' + encodeURIComponent(q.branch) : SITE_URL + 'tool.html?tool=' + encodeURIComponent(name) + '#proposals'));
       await Promise.resolve(tellStaff('⚠️ The reviewer has a concern about ' + slackText((q.by && q.by.name) || 'someone') + '’s proposed tool ' + page + ': ' + slackText(r.summary), q.by && q.by.email, 'proposal-reviewer'))
         .catch((err) => logger.warn('Telling failed', { error: String(err.message) }));
     }

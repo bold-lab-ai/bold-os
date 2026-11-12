@@ -48,30 +48,46 @@
   // BOLD Agent (#bold-agent): who writes the lab's home letters (settings/homeLetter, functions/bold-llm.js), saved as it's chosen.
   var TABS = [['slack', 'Slack'], ['join', 'Join form'], ['notifications', 'Notifications'], ['bold-agent', 'BOLD Agent'], ['features', 'Features']];
   var letterLab = null, letterBusy = false, letterError = '';
-  var WRITERS = [
-    ['claude', 'BOLD LLM', 'Claude (Sonnet 5.5) writes each letter at 06:00, from what that person can see, and answers Talking to BOLD on the home page, until Sofya runs. Each person also chooses it on their profile. What it reads of their day is sent to Anthropic, and the lab pays for it.'],
-    ['rules', 'Rule-based', 'Each home page puts its letter together as it opens, from what’s waiting, the meetings and the lab. Nothing is sent anywhere; Talking to BOLD is off.'],
-  ];
-  // How often BOLD LLM writes them (functions/home-letter.js REFRESH); each letter covers what changed since the last.
+  // Who writes the home letters: a ladder (settings/homeLetter.ladder; functions/home-letter.js ladderOf, as here): each
+  // tried in turn until one writes it; the rule-based letter always does, so whatever is below it is never reached.
+  var WRITERS = {
+    sofya: ['Sofya', 'BOLD’s own LLM (llm.bold-lab.ai, Qwen). Every request to it is logged for training.'],
+    claude: ['Claude', 'Anthropic’s Claude (Sonnet 5.5). What it reads is sent to Anthropic, and the lab pays for it.'],
+    rules: ['Rule-based', 'Each home page puts its letter together as it opens, from what’s waiting, the meetings and the lab. Nothing is sent anywhere; Talking to BOLD is off. It always works.'],
+  };
+  function ladderOf(x){
+    x = x || {};
+    var l = Array.isArray(x.ladder) ? x.ladder.filter(function(w, i, a){ return WRITERS[w] && a.indexOf(w) === i; }) : [];
+    if (!l.length) l = x.writer !== 'claude' ? ['rules'] : x.model === 'sofya' ? ['sofya', 'claude', 'rules'] : ['claude', 'rules'];
+    ['sofya', 'claude', 'rules'].forEach(function(w){ if (l.indexOf(w) < 0) l.push(w); });
+    return l;
+  }
+  // The models above the rule-based letter, in order.
+  function modelsOf(l){ return l.slice(0, l.indexOf('rules')); }
+  // How often BOLD LLM writes them (functions/letter-due.js REFRESH); each letter covers what changed since the last.
   var REFRESHES = [
-    ['daily', 'Once a day', 'At 06:00.'],
-    ['twice', 'Twice a day', 'At 06:00 and 13:00.'],
-    ['working', 'Through the working day', 'At 06:00, 09:00, 12:00, 15:00 and 18:00. Five times the letters, and five times the cost.'],
+    ['daily', 'Once a day', 'At 05:00.'],
+    ['twice', 'Twice a day', 'At 05:00 and 13:00.'],
+    ['working', 'Through the working day', 'At 05:00, 09:00, 12:00, 15:00 and 18:00. Five times the letters, and five times the cost.'],
   ];
   function letterHtml(){
     if (letterLab === null) return '<p class="proj-msg">Loading&hellip;</p>';
-    var cur = letterLab.writer || 'rules', every = letterLab.refresh || 'daily';
+    var ladder = ladderOf(letterLab), every = letterLab.refresh || 'daily', on = modelsOf(ladder).length > 0, at = ladder.indexOf('rules');
     return '<div class="event-form join-form"><fieldset class="md-group"><legend>Who writes the home letters</legend>' +
-      '<p class="proj-meta">The letter that opens everyone’s home page. Someone who hasn’t chosen BOLD LLM on their profile gets the rule-based one either way.</p>' +
-      WRITERS.map(function(w){
-        return '<label class="jn-check"><input type="radio" name="st-letter" value="' + w[0] + '"' + (cur === w[0] ? ' checked' : '') + (letterBusy ? ' disabled' : '') + '> <span><strong>' + esc(w[1]) + '</strong>: ' + esc(w[2]) + '</span></label>';
-      }).join('') +
+      '<p class="proj-meta">The letter that opens everyone’s home page, and who answers Talking to BOLD: the first that can, from the top. The rule-based letter always can, so what’s below it is never used.</p>' +
+      '<ol class="st-ladder">' + ladder.map(function(w, i){
+        var off = letterBusy ? ' disabled' : '';
+        return '<li class="st-rung' + (i > at ? ' is-unused' : '') + '"><span class="st-rung-n">' + (i + 1) + '</span><span class="st-rung-text"><strong>' + esc(WRITERS[w][0]) + '</strong>: ' + esc(WRITERS[w][1]) +
+          (i > at ? ' <em>Not used: below the rule-based letter.</em>' : '') + '</span>' +
+          '<span class="st-rung-move"><button type="button" class="icon-btn st-ladder-move" data-w="' + w + '" data-by="-1" aria-label="Move ' + esc(WRITERS[w][0]) + ' up" title="Move up"' + (i === 0 ? ' disabled' : off) + '>' + BOLD.ICON_UP + '</button>' +
+          '<button type="button" class="icon-btn st-ladder-move" data-w="' + w + '" data-by="1" aria-label="Move ' + esc(WRITERS[w][0]) + ' down" title="Move down"' + (i === ladder.length - 1 ? ' disabled' : off) + '>' + BOLD.ICON_DOWN + '</button></span></li>';
+      }).join('') + '</ol>' +
       (letterError ? '<p class="st-error">' + esc(letterError) + '</p>' : '') +
-      '</fieldset><fieldset class="md-group"><legend>How often BOLD LLM writes them</legend>' +
+      '</fieldset><fieldset class="md-group"><legend>How often they’re written</legend>' +
       '<p class="proj-meta">Each letter covers what changed since that person’s last one (London time). Someone opening their page with no letter from the last day gets one written then.</p>' +
       REFRESHES.map(function(r){
-        return '<label class="jn-check"><input type="radio" name="st-refresh" value="' + r[0] + '"' + (every === r[0] ? ' checked' : '') + (letterBusy || cur !== 'claude' ? ' disabled' : '') +
-          (cur !== 'claude' ? ' title="Only while BOLD LLM writes them"' : '') + '> <span><strong>' + esc(r[1]) + '</strong>: ' + esc(r[2]) + '</span></label>';
+        return '<label class="jn-check"><input type="radio" name="st-refresh" value="' + r[0] + '"' + (every === r[0] ? ' checked' : '') + (letterBusy || !on ? ' disabled' : '') +
+          (!on ? ' title="Only while Claude or Sofya writes them"' : '') + '> <span><strong>' + esc(r[1]) + '</strong>: ' + esc(r[2]) + '</span></label>';
       }).join('') +
       (letterLab.updatedBy ? '<p class="proj-meta">Set by ' + esc(letterLab.updatedBy) + ', ' + esc(new Date(letterLab.updatedAt || 0).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })) + '.</p>' : '') +
       '</fieldset></div>';
@@ -85,19 +101,33 @@
       .then(function(){ letterBusy = false; drawLetter(); });
   }
   function drawLetter(){ var x = document.getElementById('bold-agent'); if (x) x.innerHTML = letterHtml(); }
-  function saveLetter(writer){
-    var was = (letterLab || {}).writer || 'rules';
-    BOLD.confirmAction({ always: true, title: writer === 'claude' ? 'Have BOLD LLM write the home letters?' : 'Go back to rule-based letters?', go: writer === 'claude' ? 'Turn it on' : 'Switch',
-      effects: writer === 'claude' ? ['For everyone who chooses BOLD LLM on their profile: send what they can see of their day to Anthropic (Claude) each morning, and when they talk to BOLD', 'The lab pays for each letter and answer']
-        : ['Everyone’s home page shows the rule-based letter, and Talking to BOLD is off', 'Nothing more is sent to Anthropic'] })
-      .then(function(ok){
-        if (!ok) { drawLetter(); return; }
-        letterBusy = true; letterError = ''; drawLetter();
-        db.collection('settings').doc('homeLetter').set({ writer: writer, updatedAt: Date.now(), updatedBy: me.email }, { merge: true })
-          .catch(function(err){ console.error('[BOLD Settings] saving the home letter writer failed', err); letterError = 'Couldn’t save it — try again.'; letterLab = Object.assign({}, letterLab, { writer: was }); })
-          .then(function(){ letterBusy = false; drawLetter(); });
-      });
+  // A rung moved up (-1) or down (1). Asked first: it changes where everyone's day may be sent. Saved with writer and
+  // model too (the first model), for pages from before the ladder.
+  function moveRung(w, by){
+    var was = letterLab || {}, l = ladderOf(was), i = l.indexOf(w), j = i + by;
+    if (i < 0 || j < 0 || j >= l.length) return;
+    l.splice(i, 1); l.splice(j, 0, w);
+    var models = modelsOf(l), before = modelsOf(ladderOf(was));
+    var name = { sofya: 'Sofya (logged for training)', claude: 'Anthropic (Claude)' };
+    var sameUse = JSON.stringify(models) === JSON.stringify(before);
+    var go = function(){
+      letterBusy = true; letterError = ''; letterLab = Object.assign({}, was, { ladder: l }); drawLetter();
+      db.collection('settings').doc('homeLetter').set({ ladder: l, writer: models.length ? 'claude' : 'rules', model: models[0] || 'claude', updatedAt: Date.now(), updatedBy: me.email }, { merge: true })
+        .catch(function(err){ console.error('[BOLD Settings] saving who writes the letters failed', err); letterError = 'Couldn’t save it — try again.'; letterLab = was; })
+        .then(function(){ letterBusy = false; drawLetter(); });
+    };
+    // Only below the rule-based letter: nothing changes for anyone, so nothing to ask.
+    if (sameUse) { go(); return; }
+    BOLD.confirmAction({ always: true, go: 'Change it', title: models.length ? 'Change who writes the home letters?' : 'Go back to rule-based letters?',
+      effects: models.length ? ['For everyone on BOLD.OS in the last 30 days, at the hours below and when they talk to BOLD: send what they can see of their day to ' +
+          models.map(function(m, k){ return (k ? 'if that fails, ' : '') + name[m]; }).join(', then '), 'If none can, their page shows the rule-based letter']
+        : ['Everyone’s home page shows the rule-based letter, and Talking to BOLD is off', 'Nothing more is sent to ' + before.map(function(m){ return { sofya: 'Sofya', claude: 'Anthropic' }[m]; }).join(' or ')] })
+      .then(function(ok){ if (ok) go(); else drawLetter(); });
   }
+  document.addEventListener('click', function(e){
+    var b = e.target.closest && e.target.closest('.st-ladder-move');
+    if (b && !b.disabled) moveRung(b.getAttribute('data-w'), Number(b.getAttribute('data-by')));
+  });
   // A list typed in one at a time, as keywords are on the register form: type, Enter or +,
   // × to remove (project.css .kw-*). kind: 'chan' (Slack channels, shown with #), 'role',
   // 'pillar'; key: the group's or role's for channels.
@@ -449,7 +479,6 @@
     var t = e.target;
     if (t.classList.contains('jr-tester-add') && t.value) { pilotDraft = pilotNow(); testersOf(pilotDraft, t.getAttribute('data-for')).push(t.value); render(); return; }
     if (t.classList.contains('jr-live')) { pilotDraft = pilotNow(); pilotDraft.live[t.getAttribute('data-key')] = t.checked; render(); }
-    if (t.name === 'st-letter') saveLetter(t.value);
     if (t.name === 'st-refresh') saveRefresh(t.value);
   });
   main.addEventListener('input', function(e){ if (e.target.classList.contains('st-align-at')) align.at = e.target.value; });

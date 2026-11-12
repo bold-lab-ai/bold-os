@@ -197,8 +197,10 @@ function busyFrom(text, from, to){
 
 // A weekly meeting BOLD.OS knows of ({ day, time, minutes, every }, `phase`: one of its dates,
 // YYYY-MM-DD, to tell which weeks it falls on when it's not every week) → busy in [from, to).
-function meetingBusy(m, from, to, phase){
+// `moved`: its dates moved one by one (meeting-moves.js: { <its date>: { date, time, minutes } }).
+function meetingBusy(m, from, to, phase, moved){
   const out = [], wd = WEEKDAYS.indexOf(m.day);
+  moved = moved || {};
   if (wd < 0 || !/^\d\d:\d\d$/.test(m.time || '')) return out;
   const every = Math.max(1, +m.every || 1), len = (+m.minutes || 60) * 60000;
   const first = new Date(from - 2 * DAY), base = phase ? Date.parse(phase + 'T00:00:00Z') : NaN;
@@ -209,9 +211,16 @@ function meetingBusy(m, from, to, phase){
     const s = londonMs(d.toISOString().slice(0, 10), m.time);
     if (s >= to) break;
     if (m.until && d.toISOString().slice(0, 10) > m.until) break;
+    if (moved[d.toISOString().slice(0, 10)]) continue;
     if (s + len > from) out.push([s, s + len]);
   }
-  return out;
+  Object.keys(moved).forEach(function(k){
+    const x = moved[k];
+    if (x.cancelled) return;
+    const s = londonMs(x.date, x.time), e = s + (+x.minutes || 60) * 60000;
+    if (s < to && e > from) out.push([s, e]);
+  });
+  return out.sort(function(a, b){ return a[0] - b[0]; });
 }
 
 // ---------- the best times ----------
@@ -249,6 +258,34 @@ function suggest(o){
   return best;
 }
 
+// Pure: one meeting, not a series (/meeting's Suggest a time): { people: [{ name, busy }], minutes, now, days = 14,
+// count = 5 } → [{ start (ms), free, of, busy: [names] }]: weekdays 09:00–18:00 London in 30-minute steps, from an
+// hour from now over the next `days` days; everyone free first, then the fewest busy, then inside 10:00–17:00,
+// then the soonest; no more than two on a day.
+function suggestOnce(o){
+  const minutes = +o.minutes || 60, people = o.people || [], days = o.days || 14, earliest = o.now + 3600000, out = [];
+  const today = new Date(o.now).toISOString().slice(0, 10), base = Date.parse(today + 'T00:00:00Z');
+  for (let i = 0; i <= days; i++) {
+    const date = new Date(base + i * DAY), iso = date.toISOString().slice(0, 10), dow = date.getUTCDay();
+    if (dow === 0 || dow === 6) continue;
+    for (let t = 9 * 60; t + minutes <= 18 * 60; t += 30) {
+      const start = londonMs(iso, String(Math.floor(t / 60)).padStart(2, '0') + ':' + String(t % 60).padStart(2, '0'));
+      if (start < earliest) continue;
+      const end = start + minutes * 60000;
+      const busy = people.filter(function(p){ return (p.busy || []).some(function(b){ return b[0] < end && b[1] > start; }); }).map(function(p){ return p.name; });
+      out.push({ start, day: iso, free: people.length - busy.length, of: people.length, busy, core: t >= 600 && t + minutes <= 1020 ? 0 : 1 });
+    }
+  }
+  out.sort(function(a, b){ return b.free - a.free || a.core - b.core || a.start - b.start; });
+  const perDay = {}, best = [];
+  out.forEach(function(x){
+    if (best.length >= (o.count || 5) || (perDay[x.day] || 0) >= 2) return;
+    perDay[x.day] = (perDay[x.day] || 0) + 1;
+    best.push({ start: x.start, free: x.free, of: x.of, busy: x.busy });
+  });
+  return best.sort(function(a, b){ return a.start - b.start; });
+}
+
 // ---------- the link ----------
 // Calendars it may read: Google's, Outlook's and iCloud's (the server fetches it: no other host).
 const HOSTS = [/^calendar\.google\.com$/, /^outlook\.office365\.com$/, /^outlook\.office\.com$/, /^outlook\.live\.com$/, /^p\d+-(caldav|calendars)\.icloud\.com$/];
@@ -257,8 +294,42 @@ function okFeedUrl(u){
   if (u.length > 1000 || !/^https:\/\/[^\s"<>]+$/.test(u)) return '';
   let host;
   try { const x = new URL(u); if (x.port || x.username) return ''; host = x.hostname.toLowerCase(); } catch (e){ return ''; }
-  return HOSTS.some(function(h){ return h.test(host); }) ? u : '';
+  if (!HOSTS.some(function(h){ return h.test(host); })) return '';
+  return googleIcal(u) || u;
 }
+// Pure: Google Calendar's own links to a calendar (its "share" link, ?cid=, which is the calendar's id
+// in base64, or an embed's ?src=) → its public iCal address, which works once the calendar is public
+// (with "See only free/busy" or more); '' for any other link.
+function googleIcal(u){
+  let x;
+  try { x = new URL(u); } catch (e){ return ''; }
+  if (x.hostname.toLowerCase() !== 'calendar.google.com' || /^\/calendar\/ical\//.test(x.pathname)) return '';
+  let id = x.searchParams.get('src') || '';
+  const cid = x.searchParams.get('cid');
+  if (!id && cid) {
+    if (/@/.test(cid)) id = cid;
+    else { try { id = Buffer.from(cid.replace(/-/g, '+').replace(/_/g, '/'), 'base64').toString('utf8'); } catch (e){ id = ''; } }
+  }
+  id = id.trim();
+  if (!/^[^\s@\/]+@[^\s@\/]+\.[^\s@\/]+$/.test(id)) return '';
+  return 'https://calendar.google.com/calendar/ical/' + encodeURIComponent(id) + '/public/basic.ics';
+}
+// busyFeeds/{email} → its calendars, [{ id, url, at, checkedAt }]: `feeds`, or the one `url` from
+// before there could be several (2026-11-11).
+const MAX_FEEDS = 5;
+// Pure: a calendar's own name (X-WR-CALNAME), to tell them apart on the profile; '' for none, or one that's
+// an email address (Google names someone's main calendar after it).
+function calendarName(text){
+  const m = String(text || '').match(/^X-WR-CALNAME:(.*)$/m);
+  const n = m ? m[1].replace(/\\([,;\\])/g, '$1').trim().slice(0, 80) : '';
+  return /@/.test(n) ? '' : n;
+}
+function feedsOf(d){
+  if (!d) return [];
+  if (Array.isArray(d.feeds)) return d.feeds.filter(function(f){ return f && f.url; });
+  return d.url ? [{ id: 'a', url: d.url, at: d.at || 0, checkedAt: d.checkedAt || 0 }] : [];
+}
+const PUBLIC_HOW = 'In Google Calendar: Settings › the calendar › Access permissions, tick “Make available to public” with “See only free/busy”, then add it again.';
 // The calendar's text, or throws: only from those hosts (redirects too), at most 5 MB, 10 s.
 async function fetchIcs(url){
   let u = okFeedUrl(url);
@@ -267,8 +338,14 @@ async function fetchIcs(url){
     const ctl = new AbortController(), timer = setTimeout(function(){ ctl.abort(); }, 10000);
     try {
       const res = await fetch(u, { redirect: 'manual', signal: ctl.signal, headers: { Accept: 'text/calendar' } });
-      if (res.status >= 300 && res.status < 400 && res.headers.get('location')) { u = okFeedUrl(new URL(res.headers.get('location'), u).toString()); continue; }
-      if (!res.ok) throw new Error(res.status === 404 || res.status === 403 ? 'The calendar isn’t shared at that link.' : 'The calendar couldn’t be read (' + res.status + ').');
+      const google = /^https:\/\/calendar\.google\.com\//i.test(u);
+      if (res.status >= 300 && res.status < 400 && res.headers.get('location')) {
+        const next = new URL(res.headers.get('location'), u).toString();
+        // Google sending it to its sign-in: the calendar isn't public.
+        if (google && /^https:\/\/accounts\.google\.com\//i.test(next)) throw new Error('Google keeps that calendar private. ' + PUBLIC_HOW);
+        u = okFeedUrl(next); continue;
+      }
+      if (!res.ok) throw new Error(res.status === 404 || res.status === 403 ? (google ? 'Google keeps that calendar private. ' + PUBLIC_HOW : 'The calendar isn’t shared at that link.') : 'The calendar couldn’t be read (' + res.status + ').');
       const text = await res.text();
       if (text.length > 5e6) throw new Error('The calendar is too big to read.');
       if (!/BEGIN:VCALENDAR/.test(text)) throw new Error('That link isn’t a calendar (iCal) address.');
@@ -278,4 +355,4 @@ async function fetchIcs(url){
   throw new Error('The calendar link redirects too many times.');
 }
 
-module.exports = { parseIcs, busyFrom, occurrences, meetingBusy, suggest, okFeedUrl, fetchIcs, londonMs, wallToMs, merge, WEEKDAYS };
+module.exports = { suggestOnce, calendarName, feedsOf, MAX_FEEDS, googleIcal, parseIcs, busyFrom, occurrences, meetingBusy, suggest, okFeedUrl, fetchIcs, londonMs, wallToMs, merge, WEEKDAYS };

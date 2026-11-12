@@ -4,7 +4,7 @@
 // calculation writes to a slot. The caller supplies the Firebase auth context;
 // every mutation below checks the linked Slack identity again on the server.
 module.exports = function rota({ db, admin, HttpsError, onCall, onSchedule, signedInEmail,
-  rolesEmails, requireAccess, seesEvent, pilotSlack, botToken, logger }) {
+  rolesEmails, requireAccess, seesEvent, groupFor, isFullWrite, viewingAs, pilotSlack, botToken, logger }) {
   const slots = db.collection('groupRotaSlots');
   const meetings = db.collection('events');
   const swaps = db.collection('groupRotaSwaps');
@@ -39,15 +39,12 @@ module.exports = function rota({ db, admin, HttpsError, onCall, onSchedule, sign
   }
   const internalCategory = category => ['internal', 'staff', 'exec'].includes(category);
   const siteRole = (email, admins, pis) => admins.concat(pis).some(x => String(x).toLowerCase() === email);
-  const mayPresent = (email, membership, admins, pis) => siteRole(email, admins, pis) || !!membership && membership.exists && internalCategory(membership.data().category);
   async function presenterStatus(slackId) {
     const person = await db.collection('people').doc(String(slackId || '_')).get();
     const email = person.exists ? clean(person.data().email).toLowerCase() : '';
     if (!email) return { eligible: false, registered: false };
-    const [membership, registration, admins, pis] = await Promise.all([
-      db.collection('members').doc(email).get(), db.collection('groupRotaMembers').doc(slackId).get(), rolesEmails('admins'), rolesEmails('pis')
-    ]);
-    const eligible = mayPresent(email, membership, admins, pis);
+    const [group, registration] = await Promise.all([groupFor(email), db.collection('groupRotaMembers').doc(slackId).get()]);
+    const eligible = internalCategory(group);
     return { eligible, registered: eligible && (!registration.exists || registration.data().active !== false) };
   }
   async function actor(request, requireIdentity = true) {
@@ -58,13 +55,13 @@ module.exports = function rota({ db, admin, HttpsError, onCall, onSchedule, sign
     const matches = roster.docs.filter(d => String(d.data().email || '').toLowerCase() === email);
     if (requireIdentity && (matches.length !== 1 || !matches[0].data().slackId)) error('failed-precondition', 'Your Slack account is not uniquely matched in the roster.');
     const slackId = matches.length === 1 ? matches[0].data().slackId || '' : '';
-    const [member, membership, admins, pis] = await Promise.all([
+    const [member, group, fullWrite] = await Promise.all([
       slackId ? db.collection('groupRotaMembers').doc(slackId).get() : null,
-      db.collection('members').doc(email).get(), rolesEmails('admins'), rolesEmails('pis')
+      groupFor(email), isFullWrite(email)
     ]);
-    const adminRole = siteRole(email, admins, pis) || (series.organisers || []).includes(email);
+    const adminRole = !viewingAs(email) && (fullWrite || (series.organisers || []).includes(email));
     if (!adminRole && (series.hidden || !(await seesEvent(email, series)))) error('permission-denied', 'The group meeting series is not visible to you.');
-    const eligible = !!slackId && mayPresent(email, membership, admins, pis);
+    const eligible = !!slackId && internalCategory(group);
     return { email, slackId, registered: eligible && (!member || !member.exists || member.data().active !== false),
       eligible, seriesId: series.id, series,
       admin: adminRole, canSeeDrafts: adminRole,

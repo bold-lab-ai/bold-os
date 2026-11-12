@@ -242,28 +242,55 @@
         (open ? ', and nobody has answered ' + esc(first(open.name)) + '’s ' + door(esc(quote(open.title)), 'conversations.html#post=' + encodeURIComponent(open.id), [['Answer it', 'conversations.html#post=' + encodeURIComponent(open.id)]]) + ' yet' : '') + '.');
     }
 
-    // Written by BOLD LLM (their choice, profile › Agents, and the lab's, Settings › BOLD Agent; homeLetters/{email})
-    // within the last day: that, under the greeting and any meeting on now, which a morning letter can't know.
+    // Written by BOLD LLM (the lab's choice, Settings › BOLD Agent; homeLetters/{email})
+    // since the letters were last due (letter-due.js): that, under the greeting and any meeting on now, which a morning letter can't know.
     var al = llmLetter();
     // When it was written, beside the date: BOLD LLM's when it wrote it; the rule-based one when the page first put it together.
     letterAt = al ? state.llmLetter.at : (ruleAt = ruleAt || Date.now());
     drawToday();
     if (al) { put(el, '<p>' + hello + (live ? ' ' + you[0] : '') + '</p>' + al); return; }
+    // While BOLD LLM writes it: only the greeting (and a meeting on now), and that it's being written; no other letter.
+    if (state.letterChoice === 'bold' && state.letterWriting) { put(el, '<p>' + hello + (live ? ' ' + you[0] : '') + '</p>' + writingHtml()); return; }
     put(el, '<p>' + hello + ' ' + you.join(' ') + '</p>' + (lab.length ? '<p>' + lab.join(' ') + '</p>' : '') +
-      (state.letterChoice === 'bold' ? '<p class="hl-by">' + (state.letterWriting ? 'BOLD LLM is writing today’s letter; this is the rule-based one meanwhile.' : 'BOLD LLM couldn’t write today’s letter, so this is the rule-based one.') +
-        ' <a href="profile.html#agents">Who writes it</a></p>' : ''));
+      // Who wrote it, always: the rules (the lab's choice, or BOLD LLM couldn't).
+      '<p class="hl-by">Written by the rules' + (state.letterChoice === 'bold' ? '. BOLD LLM couldn’t write today’s.' : '.') + '</p>');
+  }
+  // While BOLD LLM writes their letter, one line: "Sofya is writing today's letter · " and what it's doing (made up, the
+  // lab's; another, at random, every 5 to 9 seconds), a wave of bold running along it, then the seconds so far.
+  var VERBS = ['Reading what waits on you', 'Counting GPU hours', 'Checking your calendar', 'Consulting the BOLDiquette',
+    'Skimming Conversations', 'Following the deadlines', 'Weighing what matters', 'Finding the bold bits',
+    'Asking the reviewers nicely', 'Sharpening the argument', 'Licking the envelope'];
+  var writing = { since: 0, verb: '', next: 0, timer: null };
+  function waveHtml(text){
+    return Array.from(text).map(function(ch, i){ return '<span style="animation-delay:' + (i * 0.045).toFixed(3) + 's">' + (ch === ' ' ? '&nbsp;' : esc(ch)) + '</span>'; }).join('');
+  }
+  function pickVerb(){
+    var others = VERBS.filter(function(v){ return v !== writing.verb; });
+    writing.verb = others[Math.floor(Math.random() * others.length)];
+    writing.next = Date.now() + 5000 + Math.random() * 4000;
+  }
+  function writingWords(){ return ({ sofya: 'Sofya', claude: 'Claude' }[state.letterFirst] || 'BOLD LLM') + ' is writing today’s letter · ' + writing.verb + '…'; }
+  function writingHtml(){
+    if (!writing.since) { writing.since = Date.now(); pickVerb(); }
+    if (!writing.timer) writing.timer = setInterval(function(){
+      var line = document.querySelector('.hl-writing');
+      if (!state.letterWriting || !line) { clearInterval(writing.timer); writing.timer = null; writing.since = 0; writing.verb = ''; return; }
+      if (Date.now() >= writing.next) { pickVerb(); line.querySelector('.hl-wave').innerHTML = waveHtml(writingWords()); line.querySelector('.hl-wave').setAttribute('aria-label', writingWords()); }
+      line.querySelector('.hl-secs').textContent = Math.round((Date.now() - writing.since) / 1000) + 's';
+    }, 1000);
+    return '<p class="hl-by hl-writing" role="status"><span class="hl-wave" aria-label="' + esc(writingWords()) + '">' + waveHtml(writingWords()) + '</span> ' +
+      '<span class="hl-secs">' + Math.round((Date.now() - writing.since) / 1000) + 's</span></p>';
   }
   // BOLD LLM's letter, short or long (kept in this browser), as Markdown, with when it was written; or ''.
   var LEN_KEY = 'boldLetterLength';
   function letterLength(){ try { return localStorage.getItem(LEN_KEY) === 'long' ? 'long' : 'short'; } catch (e){ return 'short'; } }
   function llmLetter(){
     var l = state.llmLetter;
-    if (state.letterChoice !== 'bold' || !l || !l.at || Date.now() - l.at >= 24 * 3600000 || !window.BoldMarkdown) return '';
+    if (state.letterChoice !== 'bold' || !BoldLetterDue.isFresh(l, state.letterRefresh) || !window.BoldMarkdown) return '';
     var len = letterLength();
     return '<div class="hl-agent-text">' + BoldMarkdown.render(String(l[len] || l.short || '')) + '</div>' +
-      '<p class="hl-by">Written by BOLD LLM · ' +
-      '<button type="button" class="btn-text hl-len" data-len="' + (len === 'short' ? 'long' : 'short') + '">' + (len === 'short' ? 'Long' : 'Short') + '</button> · ' +
-      '<a href="profile.html#agents">Who writes it</a></p>';
+      '<p class="hl-by">Written by ' + ({ sofya: 'Sofya', claude: 'Claude' }[l.writer] || 'BOLD LLM') + ' · ' +
+      '<button type="button" class="btn-text hl-len" data-len="' + (len === 'short' ? 'long' : 'short') + '">' + (len === 'short' ? 'Long' : 'Short') + '</button></p>';
   }
   document.addEventListener('click', function(e){
     var b = e.target.closest && e.target.closest('.hl-len');
@@ -384,7 +411,7 @@
 
   // ---- Talking to BOLD ----
   // Under the letter, a dialog with BOLD LLM: they write (Markdown, md-field.js), it answers, as Markdown. Open to
-  // whoever has BOLD LLM writing their letter (state.chatOn: their choice and the lab's), answered by homeLetter
+  // everyone while BOLD LLM writes the letters (state.chatOn: the lab's choice), answered by homeLetter
   // 'ask' (functions/bold-llm.js) with the conversation so far. Otherwise hidden; #ask in the address shows it
   // in this browser as a preview (localStorage boldHomeAsk; #ask-off hides it), whose answer says BOLD LLM isn't
   // on for them and offers a search. Kept for the visit only (sessionStorage).
@@ -538,7 +565,7 @@
     // Without BOLD LLM on for them (the #ask preview): that it isn't, and a way to what they asked meanwhile.
     function placeholder(q){
       var words = q.replace(/[#*_`>\[\]()?!.,;:]/g, ' ').replace(/\s+/g, ' ').trim().split(' ').slice(0, 8).join(' ');
-      return 'BOLD LLM isn’t on for you: choose it on your [profile](profile.html#agents) to talk to it here.' +
+      return 'BOLD LLM isn’t on: PIs and admins turn it on in Settings › BOLD Agent.' +
         (words ? '\n\nMeanwhile, [search BOLD.OS for “' + words + '”](search.html?q=' + encodeURIComponent(words) + ').' : '');
     }
     // BOLD LLM's answer (homeLetter 'ask'), or what went wrong. The talk is kept as a private conversation of theirs
@@ -554,7 +581,8 @@
     box.appendChild(saved); drawSaved();
     function answer(q){
       if (!state.chatOn) return Promise.resolve(placeholder(q));
-      return firebase.app().functions('europe-west2').httpsCallable('homeLetter')({ action: 'ask', text: q, conversation: conv || null })
+      // Up to 5 minutes: the model thinks first, and may read several things.
+      return firebase.app().functions('europe-west2').httpsCallable('homeLetter', { timeout: 300000 })({ action: 'ask', text: q, conversation: conv || null })
         .then(function(r){
           var d = r.data || {};
           if (d.conversation && d.conversation !== conv) { conv = d.conversation; try { sessionStorage.setItem(CONV, conv); } catch (e){} drawSaved(); }
@@ -635,22 +663,43 @@
     var call = function(n, d){ return firebase.app().functions('europe-west2').httpsCallable(n)(d || {}); };
     var fail = function(what, then){ return function(err){ console.error('[BOLD Lab] loading ' + what + ' failed', err); if (then) then(); }; };
     var set = function(k){ return function(v){ if (asked !== mine) return; state[k] = v; write(); drawSides(); }; };
-    // Who writes their letter: BOLD LLM if they chose it (prefs/{uid}.homeLetter) and the lab has it on
-    // (settings/homeLetter); then today's, or one written now (homeLetter 'write'), the rule-based one meanwhile.
-    Promise.all([db.collection('prefs').doc(u.uid).get(), db.collection('settings').doc('homeLetter').get()]).then(function(r){
-      var c = (r[0].exists && r[0].data().homeLetter) === 'bold' && (r[1].exists && r[1].data().writer) === 'claude' ? 'bold' : 'rules';
+    // Who writes their letter: BOLD LLM when the lab's ladder puts a model above the rule-based letter
+    // (settings/homeLetter, Settings › BOLD Agent; functions/home-letter.js ladderOf, as here). Its letter is followed
+    // (homeLetters/{email}); without one since they were last due, one is asked for (homeLetter 'write'), written in the
+    // background (onLetterJob, letterJobs/{email}, followed too), the rule-based one meanwhile, and if no model can.
+    db.collection('settings').doc('homeLetter').get().then(function(lab){
+      var x = lab.exists ? lab.data() : {};
+      var first = Array.isArray(x.ladder) && x.ladder.length ? x.ladder[0] : x.writer === 'claude' ? (x.model === 'sofya' ? 'sofya' : 'claude') : 'rules';
+      var c = first === 'sofya' || first === 'claude' ? 'bold' : 'rules';
+      state.letterFirst = first;
       state.chatOn = c === 'bold';
       if (state.chatOn) mountAsk();
       if (c !== 'bold') return set('letterChoice')(c);
-      return db.collection('homeLetters').doc(me).get().then(function(x){
+      var askedAt = 0, gotLetter = false;
+      // The current letter: written since the letters were last due (letter-due.js), not just in the last day.
+      state.letterRefresh = x.refresh;
+      var freshNow = function(){ return BoldLetterDue.isFresh(state.llmLetter, x.refresh); };
+      unsubs.push(db.collection('homeLetters').doc(me).onSnapshot(function(x){
+        if (asked !== mine) return;
         state.llmLetter = x.exists ? x.data() : null;
-        var fresh = state.llmLetter && Date.now() - state.llmLetter.at < 24 * 3600000;
-        state.letterWriting = !fresh;
+        if (freshNow()) state.letterWriting = false;
         set('letterChoice')(c);
-        if (fresh) return;
-        return call('homeLetter', { action: 'write' }).then(function(w){ state.llmLetter = (w.data || {}).letter || null; })
-          .catch(fail('BOLD LLM’s letter')).then(function(){ state.letterWriting = false; set('letterChoice')(c); });
-      });
+        if (gotLetter) return;
+        gotLetter = true;
+        if (freshNow()) return;
+        // None since they were last due: asked for, and written meanwhile.
+        state.letterWriting = true; askedAt = Date.now(); set('letterChoice')(c);
+        call('homeLetter', { action: 'write' }).then(function(w){
+          var l = (w.data || {}).letter;
+          if (l) { state.llmLetter = l; state.letterWriting = false; set('letterChoice')(c); }
+        }, function(err){ fail('BOLD LLM’s letter')(err); state.letterWriting = false; set('letterChoice')(c); });
+      }, fail('BOLD LLM’s letter')));
+      // How the one asked for is going: failed, and the rule-based letter stays, saying so.
+      unsubs.push(db.collection('letterJobs').doc(me).onSnapshot(function(j){
+        var v = j.exists ? j.data() : null;
+        if (asked !== mine || !v || !askedAt) return;
+        if (v.state === 'failed' && (v.endedAt || 0) >= askedAt - 60000 && !freshNow()) { state.letterWriting = false; set('letterChoice')(c); }
+      }, function(){}));
     }).catch(fail('who writes your letter'));
     call('myRequests').then(function(r){
       set('forYou')((r.data || {}).forYou || []);

@@ -25,7 +25,7 @@
   var asked = {}, pop = null; // asked: student email → my open request's id; pop: the open card { key, x, y }
   var data = { project: null, study: null, event: null, series: null };
   var VIEW_KEY = 'boldCalendar:view', KIND_KEY = 'boldCalendar:kind', view = 'week', kind = 'all';
-  var weekOffset = 0;
+  var weekOffset = 0, geom = null, drag = null, noClick = false;
   try { db = firebase.firestore(BOLD.getApp()); } catch (e){}
 
   var KIND_LABELS = { event: 'Event', project: 'Project', study: 'Supervision', series: 'Recurring' };
@@ -44,7 +44,9 @@
     if (all || shown('project')) (data.project || []).forEach(function(w){
       if (!w.meeting || !(w.eventId || w.hasEvent || w.pausedAt) || w.group === 'completed') return;
       out.push({ kind: 'project', id: w.cardId, title: w.title || 'Untitled', href: w.titleOnly ? '' : projectUrl(w), meeting: w.meeting,
-        mine: (w.members || []).some(isMe), paused: !!w.pausedAt, start: w.eventStart || '', meetUrl: w.meetUrl,
+        mine: (w.members || []).some(isMe), paused: !!w.pausedAt, start: w.eventStart || '', meetUrl: w.meetUrl, moved: w.meetingMoved || {},
+        // Its submitter and authors (its people but those who joined), PIs and admins; the server checks.
+        canEdit: BOLD.isFullWrite() || (!w.titleOnly && (w.members || []).some(isMe) && !(w.joined || []).some(isMe)),
         people: w.memberCount != null ? w.memberCount : (w.members || []).length, w: w });
     });
     if (all || shown('study')) (data.study || []).forEach(function(s){
@@ -52,6 +54,7 @@
       var mine = isMe(s.email) || (s.people || []).some(function(p){ return isMe(p.email); });
       var id = slackIds[s.email];
       out.push({ kind: 'study', id: s.email, meeting: s.meeting, mine: mine, paused: !!s.pausedAt, start: s.eventStart || '', meetUrl: s.meetUrl, people: (s.people || []).length + 1,
+        moved: s.meetingMoved || {}, canEdit: mine || BOLD.isFullWrite(),
         first: String(s.name || s.email).split(' ')[0],
         title: (s.name || s.email) + ' · ' + (s.degree === 'Master student' ? 'Master' : 'PhD') + ' supervision',
         href: isMe(s.email) ? 'profile.html#studies' : id ? 'person.html?id=' + encodeURIComponent(id) : '' });
@@ -59,7 +62,8 @@
     if (all || shown('series')) (data.series || []).forEach(function(x){
       if (!x.meeting || !(x.eventId || x.pausedAt || x.hidden)) return;
       out.push({ kind: 'series', id: x.id, title: x.title, href: 'series.html?series=' + encodeURIComponent(x.id), meeting: x.meeting,
-        mine: (x.guests || []).some(isMe), paused: !!x.pausedAt, hidden: !!x.hidden, start: x.eventStart || '', meetUrl: x.meetUrl, people: (x.guests || []).length, x: x });
+        mine: (x.guests || []).some(isMe), paused: !!x.pausedAt, hidden: !!x.hidden, start: x.eventStart || '', meetUrl: x.meetUrl, people: (x.guests || []).length, x: x,
+        moved: x.meetingMoved || {}, canEdit: (x.organisers || []).some(isMe) || BOLD.isFullWrite() });
     });
     return out;
   }
@@ -74,6 +78,8 @@
   }
 
   function render(){
+    // Not while a meeting is being dragged (live data would redraw the block from under the pointer): after.
+    if (drag && drag.on) { drag.redraw = true; return; }
     if (data.project === null && data.study === null && data.event === null) return;
     var ms = meetings(), evs = events();
     if (view === 'list' && !ms.length && !evs.filter(function(x){ return !E.isPast(x); }).length) {
@@ -98,9 +104,21 @@
     if (!m) { box.hidden = true; box.innerHTML = ''; return; }
     var meta = [esc(meetingText(m.meeting)), m.people + (m.people === 1 ? ' person' : ' people')];
     if (m.mine && m.meetUrl) meta.push('<a href="' + esc(m.meetUrl) + '" target="_blank" rel="noopener">' + meetLabel(m.meeting) + '</a>');
+    var o = pop.orig ? occIn(m, addDays(pop.orig, -62), addDays(pop.orig, 62)).filter(function(x){ return x.orig === pop.orig; })[0] : null;
     var html = '<button type="button" class="cal-pop-close" aria-label="Close">&times;</button>' +
       '<div class="proj-badges">' + kindBadge(m.kind) + (m.w ? groupBadge(m.w) : '') + pausedBadge(m) + ownBadge(m) + '</div>' +
       titleHtml(m, 'proj-title') + '<span class="proj-meta">' + meta.join(' \u00b7 ') + '</span>';
+    // This date of it (a block of the week), moved or not; and changing it, for whoever may.
+    if (o) html += '<p class="cal-pop-when">This occurrence: ' + esc(dayText(o.date) + ', ' + o.time + '–' + endOf(o.time, o.minutes)) +
+      (o.cancelled ? ' <span class="badge">Cancelled</span>' : o.moved ? ' <span class="badge">Moved</span> <span class="cal-pop-from">from ' + esc(dayText(o.orig) + ', ' + m.meeting.time) + '</span>' : '') + '</p>';
+    if (m.canEdit && !m.paused && !(m.hidden && pop.orig)) {
+      var off = busy[keyOf(m)] ? ' disabled' : '', one = o && m.start;
+      html += pop.edit ? editHtml(m, o)
+        : one && o.cancelled ? '<div class="cal-e-act"><button type="button" class="btn-text cal-restore"' + off + '>Restore occurrence</button></div>'
+        : '<div class="cal-e-act">' + (one ? '<button type="button" class="btn-text cal-change"' + off + '>Edit occurrence</button>' +
+            '<button type="button" class="btn-text cal-cancel-one"' + off + '>Cancel occurrence</button>'
+          : '<button type="button" class="btn-text cal-change"' + off + '>Edit all occurrences</button>') + '</div>';
+    }
     if (m.mine) html += '<p class="cal-pop-note">' + (m.paused ? 'Paused: its upcoming dates are off Google Calendar until it’s resumed.' : '') +
       ' <button type="button" class="btn-text cal-pause" data-action="' + (m.paused ? 'resume' : 'pause') + '"' + (busy[keyOf(m)] ? ' disabled' : '') + '>' + (m.paused ? 'Resume' : 'Pause the meeting') + '</button></p>';
     if (m.kind === 'project') html += '<div class="cal-pop-act">' + joinHtml(m.w) + '</div>';
@@ -118,16 +136,87 @@
     if (msgs[keyOf(m)]) html += '<p class="join-msg cal-pop-msg" role="status">' + msgs[keyOf(m)] + '</p>';
     if (m.kind === 'study' && msgs[m.id]) html += '<p class="join-msg cal-pop-msg" role="status">' + msgs[m.id] + '</p>';
     var note = box.querySelector('.cal-ask-note'), typed = note ? note.value : '';
+    readEdit();
     box.innerHTML = html; box.hidden = false;
     if (typed && box.querySelector('.cal-ask-note')) box.querySelector('.cal-ask-note').value = typed;
     placePop();
+  }
+  // Changing a meeting's time (moveMeeting in functions/index.js): this date only (a block of the week: moved,
+  // the rest staying; functions/meeting-moves.js) or every date. Dragging a block opens it with where it was dropped.
+  // Saving is the go-ahead: Google emails its guests the new time.
+  function editHtml(m, o){
+    var e = pop.edit, k = keyOf(m), off = busy[k] ? ' disabled' : '', lens = [];
+    for (var n = 15; n <= 240; n += 15) lens.push(n);
+    if (lens.indexOf(+e.minutes) < 0) lens.push(+e.minutes);
+    var once = e.scope === 'once' && o;
+    var scopes = o && m.start ? '<div class="cal-scope" role="radiogroup" aria-label="Which occurrences">' +
+      '<label><input type="radio" name="calScope" value="once"' + (once ? ' checked' : '') + off + '> This occurrence (' + esc(dayText(o.orig)) + ')</label>' +
+      '<label><input type="radio" name="calScope" value="series"' + (once ? '' : ' checked') + off + '> All occurrences</label></div>' : '';
+    var when = once ? '<input type="date" class="cal-e-date" value="' + esc(e.date) + '" aria-label="Day"' + off + '>'
+      : '<select class="cal-e-day" aria-label="Day"' + off + '>' + MEETING_DAYS.map(function(d){ return '<option value="' + d[0] + '"' + (d[0] === e.day ? ' selected' : '') + '>' + d[1] + 's</option>'; }).join('') + '</select>';
+    var moves = Object.keys(m.moved || {}).length;
+    return '<div class="cal-edit">' + scopes + '<div class="cal-e-row">' + when +
+      '<input type="time" class="cal-e-time" step="900" value="' + esc(e.time) + '" aria-label="Time"' + off + '>' +
+      '<select class="cal-e-min" aria-label="How long"' + off + '>' + lens.map(function(n){ return '<option value="' + n + '"' + (n === +e.minutes ? ' selected' : '') + '>' + (n < 60 ? n + ' min' : n % 60 ? Math.floor(n / 60) + ' h ' + (n % 60) : n / 60 + (n === 60 ? ' hour' : ' hours')) + '</option>'; }).join('') + '</select></div>' +
+      '<p class="cal-pop-note">' + (once ? 'Only this occurrence changes.' : 'All occurrences change' + (moves ? '; the ' + (moves === 1 ? 'one' : moves) + ' moved or cancelled on ' + (moves === 1 ? 'its' : 'their') + ' own ' + (moves === 1 ? 'goes' : 'go') + ' back to the new time' : '') + '.') +
+      ' Google emails its ' + (m.people === 1 ? 'guest' : m.people + ' guests') + ' the new time.</p>' +
+      '<div class="cal-e-act"><button type="button" class="join-btn cal-e-save"' + off + '>' + (busy[k] ? 'Saving…' : 'Save') + '</button>' +
+      '<button type="button" class="btn-text cal-e-cancel"' + off + '>Cancel</button>' +
+      (once && o.moved ? '<button type="button" class="btn-text cal-e-back"' + off + '>Move it back to ' + esc(dayText(o.orig) + ', ' + m.meeting.time) + '</button>' : '') + '</div></div>';
+  }
+  function readEdit(){
+    var box = el('calPop');
+    if (!pop || !pop.edit || !box.querySelector('.cal-edit')) return;
+    var v = function(c){ var i = box.querySelector(c); return i ? i.value : null; };
+    var sc = box.querySelector('input[name=calScope]:checked');
+    if (sc) pop.edit.scope = sc.value;
+    if (v('.cal-e-date')) pop.edit.date = v('.cal-e-date');
+    if (v('.cal-e-day')) pop.edit.day = v('.cal-e-day');
+    if (v('.cal-e-time')) pop.edit.time = v('.cal-e-time');
+    if (v('.cal-e-min')) pop.edit.minutes = +v('.cal-e-min');
+  }
+  function weekdayOf(isoDay){ return MEETING_DAYS[(new Date(isoDay + 'T12:00:00Z').getUTCDay() + 6) % 7][0]; }
+  function startEdit(m, edit){
+    var o = pop.orig ? occIn(m, addDays(pop.orig, -62), addDays(pop.orig, 62)).filter(function(x){ return x.orig === pop.orig; })[0] : null;
+    pop.edit = edit || (o && m.start ? { scope: 'once', date: o.date, time: o.time, minutes: o.minutes, day: weekdayOf(o.date) }
+      : { scope: 'series', date: '', time: m.meeting.time, minutes: m.meeting.minutes, day: m.meeting.day });
+    msgs[keyOf(m)] = '';
+    render();
+  }
+  // back: this occurrence back at its own time (or restored, if cancelled); cancel: this occurrence cancelled.
+  function saveEdit(m, back, cancel){
+    readEdit();
+    var e = pop.edit || { scope: 'once' }, k = keyOf(m), orig = pop.orig, once = (e.scope === 'once' || back || cancel) && orig;
+    if (!back && !cancel && (!/^\d\d:\d\d$/.test(e.time || '') || (once && !/^\d{4}-\d{2}-\d{2}$/.test(e.date || '')))) { msgs[k] = 'Choose a day and a time.'; renderPop(); return; }
+    var payload = { kind: m.kind, id: m.id, board: m.w ? (m.w.boardId || null) : null, scope: once ? 'once' : 'series' };
+    if (once) { payload.date = orig; payload.to = cancel ? { cancelled: true } : back ? { date: orig, time: m.meeting.time, minutes: m.meeting.minutes } : { date: e.date, time: e.time, minutes: +e.minutes }; }
+    else payload.to = { day: e.day, time: e.time, minutes: +e.minutes };
+    busy[k] = true; msgs[k] = ''; render();
+    var call;
+    try { call = firebase.app().functions('europe-west2').httpsCallable('moveMeeting')(payload); } catch (err){ call = Promise.reject(err); }
+    call.then(function(r){
+      var d = (r && r.data) || {};
+      busy[k] = false;
+      if (pop && pop.key === k) {
+        pop.edit = null;
+        // The date moved: its card follows it (same date of the series, another day of the week maybe).
+        if (!once) pop.orig = null;
+      }
+      msgs[k] = d.error ? 'Saved on BOLD.OS, but Google Calendar said: ' + esc(d.error)
+        : (cancel ? 'Occurrence cancelled' : back ? 'Occurrence restored' : once ? 'Occurrence moved' : 'All occurrences changed') + ': Google emails its guests.';
+      render();
+    }).catch(function(err){
+      console.error('[BOLD Lab] changing the meeting failed', err);
+      busy[k] = false; msgs[k] = esc((err && err.message) || 'That didn’t work — try again.'); render();
+    });
   }
   // In the window (position:fixed): under its meeting, or above it when there's no room
   // below, and never past an edge. Found again by its key, as a redraw replaces the block.
   function placePop(){
     var box = el('calPop');
     if (!pop || box.hidden) return;
-    var a = el('meetings').querySelector('[data-key="' + pop.key.replace(/["\\]/g, '\\$&') + '"]');
+    var sel = '[data-key="' + pop.key.replace(/["\\]/g, '\\$&') + '"]';
+    var a = el('meetings').querySelector('.week-ghost.is-pending') || (pop.orig && el('meetings').querySelector(sel + '[data-orig="' + pop.orig + '"]')) || el('meetings').querySelector(sel);
     var r = a ? a.getBoundingClientRect() : pop.rect;
     pop.rect = r;
     var vw = document.documentElement.clientWidth, vh = window.innerHeight, w = box.offsetWidth, h = box.offsetHeight, gap = 6, pad = 12;
@@ -137,12 +226,12 @@
     box.style.top = Math.max(pad, Math.min(top, vh - h - pad)) + 'px';
   }
   function openPop(key, anchor){
-    pop = { key: key, rect: anchor.getBoundingClientRect() };
+    pop = { key: key, orig: anchor.getAttribute('data-orig') || null, rect: anchor.getBoundingClientRect() };
     renderPop();
   }
   window.addEventListener('scroll', placePop, { passive: true });
   window.addEventListener('resize', placePop);
-  function closePop(){ pop = null; renderPop(); }
+  function closePop(){ var moving = pop && pop.edit; pop = null; if (moving) render(); else renderPop(); }
 
   function listHtml(ms, evs){
     var html = '';
@@ -167,6 +256,11 @@
       day.forEach(function(m){
         var when = meetingText(m.meeting).replace(/^[^,]*, /, '');
         var meta = [esc(when), m.people + (m.people === 1 ? ' person' : ' people')];
+        // Its coming dates moved one by one.
+        Object.keys(m.moved || {}).sort().filter(function(k){ return k >= today || (!m.moved[k].cancelled && m.moved[k].date >= today); }).slice(0, 3).forEach(function(k){
+          var x = m.moved[k];
+          meta.push(esc(x.cancelled ? dayText(k) + ' cancelled' : dayText(k) + ' moved to ' + dayText(x.date) + ', ' + x.time));
+        });
         if (m.mine && m.meetUrl) meta.push('<a href="' + esc(m.meetUrl) + '" target="_blank" rel="noopener">' + meetLabel(m.meeting) + '</a>');
         html += '<li' + (greyed(m) ? ' class="is-paused"' : '') + '><div class="proj-main">' + titleHtml(m, 'proj-title') +
           '<span class="proj-meta">' + meta.join(' · ') + '</span>' +
@@ -208,6 +302,22 @@
     d.setDate(d.getDate() - (d.getDay() + 6) % 7 + offset * 7);
     return d;
   }
+  // A meeting's occurrences from `from` to `to` (YYYY-MM-DD), each moved or cancelled one applied (functions/meeting-moves.js,
+  // whose occurrences this follows; a cancelled one is kept, to show it) → [{ orig, date, time, minutes, moved, cancelled }].
+  function addDays(isoDay, n){ var d = new Date(isoDay + 'T12:00:00Z'); d.setUTCDate(d.getUTCDate() + n); return d.toISOString().slice(0, 10); }
+  function occIn(m, from, to){
+    var out = [], moved = m.moved || {}, mt = m.meeting;
+    for (var d = addDays(from, -62); d <= addDays(to, 62); d = addDays(d, 1)) {
+      if (MEETING_DAYS[(new Date(d + 'T12:00:00Z').getUTCDay() + 6) % 7][0] !== mt.day || !inWeek(m, d) || (mt.until && d > mt.until)) continue;
+      var mv = moved[d];
+      var x = mv && mv.cancelled ? { orig: d, date: d, time: mt.time, minutes: mt.minutes, moved: false, cancelled: true }
+        : mv ? { orig: d, date: mv.date, time: mv.time, minutes: +mv.minutes || mt.minutes, moved: true } : { orig: d, date: d, time: mt.time, minutes: mt.minutes, moved: false };
+      if (x.date >= from && x.date <= to) out.push(x);
+    }
+    return out;
+  }
+  function endOf(time, mins){ var e = minutes(time) + mins; return pad(Math.floor(e / 60) % 24) + ':' + pad(e % 60); }
+  function dayText(isoDay){ var d = new Date(isoDay + 'T12:00:00Z'); return DAY_SHORT[(d.getUTCDay() + 6) % 7] + ' ' + d.getUTCDate() + ' ' + MONTHS[d.getUTCMonth()]; }
   function inWeek(m, day){
     if (!m.start) return true;
     var weeks = Math.round((Date.parse(day) - Date.parse(m.start)) / (7 * 86400000));
@@ -217,16 +327,33 @@
     var start = monday(weekOffset), dates = [];
     for (var i = 0; i < 7; i++) { var d = new Date(start); d.setDate(start.getDate() + i); dates.push(d); }
     var onDay = function(i){ var t = iso(dates[i]); return evs.filter(function(x){ return x.startDate <= t && (x.endDate || x.startDate) >= t; }); };
+    // A move of one occurrence being decided in its card: { m, orig, from (its date now), date, time, minutes }.
+    var pend = null;
+    if (pop && pop.edit && pop.orig && pop.edit.scope === 'once') {
+      var pm = ms.filter(function(x){ return keyOf(x) === pop.key; })[0];
+      var po = pm && occIn(pm, addDays(pop.orig, -62), addDays(pop.orig, 62)).filter(function(x){ return x.orig === pop.orig; })[0];
+      if (po && (pop.edit.date !== po.date || pop.edit.time !== po.time || +pop.edit.minutes !== po.minutes))
+        pend = { m: pm, orig: pop.orig, from: po.date, date: pop.edit.date, time: pop.edit.time, minutes: +pop.edit.minutes || po.minutes };
+    }
+    // Each meeting's dates this week, moved ones where they were moved to.
+    var occs = [];
+    ms.forEach(function(m){ occIn(m, iso(dates[0]), iso(dates[6])).forEach(function(o){ occs.push({ m: m, o: o }); }); });
     var cols = MEETING_DAYS.map(function(d, i){ return i; }).filter(function(i){
-      return i < 5 || ms.some(function(m){ return m.meeting.day === MEETING_DAYS[i][0]; }) || onDay(i).length;
+      return i < 5 || occs.some(function(x){ return x.o.date === iso(dates[i]); }) || onDay(i).length;
     });
-    var from = Math.min.apply(null, ms.map(function(m){ return Math.floor(minutes(m.meeting.time) / 60); }).concat([CORE_FROM]));
-    var to = Math.min(24, Math.max.apply(null, ms.map(function(m){ return Math.ceil((minutes(m.meeting.time) + m.meeting.minutes) / 60); }).concat([CORE_TO])));
+    var from = Math.min.apply(null, occs.map(function(x){ return Math.floor(minutes(x.o.time) / 60); }).concat([CORE_FROM]));
+    var to = Math.min(24, Math.max.apply(null, occs.map(function(x){ return Math.ceil((minutes(x.o.time) + x.o.minutes) / 60); }).concat([CORE_TO])));
     // Where a minute of the day sits: squashed before and after the core hours.
     var y = function(min){
       var h = Math.min(Math.max(min / 60, from), to);
       return (Math.min(h, CORE_FROM) - from) * EDGE + (Math.min(Math.max(h, CORE_FROM), CORE_TO) - CORE_FROM) * HOUR + Math.max(h - CORE_TO, 0) * EDGE;
     };
+    // Back from a height to minutes of the day (dragging a meeting).
+    var top = (CORE_FROM - from) * EDGE, core = (CORE_TO - CORE_FROM) * HOUR;
+    geom = { dates: cols.map(function(i){ return iso(dates[i]); }), y: y, yInv: function(px){
+      var h = px < top ? from + px / EDGE : px < top + core ? CORE_FROM + (px - top) / HOUR : CORE_TO + (px - top - core) / EDGE;
+      return Math.round(Math.min(Math.max(h, from), to) * 60);
+    } };
     var hours = [];
     for (var h = CORE_FROM; h < CORE_TO; h++) hours.push(h);
     if (from < CORE_FROM) hours.unshift(from);
@@ -256,8 +383,8 @@
       '<div class="week-hours">' + hours.map(function(h){ return '<span style="top:' + y(h * 60) + 'px">' + pad(h) + ':00</span>'; }).join('') + '</div>';
     cols.forEach(function(i){
       // Not before its first date or after its end date, and only in its weeks.
-      var day = ms.filter(function(m){ return m.meeting.day === MEETING_DAYS[i][0] && !(m.meeting.until && m.meeting.until < iso(dates[i])) && inWeek(m, iso(dates[i])); })
-        .map(function(m){ var s = minutes(m.meeting.time); return { m: m, s: s, e: s + m.meeting.minutes }; })
+      var day = occs.filter(function(x){ return x.o.date === iso(dates[i]); })
+        .map(function(x){ var s = minutes(x.o.time); return { m: x.m, o: x.o, s: s, e: s + x.o.minutes }; })
         .sort(function(a, b){ return a.s - b.s || a.e - b.e; });
       // Side by side: each meeting takes the first lane free at its start; a group of
       // overlapping meetings shares its width among the lanes it needed.
@@ -269,13 +396,20 @@
         cur.lanes[lane] = b.e; b.lane = lane; cur.items.push(b); cur.end = Math.max(cur.end, b.e);
       });
       html += '<div class="week-day">' + squash + hours.map(function(h){ return '<span class="week-line" style="top:' + y(h * 60) + 'px"></span>'; }).join('');
+      // A move being decided in its card (dropped there, or typed in): where it would go, as the drag's preview.
+      if (pend && pend.date === iso(dates[i]) && /^\d\d:\d\d$/.test(pend.time)) {
+        var ps = minutes(pend.time), pm = pend.m;
+        html += '<span class="week-block cal-' + pm.kind + (pm.mine ? ' is-mine' : '') + ' week-ghost is-pending" aria-hidden="true" style="top:' + y(ps) + 'px;height:' + Math.max(18, y(ps + pend.minutes) - y(ps) - 2) + 'px">' +
+          '<span class="week-time">' + esc((pend.date !== pend.from ? dayText(pend.date) + ', ' : '') + pend.time + '–' + endOf(pend.time, pend.minutes)) + '</span> ' + esc(pm.title) + '</span>';
+      }
       groups.forEach(function(g){
         g.items.forEach(function(b){
-          var m = b.m, n = g.lanes.length, tag = m.href ? 'a' : 'span';
-          html += '<' + tag + ' class="week-block cal-' + m.kind + (m.mine ? ' is-mine' : '') + (greyed(m) ? ' is-paused' : '') + '" data-key="' + esc(keyOf(m)) + '"' + (m.href ? ' href="' + esc(m.href) + '"' : '') +
+          var m = b.m, o = b.o, n = g.lanes.length, tag = m.href ? 'a' : 'span';
+          var drag = m.canEdit && !m.paused && !m.hidden && m.start && !o.cancelled;
+          html += '<' + tag + ' class="week-block cal-' + m.kind + (m.mine ? ' is-mine' : '') + (greyed(m) || o.cancelled ? ' is-paused' : '') + (o.moved ? ' is-moved' : '') + (o.cancelled ? ' is-cancelled' : '') + (drag ? ' is-draggable' : '') + (pend && pend.m === m && pend.orig === o.orig ? ' is-drag-source' : '') + '" data-key="' + esc(keyOf(m)) + '" data-orig="' + o.orig + '" draggable="false"' + (m.href ? ' href="' + esc(m.href) + '"' : '') +
             ' style="top:' + y(b.s) + 'px;height:' + Math.max(18, y(b.e) - y(b.s) - 2) + 'px;' +
-            'left:calc(' + (b.lane * 100 / n) + '% + 2px);width:calc(' + (100 / n) + '% - 4px)" title="' + esc(m.title + ' · ' + meetingText(m.meeting) + ' · ' + KIND_LABELS[m.kind] + (m.hidden ? ' · Hidden' : m.paused ? ' · Paused' : '') + (m.meeting.link ? ' · Own link' : '')) + '">' +
-            '<span class="week-time">' + esc(m.meeting.time) + '</span> ' + esc(m.title) + (m.w ? ' ' + groupBadge(m.w) : '') + (m.meeting.link ? ' ' + ownBadge(m) : '') + '</' + tag + '>';
+            'left:calc(' + (b.lane * 100 / n) + '% + 2px);width:calc(' + (100 / n) + '% - 4px)" title="' + esc(m.title + ' · ' + (o.cancelled ? 'This occurrence is cancelled · ' : '') + (o.moved ? dayText(o.date) + ', ' + o.time + '–' + endOf(o.time, o.minutes) + ', moved from ' + dayText(o.orig) + ' · ' : '') + meetingText(m.meeting) + ' · ' + KIND_LABELS[m.kind] + (m.hidden ? ' · Hidden' : m.paused ? ' · Paused' : '') + (m.meeting.link ? ' · Own link' : '') + (drag ? ' · Drag to move this occurrence' : '')) + '">' +
+            '<span class="week-time">' + esc(o.time) + '</span> ' + esc(m.title) + (o.cancelled ? ' <span class="badge">Cancelled</span>' : o.moved ? ' <span class="badge">Moved</span>' : '') + (m.w ? ' ' + groupBadge(m.w) : '') + (m.meeting.link ? ' ' + ownBadge(m) : '') + '</' + tag + '>';
         });
       });
       html += '</div>';
@@ -328,13 +462,108 @@
     if (m && sj && !sj.disabled) { joinSeries(m, sj.getAttribute('data-action')); return; }
     var pz = e.target.closest('.cal-pause');
     if (m && pz && !pz.disabled) { pauseOrResume(m, pz.getAttribute('data-action')); return; }
+    if (m && e.target.closest('.cal-change')) { startEdit(m); return; }
+    if (m && e.target.closest('.cal-e-cancel')) { pop.edit = null; render(); return; }
+    if (m && e.target.closest('.cal-e-save')) { saveEdit(m, false); return; }
+    if (m && e.target.closest('.cal-e-back, .cal-restore')) { saveEdit(m, true); return; }
+    if (m && e.target.closest('.cal-cancel-one')) {
+      var day = dayText(pop.orig), keep = { key: pop.key, orig: pop.orig, rect: pop.rect };
+      BOLD.confirmAlways({ title: 'Cancel the ' + day + ' occurrence of “' + m.title + '”?', go: 'Cancel occurrence', no: 'Keep it', effects: ['Cancel it in everyone’s Google Calendar: Google emails its ' + (m.people === 1 ? 'guest' : m.people + ' guests'), 'The other occurrences stay as they are; you can restore it from its card'] })
+        // (clicking the question closes the card: it's opened again on the occurrence)
+        .then(function(ok){ if (ok) { pop = keep; saveEdit(m, false, true); } });
+      return;
+    }
     onJoin(e);
+  });
+  // A day, time or length changed in the card: the move drawn on the grid follows it.
+  el('calPop').addEventListener('change', function(e){
+    if (!pop || !pop.edit || !e.target.matches('.cal-e-date, .cal-e-time, .cal-e-min') || view !== 'week') return;
+    readEdit();
+    el('meetings').innerHTML = weekHtml(meetings(), events());
+    placePop();
+  });
+  // Switching between this date and every date: the day field follows.
+  el('calPop').addEventListener('change', function(e){
+    if (!pop || !pop.edit || !e.target.matches('input[name=calScope]')) return;
+    readEdit();
+    if (pop.edit.scope === 'series' && pop.edit.date) pop.edit.day = weekdayOf(pop.edit.date);
+    if (pop.edit.scope === 'once' && !pop.edit.date) pop.edit.date = pop.orig;
+    render();
   });
   document.addEventListener('click', function(e){
     // (a button the card redrew away is no longer in the page: not a click outside)
     if (pop && document.contains(e.target) && !e.target.closest('#calPop, .week-block, .cal-open')) closePop();
   });
   document.addEventListener('keydown', function(e){ if (e.key === 'Escape' && pop) closePop(); });
+
+  // Dragging a meeting's block (a mouse or pen; on a touch screen, its card's Edit occurrence), as in Google
+  // Calendar: the block stays, faded, and a preview follows the pointer, snapped to the day under it and to 15
+  // minutes, with its new time; letting go opens its card to save the move (this occurrence or all); Escape stops.
+  function dropAt(d, e){
+    var body = el('meetings').querySelector('.week-body'), days = el('meetings').querySelectorAll('.week-day'), col = -1;
+    if (!body || !geom) return null;
+    Array.prototype.forEach.call(days, function(c, i){ var r = c.getBoundingClientRect(); if (e.clientX >= r.left && e.clientX < r.right) col = i; });
+    if (col < 0) col = d.col;   // off the grid sideways: the day it was last over
+    var mins = Math.round(geom.yInv(e.clientY - d.grab - body.getBoundingClientRect().top) / 15) * 15;
+    mins = Math.max(0, Math.min(mins, 24 * 60 - d.o.minutes));
+    return { col: col, mins: mins, date: geom.dates[col], time: pad(Math.floor(mins / 60)) + ':' + pad(mins % 60), el: days[col] };
+  }
+  function endDrag(){
+    var d = drag; drag = null;
+    if (!d) return null;
+    if (d.ghost && d.ghost.parentNode) d.ghost.parentNode.removeChild(d.ghost);
+    d.b.classList.remove('is-drag-source');
+    document.documentElement.classList.remove('is-dragging-meeting');
+    if (d.redraw) render();
+    return d;
+  }
+  // The click a browser sends when the button comes up after a drag (on the block, or on the grid when let go
+  // in another day): swallowed before anything sees it, or it would follow the block's link or close its card.
+  function swallowClick(){ noClick = true; setTimeout(function(){ noClick = false; }, 400); }
+  window.addEventListener('click', function(e){ if (noClick) { noClick = false; e.preventDefault(); e.stopPropagation(); } }, true);
+  el('meetings').addEventListener('pointerdown', function(e){
+    var b = e.target.closest('.week-block.is-draggable');
+    if (!b || e.button !== 0 || e.pointerType === 'touch' || !geom) return;
+    var key = b.getAttribute('data-key'), orig = b.getAttribute('data-orig');
+    var m = meetings(true).filter(function(x){ return keyOf(x) === key; })[0];
+    var o = m && occIn(m, addDays(orig, -62), addDays(orig, 62)).filter(function(x){ return x.orig === orig; })[0];
+    if (!o) return;
+    drag = { b: b, m: m, o: o, key: key, x: e.clientX, y: e.clientY, grab: e.clientY - b.getBoundingClientRect().top, col: Math.max(0, geom.dates.indexOf(o.date)), on: false };
+  });
+  document.addEventListener('pointermove', function(e){
+    if (!drag) return;
+    if (!drag.on && Math.abs(e.clientX - drag.x) + Math.abs(e.clientY - drag.y) < 6) return;
+    e.preventDefault();
+    if (!drag.on) {
+      drag.on = true;
+      if (pop) closePop();
+      drag.b.classList.add('is-drag-source');
+      document.documentElement.classList.add('is-dragging-meeting');
+      drag.ghost = document.createElement('div');
+      drag.ghost.className = drag.b.className.replace(/\b(is-draggable|is-moved|is-paused|is-drag-source)\b/g, '') + ' week-ghost';
+      drag.ghost.setAttribute('aria-hidden', 'true');
+    }
+    var t = dropAt(drag, e);
+    if (!t) return;
+    drag.col = t.col; drag.to = t;
+    var end = endOf(t.time, drag.o.minutes);
+    drag.ghost.innerHTML = '<span class="week-time">' + (t.date !== drag.o.date ? esc(dayText(t.date)) + ', ' : '') + t.time + '–' + end + '</span> ' + esc(drag.m.title);
+    drag.ghost.style.top = geom.y(t.mins) + 'px';
+    drag.ghost.style.height = Math.max(18, geom.y(t.mins + drag.o.minutes) - geom.y(t.mins) - 2) + 'px';
+    if (drag.ghost.parentNode !== t.el) t.el.appendChild(drag.ghost);
+  });
+  document.addEventListener('pointerup', function(){
+    if (!drag) return;
+    var d = endDrag();
+    if (!d.on) return;
+    swallowClick();
+    var t = d.to;
+    if (!t || (t.date === d.o.date && t.time === d.o.time)) return;
+    var a = el('meetings').querySelector('.week-block[data-key="' + d.key.replace(/["\\]/g, '\\$&') + '"][data-orig="' + d.o.orig + '"]') || d.b;
+    pop = { key: d.key, orig: d.o.orig, rect: a.getBoundingClientRect() };
+    startEdit(d.m, { scope: 'once', date: t.date, time: t.time, minutes: d.o.minutes, day: weekdayOf(t.date) });
+  });
+  document.addEventListener('keydown', function(e){ if (e.key === 'Escape' && drag) { var d = endDrag(); if (d && d.on) { swallowClick(); } } });
 
   // Subscribe: your own link to the Calendar for a calendar app (calendarFeed in functions/api.js),
   // made the first time it's opened; New link replaces it, and the old one stops working.

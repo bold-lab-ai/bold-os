@@ -1219,3 +1219,4 @@ html:root.is-matrix ::selection{background:#b4f0bd; color:#06100a; text-shadow:n
 .ha-box .mdf-tab:hover, .ha-box .mdf-tab[aria-selected="true"]{opacity:1;}
 .ha-box .mdf-line{font-size:11px; opacity:0; transition:opacity .2s ease;}
 .ha-box .ha-form:focus-within .mdf-line{opacity:.8;}
+.emoji-list-e{display:inline-block; width:1.4em; font-size:16px;}

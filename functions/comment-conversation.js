@@ -37,6 +37,14 @@ function changeOf(on){
   if (!m || (m[1] === 'handbook' && m[2] !== 'boldiquette')) return null;
   return { collection: m[1], slug: m[2], proposal: m[3], id: 'cm-change-' + m[1] + '-' + m[2] + '-' + m[3] };
 }
+// A branch of the site's conversation (functions/branches.js, proposal.html; 2026-11-11): { on: 'branch/<id>', text? } →
+// conversations/cm-branch-<id>: its author's post (its title and description), then `text`. Who may: whoever may post
+// in Conversations and see every page it changes, where everyone who sees Conversations sees those pages too.
+// Pure: a branch's → { branch, id: the post's }, or null.
+function branchOf(on){
+  const m = /^branch\/([A-Za-z0-9]{1,40})$/.exec(String(on || ''));
+  return m ? { branch: m[1], id: 'cm-branch-' + m[1] } : null;
+}
 // An Internal Review card's Discussion (audit-board/detail.js; 2026-11-07): { on: 'review/<board>/<card>', text? } →
 // conversations/cm-review-<board>-<card>, about its project if it has one: its old Discussion (the card's
 // `discussion`, each message then its replies) copied in, then `text`. Its author and both reviewers count as in it.
@@ -156,6 +164,34 @@ module.exports = function({ db, onCall, HttpsError, signedInEmail, access, Field
     return { id: c.id, title, existed: false };
   }
 
+  // A branch's conversation.
+  async function fromBranch(email, c, text){
+    text = String(text || '').trim().slice(0, 10000);
+    await access.requireAccess(email, 'conversations', 'edit');
+    const bSnap = await db.collection('branches').doc(c.branch).get();
+    if (!bSnap.exists) throw new HttpsError('not-found', 'That branch isn’t there any more.');
+    const b = bSnap.data(), convView = await access.levelOf('conversations', 'view');
+    for (const p of (b.pages || [])){
+      const [collection, slug] = p.split('/');
+      const area = collection === 'handbook' ? 'boldiquette' : collection === 'guides' ? guideArea(slug) : collection === 'skills' ? 'skills' : 'tools';
+      await access.requireAccess(email, area, 'view');
+      const pageView = await access.levelOf(area, 'view');
+      if (pageView === 'none' || rank(convView) < rank(pageView)) throw new HttpsError('failed-precondition', 'More people see Conversations than the pages it changes, so its discussion stays on its page.');
+    }
+    const ref = db.collection('conversations').doc(c.id), had = await ref.get();
+    if (had.exists) { if (text) await addTo(ref, email, text); return { id: c.id, title: had.data().title, existed: true }; }
+    const title = ('Proposed change: ' + String(b.title || '')).slice(0, 200);
+    const from = { kind: 'branch', on: 'branch/' + c.branch, page: 'Proposed change', part: String(b.title || '').slice(0, 200), url: SITE_URL + 'proposal.html?b=' + encodeURIComponent(c.branch) };
+    const batch = db.batch();
+    batch.create(ref, Object.assign({ title, body: String(b.description || b.title || 'Proposes a change.'), at: b.at || Date.now(), source: 'comment', from,
+      private: false, readers: [], votes: {}, replies: text ? 1 : 0, commentReplies: 0, broughtBy: { email, name: await nameOf(email) }, broughtAt: FieldValue.serverTimestamp() },
+      by({ by: b.by || {} })));
+    if (text) batch.set(ref.collection('messages').doc('cm-0'), Object.assign({ parent: c.id, body: text, at: Date.now(), source: 'site', votes: {} }, by({ by: { email, name: await nameOf(email) } })));
+    try { await batch.commit(); }
+    catch (e) { const again = await ref.get(); if (again.exists) { if (text) await addTo(ref, email, text); return { id: c.id, title: again.data().title, existed: true }; } throw e; }
+    return { id: c.id, title, existed: false };
+  }
+
   // An Internal Review card's Discussion, as a conversation.
   async function fromReview(email, c, text){
     text = String(text || '').trim().slice(0, 10000);
@@ -190,6 +226,8 @@ module.exports = function({ db, onCall, HttpsError, signedInEmail, access, Field
     if (c) return fromCard(email, c, data.text);
     const ch = changeOf(data.on);
     if (ch) return fromChange(email, ch, data.text);
+    const br = branchOf(data.on);
+    if (br) return fromBranch(email, br, data.text);
     const rv = reviewOf(data.on);
     if (rv) return fromReview(email, rv, data.text);
     const page = pageOf(data.on, guideArea), cid = String(data.id || '');
@@ -238,3 +276,4 @@ module.exports.changeOf = changeOf;
 module.exports.reviewOf = reviewOf;
 module.exports.descriptionOf = descriptionOf;
 module.exports.discussionOf = discussionOf;
+module.exports.branchOf = branchOf;

@@ -1,11 +1,12 @@
 // A skill's page (skill.html?skill=<name>) — one skills/{name} doc (see
 // skills-common.js): its title and description, how to install it, and the
-// files in it (SKILL.md first), each shown on click. Anyone proposes a change to
-// it, as to a guide — description, SKILL.md's instructions, and the files: add
-// one empty or from the computer, rename, change or remove it — saved as a
-// proposal (skills/{name}/proposals, kind 'skill': { before, after }) under
-// Proposed changes, with what it changes, until another PI or admin accepts or
-// declines it (decideProposal); whoever proposed it can edit or withdraw it. PIs
+// files in it (SKILL.md first), each shown on click. Anyone changes it, as a guide,
+// on a branch of the site (#324, functions/branches.js; BOLD.commit) — description,
+// SKILL.md's instructions, and the files: add one empty or from the computer, rename,
+// change or remove it — a commit on the branch you're on, or on main a new one, which
+// you're then on; the page shows the skill as the branch you're on makes it. Its open
+// proposed changes link to their own pages (proposal.html), where another PI or admin
+// accepts or declines them (decideBranch). PIs
 // and admins delete the skill (greyed out for everyone else). #edit opens the form. skill.html?new is the same form for a new skill ("+ Add a
 // skill" on the skills page), with its name. Either form can import a whole
 // skill's folder (skill-import.js), which fills everything in. The page's
@@ -29,8 +30,8 @@
   var MAX_SIZE = 900000;
 
   var x = null, loaded = false, editing = isNew || location.hash === '#edit', fullWrite = false, me = null, open = 'SKILL.md';
-  // Open proposed changes; the one being edited (yours), if any; whose changes are shown; a notice.
-  var proposals = [], editingQ = null, shownQ = {}, notice = '', busyQ = {};
+  // Open proposed changes to it (each a branch's part here); a notice.
+  var proposals = [], notice = '';
   var BACK = '<a class="back-link" href="skills.html">&larr; All agent skills</a>';
   var CONTENT = ['title', 'description', 'body', 'files'];
   var historyWrap = document.getElementById('skillHistoryWrap'), histPanel = null;
@@ -57,66 +58,36 @@
   function content(d){ var o = {}; CONTENT.forEach(function(k){ o[k] = d[k] !== undefined ? d[k] : (k === 'files' ? [] : ''); }); return o; }
   function mine(q){ return !!(me && q.by && String(q.by.email).toLowerCase() === me.email.toLowerCase()); }
   // A proposed new skill's changes are shown from the start: they are all there is to see.
-  // The proposal for this skill the site is on (bold.js's branch, the Version pill), if any:
-  // the skill is shown as it would make it.
-  function branchPrefix(){ return 'skills/' + name + '/proposals/'; }
+  // The branch you're on, if it changes this skill: its part here (skills/{name}/proposals/<its id>).
   function branchQ(){
-    var b = BOLD.branch(), id = b && b.ref.indexOf(branchPrefix()) === 0 ? b.ref.slice(branchPrefix().length) : '';
+    var id = BOLD.branchId();
     return id ? proposals.filter(function(q){ return q.id === id; })[0] || null : null;
   }
-  function viewQ(q){
-    if (q) BOLD.setBranch({ ref: branchPrefix() + q.id, title: 'Skill ' + ((x && x.title) || name) + ': ' + (q.note || 'a change'), url: 'skill.html?skill=' + encodeURIComponent(name) }, { quiet: true });
-    else BOLD.setBranch(null, { quiet: true });
-    render(); window.scrollTo(0, 0);
-  }
-  // fn() with x as shown: on a branch that changes the skill, as proposed.
+  // fn() with x as shown: as the branch you're on makes it.
   function withShown(fn){
     var bq = branchQ(), x0 = x;
-    if (bq && bq.kind === 'skill' && x) x = Object.assign({}, x, bq.after);
+    if (bq && (bq.kind === 'skill' || bq.kind === 'new')) x = Object.assign({}, x || { name: name }, bq.after);
     try { return fn(); } finally { x = x0; }
   }
-  function isShown(q){ return shownQ[q.id] !== undefined ? shownQ[q.id] : !x && q.kind === 'new'; }
+  // The open proposed changes, each linking to its page.
   function proposalsHtml(){
-    if (!proposals.length && !notice) return '';
+    var openQs = proposals.filter(function(q){ return q.status === 'open'; });
+    if (!openQs.length) return '';
     return '<section class="block" id="proposals"><div class="block-head"><h2>' + (x ? 'Proposed changes' : 'Proposed') + '</h2></div>' +
-      (notice ? '<p class="event-form-hint sk-notice">' + esc(notice) + '</p>' : '') +
-      '<ul class="sk-proposals">' + proposals.map(function(q){
-        var own = mine(q), b = busyQ[q.id] ? ' disabled' : '', fresh = !x && q.kind === 'new';
-        var stale = !!x && JSON.stringify(content(q.before || {})) !== JSON.stringify(content(x));
-        var decide = !fullWrite ? ' disabled title="Only PIs and admins accept or decline"' : own ? ' disabled title="Another PI or admin reviews your own change"' : '';
+      '<ul class="sk-proposals">' + openQs.map(function(q){
+        var fresh = !x && q.kind === 'new';
         return '<li class="sk-proposal" id="q-' + esc(q.id) + '"><p class="sk-p-head">' + (fresh ? '<strong>A new skill</strong> · ' + esc((q.by && q.by.name) || 'Someone') : '<strong>' + esc((q.by && q.by.name) || 'Someone') + '</strong>') +
-            ' · ' + BoldHistory.when(q.editedAt || q.at) + (q.editedAt ? ' (edited)' : '') + '</p>' +
+            ' · ' + BoldHistory.when(q.editedAt || q.at) + (BOLD.branchId() === q.id ? ' · you’re on it' : '') + '</p>' +
           (q.note ? '<p class="sk-p-note">' + esc(q.note) + '</p>' : '') +
-          (stale ? '<p class="event-form-hint">The skill has changed since this was proposed: accepting it replaces those changes with these.</p>' : '') +
-          (isShown(q) ? '<div class="sk-p-changes">' + BoldHistory.changesHtml(content(q.before || {}), content(Object.assign({}, q.before, q.after)), FIELDS) + '</div>' : '') +
-          '<div class="event-controls"><button type="button" class="btn-text sk-q-show" data-id="' + esc(q.id) + '">' + (isShown(q) ? 'Hide changes' : 'Show changes') + '</button>' +
-            (x ? '<button type="button" class="btn-text sk-q-view" data-id="' + esc(q.id) + '">' + (branchQ() === q ? 'Back to the skill now' : 'View as proposed') + '</button>' : '') +
-            '<button type="button" class="btn-text sk-q-accept" data-id="' + esc(q.id) + '"' + (decide || b) + '>Accept</button>' +
-            '<button type="button" class="btn-text danger sk-q-decline" data-id="' + esc(q.id) + '"' + (decide || b) + '>Decline</button>' +
-            // A proposed new skill is edited by proposing it again (the form here changes an existing one).
-            (own ? (fresh ? '' : '<button type="button" class="btn-text sk-q-edit" data-id="' + esc(q.id) + '"' + b + '>Edit</button>') + '<button type="button" class="btn-text danger sk-q-withdraw" data-id="' + esc(q.id) + '"' + b + '>Withdraw</button>' : '') +
-          '</div></li>';
+          '<div class="event-controls"><a class="btn-text" href="' + esc(BOLD.branchPage(q.branch || q.id)) + '">Its page</a></div></li>';
       }).join('') + '</ul></section>';
   }
-  function proposalAction(t){
-    var id = t.getAttribute('data-id'), q = proposals.filter(function(p){ return p.id === id; })[0];
-    if (!q) return;
-    if (t.classList.contains('sk-q-show')) { shownQ[id] = !isShown(q); render(); return; }
-    if (t.classList.contains('sk-q-view')) { viewQ(branchQ() === q ? null : q); return; }
-    if (t.classList.contains('sk-q-edit')) { editingQ = q; editing = true; render(); return; }
-    var withdraw = t.classList.contains('sk-q-withdraw'), accept = t.classList.contains('sk-q-accept');
-    var job = BOLD.confirmProposal(withdraw ? 'withdraw' : accept ? 'accept' : 'decline', q.by && q.by.name, accept ? ['Give every agent the skill as changed, at once'] : []).then(function(ok){
-      if (!ok) throw { cancelled: true };
-      busyQ[id] = true; render();
-      return withdraw ? ref.collection('proposals').doc(id).delete()
-        // editedAt: the version decided on, in case it's edited meanwhile.
-        : firebase.app().functions('europe-west2').httpsCallable('decideProposal')({ collection: 'skills', slug: name, id: id, accept: accept, editedAt: q.editedAt || 0 });
-    });
-    job.catch(function(err){
-      if (err && err.cancelled) return;
-      console.error('[BOLD Skills] that failed', err);
-      window.alert(err && err.message && err.code !== 'functions/internal' ? err.message : 'That didn’t work — try again.');
-    }).then(function(){ delete busyQ[id]; render(); });
+  // On a branch: a line saying so, with its page.
+  function branchHtml(){
+    var b = BOLD.branch();
+    if (!b) return '';
+    return '<p class="sk-branch">You’re on <a href="' + esc(BOLD.branchPage(b.id)) + '">' + esc((b.num ? '#' + b.num + ' ' : '') + (b.title || 'a proposed change')) + '</a>: ' +
+      (branchQ() ? 'the skill is shown as it makes it, and what you change is added to it.' : 'it doesn’t change this skill yet; what you change is added to it.') + '</p>';
   }
 
   // The Claude Code command, ready to copy.
@@ -145,10 +116,8 @@
   }
 
   function formHtml(){
-    // An existing skill's form proposes a change: from the skill, or from your proposal being edited.
-    var x0 = x;
-    x = editingQ ? Object.assign({}, x, editingQ.after) : x;
-    try {
+    // An existing skill's form commits a change to it as the branch you're on shows it.
+    return withShown(function(){
     return '<div class="event-form skill-form">' +
       '<div class="sk-import"><span>Have the skill already?</span>' +
         '<label class="btn-text">Import a folder<input type="file" class="sk-import-folder" webkitdirectory hidden></label>' +
@@ -161,11 +130,12 @@
         '<label class="btn-text sk-add-upload">+ Add from your computer<input type="file" multiple hidden></label></div>' +
       '<p class="event-form-hint">Text files only (Markdown, HTML, code, …), under about 900 KB in all. Adding a SKILL.md fills in the description and instructions above.</p>' +
       (isNew ? '<label>What changed (optional)<input type="text" class="sk-note" maxlength="300" placeholder="Added the skill"></label>'
-        : '<label>What you changed and why, for whoever reviews it<input type="text" class="sk-note" maxlength="300" value="' + esc(editingQ ? editingQ.note || '' : '') + '" placeholder="e.g. Clearer figure rules"></label>' +
-          '<p class="event-form-hint">It’s saved as a proposed change until ' + (fullWrite ? 'another' : 'a') + ' PI or admin accepts it.</p>') +
+        : '<label>What you changed and why, for whoever reviews it<input type="text" class="sk-note" maxlength="300" placeholder="e.g. Clearer figure rules"></label>' +
+          '<p class="event-form-hint">' + (BOLD.branch() ? 'It’s added to the proposed change you’re on.' : 'Propose change opens a proposed change for ' + (fullWrite ? 'another' : 'a') + ' PI or admin to accept. Save draft opens it as a draft: nobody is asked yet.') + '</p>') +
       '<p class="ev-error" hidden></p>' +
-      '<div class="event-form-actions"><button type="button" class="ev-save">' + (isNew ? 'Add skill' : editingQ ? 'Update proposed change' : 'Propose change') + '</button><button type="button" class="ev-cancel">Cancel</button></div></div>';
-    } finally { x = x0; }
+      '<div class="event-form-actions"><button type="button" class="ev-save">' + (isNew ? 'Add skill' : BOLD.branch() ? 'Commit to ' + esc(BOLD.branch().num ? '#' + BOLD.branch().num : 'it') : 'Propose change') + '</button>' +
+        (isNew || BOLD.branch() ? '' : '<button type="button" class="ev-save ev-stage sk-draft">Save draft</button>') + '<button type="button" class="ev-cancel">Cancel</button></div></div>';
+    });
   }
 
   // SKILL.md's text → { description, body }: the front matter's description
@@ -267,8 +237,12 @@
 
     form.querySelector('.ev-cancel').addEventListener('click', function(){
       if (isNew) { location.href = 'skills.html'; return; }
-      editing = false; editingQ = null; history.replaceState(null, '', location.pathname + location.search); render(); });
+      editing = false; history.replaceState(null, '', location.pathname + location.search); render(); });
+    var asDraft = false;
+    var dr = form.querySelector('.sk-draft');
+    if (dr) dr.addEventListener('click', function(){ asDraft = true; form.querySelector('.ev-save').click(); asDraft = false; });
     form.querySelector('.ev-save').addEventListener('click', function(){
+      var draftIt = asDraft;
       var r = S.readMeta(form, isNew);
       if (r.error) { S.showError(form, r.error); return; }
       var f = readFiles(form);
@@ -294,18 +268,17 @@
         }).catch(failed);
         return;
       }
-      // A change to an existing skill is a proposal (rules: only its content, and who proposes it).
+      // A change to an existing skill is a commit on a branch (BOLD.commit; the server writes it).
       var note = fields.changeNote;
       if (!note) { S.showError(form, 'Say what you changed and why, for whoever reviews it.'); save.disabled = false; return; }
-      var after = content(fields), q = editingQ;
-      if (JSON.stringify(after) === JSON.stringify(content(q ? Object.assign({}, x, q.after) : x))) { editing = false; editingQ = null; render(); return; }
-      var job = BOLD.confirmProposal(q ? 'edit' : 'propose').then(function(ok){ if (!ok) throw { cancelled: true }; }).then(function(){ return q
-        ? ref.collection('proposals').doc(q.id).set({ kind: 'skill', before: q.before, after: after, note: note, by: q.by, at: q.at, status: 'open', editedAt: Date.now() })
-        : ref.collection('proposals').add({ kind: 'skill', before: content(x), after: after, note: note, by: { email: me.email, name: me.name }, at: Date.now(), status: 'open' }); });
-      job.then(function(){
-        editing = false; editingQ = null; notice = 'Thanks — your change is under Proposed changes until ' + (fullWrite ? 'another' : 'a') + ' PI or admin reviews it.';
+      var after = content(fields), now = withShown(function(){ return content(x); });
+      if (JSON.stringify(after) === JSON.stringify(now)) { editing = false; render(); return; }
+      var kind = branchQ() && branchQ().kind === 'new' ? 'new' : 'skill';
+      BOLD.commit({ collection: 'skills', slug: name }, { kind: kind, before: now, after: after, note: note }, { draft: draftIt }).then(function(r){
+        editing = false; notice = r.opened && draftIt ? 'Saved as a draft. You’re on it now: mark it ready for review on its page.'
+          : r.opened ? 'Proposed. You’re on it now: what you change is added to it, until you go back to main.' : 'Committed.';
         history.replaceState(null, '', location.pathname + location.search); render();
-        var el = document.getElementById('proposals'); if (el) el.scrollIntoView({ block: 'start' });
+        window.scrollTo(0, 0);
       }).catch(failed);
     });
   }
@@ -349,8 +322,6 @@
       body.innerHTML = '<div class="hero">' + BACK + '<div><span class="eyebrow">Agent skill · proposed</span></div><h1>' + esc(p.title || name) + '</h1>' +
         '<p class="skill-name"><code>' + esc(name) + '</code></p><p class="hero-note">' + esc(p.description || '') + '</p></div>' +
         '<main>' + proposalsHtml() + '</main>';
-      var pq = body.querySelector('.sk-proposals');
-      if (pq) pq.addEventListener('click', function(e){ var t = e.target.closest('button'); if (t && !t.disabled) proposalAction(t); });
       return;
     }
     document.title = (x.title || x.name) + ' | BOLD Lab';
@@ -366,15 +337,11 @@
     withShown(function(){
       body.innerHTML = '<div class="hero">' + BACK + '<div><span class="eyebrow">Agent skill</span></div><h1>' + esc(x.title || x.name) + '</h1>' +
         '<p class="skill-name"><code>' + esc(x.name) + '</code></p><p class="hero-note">' + esc(x.description || '') + '</p>' +
-        (bq ? '<p class="sk-branch">Shown as proposed by ' + esc((bq.by && bq.by.name) || 'someone') + (bq.note ? ': “' + esc(bq.note) + '”' : '') + '. <button type="button" class="btn-text sk-branch-back">Back to the skill now</button></p>' : controls()) + '</div>' +
+        (notice ? '<p class="event-form-hint sk-notice">' + esc(notice) + '</p>' : '') + branchHtml() + controls() + '</div>' +
         '<main>' + qsHtml + installHtml() + filesHtml() + '</main>';
     });
-    var back = body.querySelector('.sk-branch-back');
-    if (back) back.addEventListener('click', function(){ viewQ(null); });
     var ed = body.querySelector('.sk-edit');
-    if (ed) ed.addEventListener('click', function(){ editingQ = null; notice = ''; editing = true; render(); });
-    var qs = body.querySelector('.sk-proposals');
-    if (qs) qs.addEventListener('click', function(e){ var t = e.target.closest('button'); if (t && !t.disabled) proposalAction(t); });
+    if (ed) ed.addEventListener('click', function(){ notice = ''; editing = true; render(); });
     var del = body.querySelector('.sk-delete');
     if (del) del.addEventListener('click', function(){
       if (!fullWrite || !window.confirm('Delete the skill “' + (x.title || x.name) + '” for good? Anyone who installed it keeps their copy.')) return;
@@ -420,7 +387,7 @@
     fullWrite = false;
     if (!user) return;
     if (unsubQ) { unsubQ(); unsubQ = null; }
-    unsubQ = ref.collection('proposals').where('status', '==', 'open').onSnapshot(function(snap){
+    unsubQ = ref.collection('proposals').where('status', 'in', ['open', 'draft']).onSnapshot(function(snap){
       proposals = snap.docs.map(function(d){ return Object.assign({ id: d.id }, d.data()); }).sort(function(a, b){ return a.at - b.at; });
       if (!(editing && body.querySelector('.skill-form'))) render();
     }, function(err){ console.error('[BOLD Skills] loading proposed changes failed', err); });

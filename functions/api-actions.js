@@ -116,7 +116,8 @@ module.exports = function(ctx){
   async function readPage(who, a){
     const pg = await pageOf(a.page);
     const proposals = (await db.collection(pg.col).doc(pg.slug).collection('proposals').where('status', '==', 'open').get()).docs
-      .map((d) => { const q = d.data(); return { id: d.id, kind: q.kind, part_id: q.partId || '', title: (q.after && q.after.title) || (q.before && q.before.title) || '', note: q.note || '', by: (q.by && q.by.name) || '' }; });
+      .map((d) => { const q = d.data(); return { id: d.id, commits: q.kind === 'batch' ? (q.changes || []).map((c) => ({ kind: c.kind, part_id: c.partId || '', note: c.note || '', by: (c.by && c.by.name) || '' })) : undefined,
+        kind: q.kind, part_id: q.partId || '', title: (q.after && q.after.title) || (q.before && q.before.title) || '', note: q.note || '', by: (q.by && q.by.name) || '', url: url('proposal.html?b=' + encodeURIComponent(d.id)) }; });
     return {
       title: pg.data.title, description: pg.data.description || '', url: url(pg.href),
       parts: (pg.data.parts || []).map((p) => ({ id: p.id, section: p.section || '', title: p.title, body: p.body })),
@@ -150,8 +151,10 @@ module.exports = function(ctx){
       // A proposed change's discussion is its conversation (2026-11-07): started, or added to.
       case 'on_proposal': {
         const pid = need(a.proposal_id, 'the proposal_id');
-        const r = await act(who, 'commentConversation', { on: 'change/' + pg.col + '/' + pg.slug + '/' + pid, text: text() });
-        return Object.assign({}, r, { url: url(pg.href + '#proposal-' + encodeURIComponent(pid)) });
+        // Its conversation: the one it had from before branches (b.talk), else the branch's own.
+        const bs = await db.collection('branches').doc(pid).get(), t = bs.exists && bs.data().talk;
+        const r = await act(who, 'commentConversation', { on: t && t.on ? t.on : 'branch/' + pid, text: text() });
+        return Object.assign({}, r, { url: url('proposal.html?b=' + encodeURIComponent(pid)) });
       }
       // Make it a conversation (commentConversation): the whole thread, copied to Conversations; it goes on there.
       case 'to_conversation': {
@@ -168,6 +171,27 @@ module.exports = function(ctx){
         await asUser(who, 'delete', col + '/' + c.id);
         return { ok: true };
       }
+    }
+    throw httpError(400, 'Unknown action.');
+  }
+
+  // Every change is a commit on a branch of the site (#324, functions/branches.js): on `a.branch` (an open one, by
+  // its id), or on a new one opened with it. → { branch, url (its page), note }.
+  async function commitAs(who, a, target, change){
+    if (a.branch !== undefined && !/^[A-Za-z0-9]{1,40}$/.test(String(a.branch))) throw httpError(400, 'branch is a proposed change’s id (from read_page or the branch’s address, proposal.html?b=<id>).');
+    const r = await act(who, 'branchCommit', Object.assign({ target, change }, a.branch ? { on: String(a.branch) } : {}));
+    return { branch: r.id, number: r.num ? '#' + r.num : '', url: url('proposal.html?b=' + encodeURIComponent(r.id)),
+      note: a.branch ? 'Committed to it.' : 'Opened a proposed change with it, on its own page: commit more to it with branch "' + r.id + '"; a PI or admin who hasn’t committed to it accepts or declines it.' };
+  }
+  // Withdraw, accept or decline a proposed change (a branch), by its id (proposal_id).
+  async function decideBranchAs(who, a){
+    const id = need(a.proposal_id || a.branch, 'the proposal_id: the proposed change’s id');
+    if (!/^[A-Za-z0-9]{1,40}$/.test(String(id))) throw httpError(400, 'No such proposed change.');
+    if (a.action === 'withdraw') return act(who, 'branchMeta', { id, withdraw: true });
+    if (a.action === 'accept' || a.action === 'decline') {
+      const s = await db.collection('branches').doc(id).get();
+      if (!s.exists) throw httpError(404, 'No such proposed change.');
+      return act(who, 'decideBranch', { id, accept: a.action === 'accept', editedAt: s.data().editedAt || s.data().at || 0 });
     }
     throw httpError(400, 'Unknown action.');
   }
@@ -192,42 +216,30 @@ module.exports = function(ctx){
       });
       (a.remove_files || []).forEach((path) => { after.files = after.files.filter((x) => x.path !== path); });
       if (JSON.stringify(after) === JSON.stringify(cur)) throw httpError(400, 'That changes nothing.');
-      const id = await asUser(who, 'create', col, { kind: 'skill', before: cur, after, note, by: { email: who.email, name: nameOfMe(who) }, at: Date.now(), status: 'open' });
-      return { id, url: url('skill.html?skill=' + encodeURIComponent(name) + '#proposals'), note: 'It waits under Proposed changes until a PI or admin (not you) accepts or declines it.' };
+      return commitAs(who, a, { collection: 'skills', slug: name }, { kind: 'skill', before: cur, after, note });
     }
-    const pid = need(a.proposal_id, 'the proposal_id');
-    if (a.action === 'withdraw') { await asUser(who, 'delete', col + '/' + pid); return { ok: true }; }
-    if (a.action === 'accept' || a.action === 'decline') {
-      const q = await db.collection('skills').doc(name).collection('proposals').doc(pid).get();
-      if (!q.exists) throw httpError(404, 'No such proposal.');
-      return act(who, 'decideProposal', { collection: 'skills', slug: name, id: pid, accept: a.action === 'accept', editedAt: q.data().editedAt || 0 });
-    }
-    throw httpError(400, 'Unknown action.');
+    return decideBranchAs(who, a);
   }
 
   // A new skill (no skill by that name yet): its title, description, instructions and files.
   async function newSkill(who, a, name){
-    const col = 'skills/' + name + '/proposals';
-    if (a.action !== 'propose') return decideOrWithdraw(who, a, 'skills', name, col);
+    if (a.action !== 'propose') return decideBranchAs(who, a);
     if (/anthropic|claude/.test(name)) throw httpError(400, 'Claude doesn’t accept “anthropic” or “claude” in a skill’s name.');
     const note = need(a.note, 'a note: what the skill is for and why it’s needed');
     const after = { title: need(a.title, 'its title'), description: need(a.description, 'its description (what it does and when to use it)'), body: need(a.body, 'its instructions (SKILL.md)'),
       files: (a.files || a.set_files || []).map((f) => ({ path: need(f.path, 'each file’s path'), content: String(f.content || '') })) };
     if (after.description.length > 1024) throw httpError(400, 'A skill’s description is at most 1024 characters.');
-    const id = await asUser(who, 'create', col, { kind: 'new', before: null, after, note, by: { email: who.email, name: nameOfMe(who) }, at: Date.now(), status: 'open' });
-    return { id, url: url('skill.html?skill=' + encodeURIComponent(name)), note: 'A new skill waits for a PI or admin (not you) to accept it; once accepted, every agent gets it as a prompt.' };
+    return commitAs(who, a, { collection: 'skills', slug: name }, { kind: 'new', before: null, after, note });
   }
 
   // A tool on the Tools pages (agentTools/{name}): a new one, a change, or removing it.
   async function toolProposals(who, a, name){
-    const col = 'agentTools/' + name + '/proposals';
-    if (a.action !== 'propose') return decideOrWithdraw(who, a, 'agentTools', name, col);
+    if (a.action !== 'propose') return decideBranchAs(who, a);
     const note = need(a.note, 'a note: what it changes and why, for whoever reviews it');
     const snap = await db.collection('agentTools').doc(name).get(), cur = snap.exists ? snap.data() : null;
-    const by = { email: who.email, name: nameOfMe(who) }, at = Date.now();
     if (a.remove === true) {
       if (!cur) throw httpError(404, 'There’s no tool called ' + name + '.');
-      return { id: await asUser(who, 'create', col, { kind: 'delete', before: null, after: null, note, by, at, status: 'open' }), url: url('tool.html?tool=' + encodeURIComponent(name) + '#proposals') };
+      return commitAs(who, a, { collection: 'agentTools', slug: name }, { kind: 'delete', before: null, after: null, note });
     }
     const proposed = {};
     ['title', 'description', 'code'].forEach((k) => { if (a[k] !== undefined) proposed[k] = String(a[k]); });
@@ -238,19 +250,8 @@ module.exports = function(ctx){
     const after = {};
     Object.keys(checked).forEach((k) => { if (!cur || JSON.stringify(cur[k]) !== JSON.stringify(checked[k])) after[k] = checked[k]; });
     if (cur && !Object.keys(after).length) throw httpError(400, 'That changes nothing.');
-    const id = await asUser(who, 'create', col, { kind: cur ? 'tool' : 'new', before: null, after: cur ? after : checked, note, by, at, status: 'open' });
-    return { id, url: url('tool.html?tool=' + encodeURIComponent(name) + '#proposals'),
-      note: 'It waits on the tool’s page until a PI or admin (not you) accepts it; Claude reviews it meanwhile. Once accepted, every agent gets it.' };
-  }
-  async function decideOrWithdraw(who, a, collection, name, col){
-    const pid = need(a.proposal_id, 'the proposal_id');
-    if (a.action === 'withdraw') { await asUser(who, 'delete', col + '/' + pid); return { ok: true }; }
-    if (a.action === 'accept' || a.action === 'decline') {
-      const q = await db.collection(collection).doc(name).collection('proposals').doc(pid).get();
-      if (!q.exists) throw httpError(404, 'No such proposal.');
-      return act(who, 'decideProposal', { collection, slug: name, id: pid, accept: a.action === 'accept', editedAt: q.data().editedAt || 0 });
-    }
-    throw httpError(400, 'Unknown action.');
+    const r = await commitAs(who, a, { collection: 'agentTools', slug: name }, { kind: cur ? 'tool' : 'new', before: null, after: cur ? after : checked, note });
+    return Object.assign(r, { reviewed: 'Claude reviews it meanwhile; once accepted, every agent gets it.' });
   }
 
   async function proposals(who, a){
@@ -258,8 +259,9 @@ module.exports = function(ctx){
     if (sk) return skillProposals(who, a, sk[1]);
     const tl = /^tool:([a-z][a-z0-9_]{2,40})$/.exec(String(a.page || ''));
     if (tl) return toolProposals(who, a, tl[1]);
-    const pg = await pageOf(a.page), col = pg.col + '/' + pg.slug + '/proposals';
-    if (a.action === 'propose') {
+    if (a.action !== 'propose') return decideBranchAs(who, a);
+    const pg = await pageOf(a.page);
+    {
       const note = need(a.note, 'a note: what you changed and why, for whoever reviews it');
       const kind = a.kind;
       let q;
@@ -285,17 +287,8 @@ module.exports = function(ctx){
         const p = partOf(pg, need(a.part_id, 'the part_id'));
         q = { kind, partId: p.id, before: side(p), after: null, note };
       } else throw httpError(400, 'kind is add, edit or remove.');
-      const id = await asUser(who, 'create', col, Object.assign(q, { by: { email: who.email, name: nameOfMe(who) }, at: Date.now(), status: 'open' }));
-      return { id, url: url(pg.href + '#proposals'), note: 'It waits under Proposed changes until a PI or admin (not you) accepts or declines it.' };
+      return commitAs(who, a, { collection: pg.col, slug: pg.slug }, q);
     }
-    const pid = need(a.proposal_id, 'the proposal_id');
-    if (a.action === 'withdraw') { await asUser(who, 'delete', col + '/' + pid); return { ok: true }; }
-    if (a.action === 'accept' || a.action === 'decline') {
-      const s = await db.collection(pg.col).doc(pg.slug).collection('proposals').doc(pid).get();
-      if (!s.exists) throw httpError(404, 'No such proposal.');
-      return act(who, 'decideProposal', { collection: pg.col, slug: pg.slug, id: pid, accept: a.action === 'accept', editedAt: s.data().editedAt || 0 });
-    }
-    throw httpError(400, 'Unknown action.');
   }
 
   // ---------- a project's board (project page, Board tab) ----------
@@ -796,10 +789,11 @@ module.exports = function(ctx){
       inputSchema: S({ action: ACTIONS(['add', 'reply', 'on_proposal', 'edit', 'resolve', 'delete', 'to_conversation']), page: str('"boldiquette" or a guide’s slug.'), part_id: str('add: the part (read_page).'),
         quote: str('add: words from the part, exactly as written.'), text: str('The comment (Markdown, @Name to tag).'), comment_id: str('reply, edit, resolve, delete, to_conversation.'), proposal_id: str('on_proposal.') }, ['action', 'page']) },
     { name: 'proposals', run: proposals,
-      description: 'Propose a change to the BOLDiquette, a guide, a skill or a tool: this is how BOLD.OS, and the MCP with it, improves itself (every change is a proposal; a PI or admin other than you accepts it). Actions: propose (with a note on why), withdraw your own, or, for PIs and admins, accept or decline someone else’s. ' +
+      description: 'Propose a change to the BOLDiquette, a guide, a skill or a tool: this is how BOLD.OS, and the MCP with it, improves itself. Every change is a commit on a proposed change (a branch of the site, with its own page, as a pull request): propose opens one with it, or, given branch, adds it to that open one (anyone may commit to any), so one proposed change can change several pages together. A PI or admin who hasn’t committed to it accepts it, all its pages at once. Actions: propose (with a note on why), withdraw (whoever opened it, or a PI or admin), or, for PIs and admins, accept or decline (proposal_id: its id). ' +
         'For the BOLDiquette or a guide: kind add, edit or remove a part (read_page). For a skill (page "skill:<name>", get_skill): its new title, description or body (SKILL.md’s instructions), and its files (set_files, remove_files, or all of them in files); a new name proposes a new skill. ' +
         'For a tool (page "tool:<name>", list_tools): its title, description, acting, input and code; a new name proposes a new tool; remove: true proposes removing it.',
-      inputSchema: S({ action: ACTIONS(['propose', 'withdraw', 'accept', 'decline']), page: str('"boldiquette", a guide’s slug, or "skill:<name>".'), kind: ACTIONS(['add', 'edit', 'remove']),
+      inputSchema: S({ action: ACTIONS(['propose', 'withdraw', 'accept', 'decline']), page: str('"boldiquette", a guide’s slug, "skill:<name>" or "tool:<name>".'), kind: ACTIONS(['add', 'edit', 'remove']),
+        branch: str('propose: the open proposed change to add this commit to (its id, from the result of an earlier propose or its page’s address, proposal.html?b=<id>). Without it, a new one is opened.'),
         part_id: str('edit, remove: the part. add: optional, its id (else a new one).'), title: str('The part’s title, or the skill’s.'), body: str('The part’s text (Markdown), or the skill’s instructions.'), section: str('Its section (tab).'),
         description: str('A skill’s description.'), files: { type: 'array', description: 'A skill: all its files (besides SKILL.md).', items: { type: 'object', properties: { path: str(''), content: str('') }, required: ['path'] } },
         set_files: { type: 'array', description: 'A skill: files to add or replace.', items: { type: 'object', properties: { path: str(''), content: str('') }, required: ['path'] } },
@@ -808,7 +802,7 @@ module.exports = function(ctx){
         input: { type: 'object', description: 'A tool: its inputs, { name: { type, description, required } }.' },
         code: str('A tool: the body of an async function (input, bold) returning JSON.'),
         remove: { type: 'boolean', description: 'A tool: propose removing it.' },
-        note: str('propose: what you changed and why.'), proposal_id: str('withdraw, accept, decline.') }, ['action', 'page']) },
+        note: str('propose: what you changed and why.'), proposal_id: str('withdraw, accept, decline: the proposed change’s id.') }, ['action', 'page']) },
     { name: 'projects', run: projects,
       description: 'Projects, as on the Projects page and a project’s page: propose a new one (register: with its compute budget in GPU hours and its Slack channel; once a PI or admin approves it, the channel, created if new, its meeting, slides and notes are made), update its fields (a new Slack channel name renames the old channel), remove it, join or leave it, mark it ongoing (start: being worked on) or back to approved, not started (plan), mark it complete or reopen it, set, remove, pause or resume its weekly meeting, or submit it to a venue on the board.',
       inputSchema: S({ action: ACTIONS(['register', 'update', 'remove', 'join', 'leave', 'start', 'plan', 'complete', 'reopen', 'set_meeting', 'remove_meeting', 'pause_meeting', 'resume_meeting', 'submit_to_venue']),

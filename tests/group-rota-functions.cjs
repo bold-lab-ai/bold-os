@@ -5,12 +5,17 @@ process.env.FIRESTORE_EMULATOR_HOST ||= '127.0.0.1:8080';
 admin.initializeApp({ projectId: 'demo-test' });
 const db = admin.firestore();
 const sends = [];
+let viewedAs = '';
 const rota = require('../functions/group-rota')({
   db, admin, HttpsError, onCall: (opts, fn) => fn || opts, onSchedule: (opts, fn) => fn,
   signedInEmail: r => r.email,
   requireAccess: async () => {},
   seesEvent: async () => true,
   rolesEmails: async () => [],
+  groupFor: async email => viewedAs && email === 'admin@example.org' ? viewedAs :
+    (await db.collection('members').doc(email).get()).data()?.category || 'pan',
+  isFullWrite: async () => false,
+  viewingAs: email => email === 'admin@example.org' ? viewedAs : '',
   slackFetch: async (_token, method, body) => {
     if (method === 'conversations.open' || method === 'chat.postMessage') throw Error('Rota messages must use pilotSlack');
     return { ok: true };
@@ -61,6 +66,9 @@ const denied = async (fn, r) => assert.rejects(() => fn(r));
   await denied(rota.groupRotaSnapshot, req(one, {}));
   await db.collection('eventSeries').doc(seriesId).update({ hidden: false });
   await denied(rota.groupRotaSetMeetingVisibility, req(one, { date: dates[0], hidden: true }));
+  viewedAs = 'internal';
+  await denied(rota.groupRotaSetMeetingVisibility, req(boss, { date: dates[0], hidden: true }));
+  viewedAs = '';
   await rota.groupRotaSetMeetingVisibility(req(boss, { date: dates[0], hidden: true }));
   assert.equal((await rota.groupRotaSnapshot(req(one, {}))).meetings.some(m => m.date === dates[0]), false);
   assert.equal((await rota.groupRotaSnapshot(req(boss, {}))).meetings.some(m => m.date === dates[0]), true);

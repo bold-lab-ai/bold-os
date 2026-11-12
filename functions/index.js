@@ -1102,6 +1102,7 @@ async function mayAddBoard(email, board){
 // A board's milestones ([{ id, name, start, end }]).
 function slashMilestones(ws){ return ((ws && ws.work) || {}).milestones || []; }
 async function handleSlashCommand(token, body){
+  if (body.command === '/meeting') return handleMeetingCommand(token, body);
   const c = SLASH_CARDS[body.command];
   const say = (text) => ({ response_type: 'ephemeral', text });
   if (!c) return say('BOLD.OS doesn’t know ' + body.command + '.');
@@ -1314,8 +1315,81 @@ async function addCardFromSlack(token, payload){
   if (!sent.ok) await dmBySlackId(token, payload.user.id, text, '', { raw: true });
 }
 
+// ---------- /meeting (#325, 2026-11-11): a one-off meeting with everyone in the channel ----------
+// Typed in a channel BOLD OS is in, it opens a form (title, when, how long, a description, a link) naming
+// everyone it invites: the channel's members with a BOLD.OS address. Sending it is the go-ahead; closing
+// it sends nothing. oneOffMeetings/{id} (server only) then has onOneOffMeeting make the event from the
+// lab's Google account (functions/slack-meeting.js), Google emailing the invitations, and tell whoever
+// sent it, to them alone. For anyone signed in to BOLD.OS once.
+const slackMeeting = require('./slack-meeting');
+// A channel's members to invite → { emails, names, others }, or null when BOLD OS can't see them.
+async function meetingInvitees(token, channelId){
+  const ids = await groupChannelMemberIds(token, channelId);
+  if (!ids) return null;
+  const people = {};
+  for (let i = 0; i < ids.length; i += 100) {
+    const snaps = await db.getAll(...ids.slice(i, i + 100).map((id) => db.collection('people').doc(String(id))));
+    snaps.forEach((d) => { if (d.exists) people[d.id] = d.data(); });
+  }
+  return slackMeeting.inviteesOf(ids, people);
+}
+async function handleMeetingCommand(token, body){
+  const say = (text) => ({ response_type: 'ephemeral', text });
+  const email = await emailForSlackId(body.user_id);
+  if (!email) return say('Sign in to BOLD.OS once first, so it knows who you are: ' + SITE_URL);
+  const name = String(body.channel_name || '');
+  if (!body.channel_id || name === 'directmessage') return say('/meeting invites everyone in a channel: type it in one BOLD OS is in.');
+  const who = await meetingInvitees(token, body.channel_id);
+  if (!who) return say('BOLD OS can’t see who’s in this channel: add it (/invite @BOLD OS), then try again.');
+  if (!who.emails.length) return say('Nobody in this channel has a BOLD.OS account to invite.');
+  if (who.emails.length > slackMeeting.MAX_GUESTS) return say('/meeting invites up to ' + slackMeeting.MAX_GUESTS + ' people, and this channel has ' + who.emails.length + '.');
+  const shown = name === 'privategroup' ? 'this conversation' : name;
+  // What was typed ("tomorrow at 1pm for 30min") fills the form in, read in their own time zone (Slack's).
+  const u = await (await fetch('https://slack.com/api/users.info?' + new URLSearchParams({ user: body.user_id }), { headers: { Authorization: 'Bearer ' + token } })).json().catch(() => null);
+  const typed = slackMeeting.parseText(body.text, Date.now(), (u && u.ok && u.user && u.user.tz) || slackMeeting.TZ);
+  const tz = (u && u.ok && u.user && u.user.tz) || slackMeeting.TZ;
+  const opened = await slackFetch(token, 'views.open', slackMeeting.formView({ triggerId: body.trigger_id, title: typed.title, start: typed.start, minutes: typed.minutes, tz,
+    channelId: body.channel_id, channelName: shown, names: who.names, others: who.others, now: Date.now() }));
+  if (!opened.ok) { logger.warn('Opening the meeting form failed', { error: opened.error, details: opened.response_metadata }); return say('Couldn’t open the form — try again.'); }
+  return {};
+}
+// The form's buttons. Suggest a time: says it's looking, then queues meetingSuggestions/{id} (reading everyone's
+// calendars takes longer than Slack waits) for onMeetingSuggest. A suggestion: When set to it.
+async function handleMeetingAction(token, payload){
+  const action = (payload.actions || [])[0] || {}, v = payload.view;
+  if (String(action.action_id || '').indexOf(slackMeeting.PICK) === 0) {
+    const r = await slackFetch(token, 'views.update', { view_id: v.id, hash: v.hash, view: slackMeeting.withWhen(slackMeeting.viewOf(v), Number(action.value)) });
+    if (!r.ok) logger.warn('Setting a suggested time failed', { error: r.error });
+    return null;
+  }
+  if (action.action_id !== slackMeeting.SUGGEST) return null;
+  const minutes = slackMeeting.minutesOf(v.state && v.state.values);
+  const waiting = slackMeeting.withSuggestions(slackMeeting.viewOf(v), { status: 'Looking for a time when everyone’s free for ' + minutes + ' minutes…' });
+  const r = await slackFetch(token, 'views.update', { view_id: v.id, hash: v.hash, view: waiting });
+  if (!r.ok) { logger.warn('Suggest a time: updating the form failed', { error: r.error }); return null; }
+  const meta = JSON.parse(v.private_metadata || '{}');
+  await db.collection('meetingSuggestions').add({ viewId: v.id, view: JSON.stringify(waiting), channel: String(meta.channel || ''), tz: String(meta.tz || slackMeeting.TZ),
+    minutes, by: String(payload.user && payload.user.id || ''), at: Date.now() });
+  return null;
+}
+// The form sent: checked (what to fix goes back to the form), then queued for onOneOffMeeting.
+async function handleMeetingSubmit(token, payload){
+  const m = slackMeeting.meetingOf(payload.view.state && payload.view.state.values, Date.now());
+  if (m.errors) return { response_action: 'errors', errors: m.errors };
+  const slackId = payload.user && payload.user.id;
+  const email = await emailForSlackId(slackId);
+  if (!email) return { response_action: 'errors', errors: { title: 'Sign in to BOLD.OS once first, so it knows who you are.' } };
+  const meta = JSON.parse(payload.view.private_metadata || '{}');
+  const person = (await db.collection('people').doc(String(slackId)).get()).data() || {};
+  await db.collection('oneOffMeetings').add(Object.assign({}, m, {
+    by: { email, name: person.name || email.split('@')[0], slackId }, channel: String(meta.channel || ''), channelName: String(meta.name || ''), at: Date.now() }));
+  return null;
+}
+
 async function handleInteractivity(token, payload){
   if (payload.type === 'view_submission' && payload.view && payload.view.callback_id === 'work_card') return addCardFromSlack(token, payload);
+  if (payload.type === 'view_submission' && payload.view && payload.view.callback_id === slackMeeting.CALLBACK) return handleMeetingSubmit(token, payload);
+  if (payload.type === 'block_actions' && payload.view && payload.view.callback_id === slackMeeting.CALLBACK) return handleMeetingAction(token, payload);
   // Take it to the BOLD OS, a message shortcut (functions/slack-thread.js).
   if (payload.type === 'message_action' && payload.callback_id === 'send_to_conversations') return conversationsSlack.handleShortcut(payload);
   if (payload.type !== 'block_actions') return;
@@ -1636,7 +1710,8 @@ function onProposed(collection, pageUrl){
     { document: collection + '/{slug}/proposals/{id}', secrets: [SLACK_BOT_TOKEN] },
     async function(event){
       const q = event.data && event.data.data();
-      if (!q || q.status !== 'open') return;
+      // On a branch: its people hear of the branch once (onBranchWritten), not of each page.
+      if (!q || q.status !== 'open' || q.branch) return;
       const doc = await db.collection(collection).doc(event.params.slug).get();
       // A new skill or tool has no document yet: its proposal carries the title.
       const name = (doc.exists && doc.data().title) || (q.after && q.after.title) || event.params.slug;
@@ -1715,6 +1790,7 @@ function onProposalDecided(collection, pageUrl){
       const kind = ((after || before) || {}).kind;
       if (!doc.exists && kind !== 'new' && kind !== 'delete') return;
       await resolveProposalComments(collection, event.params.slug, event.params.id, before, after);
+      if ((after || before).branch) return;   // a branch's decision is told once (onBranchWritten)
       // Its conversation (comment-conversation.js), if it has one: the decision written into it.
       const closed = proposalClosed(before, after);
       if (closed) {
@@ -1758,6 +1834,49 @@ exports.onToolProposed = onProposed('agentTools', toolUrl);
 exports.onToolProposalDecided = onProposalDecided('agentTools', toolUrl);
 exports.onGuideProposalDecided = onProposalDecided('guides', guideUrl);
 exports.onHandbookProposalDecided = onProposalDecided('handbook', handbookUrl);
+
+// A branch (functions/branches.js): the PIs and admins hear when it's opened; its author when someone else commits
+// to it; everyone who committed to it, and the PIs and admins, when it's decided or withdrawn.
+const branchUrl = (id) => SITE_URL + 'proposal.html?b=' + encodeURIComponent(id);
+exports.onBranchWritten = onDocumentWritten({ document: 'branches/{id}', secrets: [SLACK_BOT_TOKEN] }, async (event) => {
+  const before = event.data.before.exists ? event.data.before.data() : null, after = event.data.after.exists ? event.data.after.data() : null;
+  if (!after) return;
+  const id = event.params.id, token = SLACK_BOT_TOKEN.value();
+  const link = linkedTitle(slackText(after.title || 'a proposed change'), branchUrl(id)), tag = await numberTag('branches/' + id);
+  const author = String((after.by && after.by.email) || '').toLowerCase(), who = slackText((after.by && (after.by.name || after.by.email)) || 'Someone');
+  const staff = async () => (await rolesEmails('pis')).concat(await rolesEmails('admins')).map((e) => String(e).toLowerCase());
+  const pagesText = (n) => n === 1 ? '' : ' (' + n + ' pages)';
+  // A draft (Save draft) marked ready for review: as if opened now.
+  const ready = before && before.status === 'draft' && after.status === 'open';
+  if (!before || ready) {
+    // Made from a proposed change of before branches (the migration): its people heard of it then. A draft: nobody yet.
+    if (after.status !== 'open' || after.migrated) return;
+    await sendEvent(token, { key: 'proposals', emails: await staff(), excludeEmail: author,
+      headline: '🔔 ' + tag + who + ' proposed ' + link + pagesText((after.pages || []).length) + '. It needs a PI or admin to accept or decline it.' });
+    return;
+  }
+  if (before.status === 'open' && after.status !== 'open') {
+    const decider = String(after.decidedBy || '').toLowerCase(), by = slackText(after.decidedByName || after.decidedBy || 'A PI or admin');
+    const icon = after.status === 'accepted' ? '✅ ' : after.status === 'withdrawn' ? '↩️ ' : '✖️ ';
+    const people = (after.contributors || []).concat(await staff()).map((e) => String(e).toLowerCase())
+      .filter((e, i, a) => e && e !== decider && a.indexOf(e) === i);
+    // Its conversation, if it has one: the decision written into it.
+    const tref = db.collection('conversations').doc('cm-branch-' + id);
+    if ((await tref.get()).exists) {
+      const last = (await tref.collection('messages').orderBy('at', 'desc').limit(1).get()).docs[0];
+      await tref.collection('messages').add({ parent: last ? last.id : tref.id, body: '**' + after.status.charAt(0).toUpperCase() + after.status.slice(1) + '**.',
+        name: after.decidedByName || after.decidedBy || 'Someone', createdBy: decider, at: FieldValue.serverTimestamp(), source: 'proposal', votes: {} }).catch(() => {});
+      await tref.set({ replies: FieldValue.increment(1), lastAt: FieldValue.serverTimestamp() }, { merge: true }).catch(() => {});
+    }
+    await sendEvent(token, { key: 'proposal-decided', emails: people, headline: icon + tag + by + ' ' + after.status + ' ' + link + '.' });
+    return;
+  }
+  // Someone new committed to it: its author hears.
+  const added = (after.contributors || []).filter((e) => (before.contributors || []).indexOf(e) < 0);
+  if (after.status === 'open' && added.length && author && added.indexOf(author) < 0) {
+    await sendEvent(token, { key: 'proposals', emails: [author], headline: '✏️ ' + tag + 'Someone else committed to your proposed change ' + link + '.' });
+  }
+});
 
 // ---------- Tagging people ----------
 // A tag is @[Name](SlackId) in any text (mentions.js). Whoever is newly tagged in
@@ -1997,7 +2116,9 @@ function commentDigest(items, name, url){
   const at = (it, label) => '<' + url + '#c=' + encodeURIComponent(it.id) + '|' + label.replace(/\|/g, '¦') + '>';
   const line = (it) => '• ' + slackText(it.by.name || it.by.email) + (it.taggedYou ? ' tagged you' : '') + ' ' + at(it, it.proposalId ? 'on a proposed change' : it.parent ? 'replied' : 'on “' + slackText(it.quote.length > 60 ? it.quote.slice(0, 60) + '…' : it.quote) + '”') +
     ': ' + slackText(it.text.length > 140 ? it.text.slice(0, 140) + '…' : it.text);
-  return '💬 ' + (n === 1 ? 'A new comment' : n + ' new comments') + ' on ' + linkedTitle(slackText(name), url) + '\n' +
+  // The page's name links to the first of them too: the Inbox and computers open a message's first link
+  // (noteFor, slackToPlain), and should land on the comment, not the top of the page.
+  return '💬 ' + (n === 1 ? 'A new comment' : n + ' new comments') + ' on ' + linkedTitle(slackText(name), n ? url + '#c=' + encodeURIComponent(items[0].id) : url) + '\n' +
     items.slice(0, 5).map(line).join('\n') + (n > 5 ? '\n…and ' + (n - 5) + ' more.' : '');
 }
 
@@ -2067,7 +2188,7 @@ const talkItem = (id, c, extra) => Object.assign({ id, text: String(c.text || ''
 function projectTitleDoc(id, ws){
   if (!ws || !ws.title) return null;
   const out = { title: ws.title, cardId: ws.cardId || id, boardId: ws.boardId || null, group: ws.group || '',
-    meeting: ws.meeting || null, hasEvent: !!ws.eventId, eventStart: ws.eventStart || '', pausedAt: ws.pausedAt || 0,
+    meeting: ws.meeting || null, meetingMoved: ws.meetingMoved || {}, hasEvent: !!ws.eventId, eventStart: ws.eventStart || '', pausedAt: ws.pausedAt || 0,
     completedAt: ws.completedAt || 0, slackChannel: ws.slackChannel || '', memberCount: (ws.members || []).length };
   return out;
 }
@@ -2157,7 +2278,7 @@ function appliedProposal(doc, q, ctx){
     let cur = Object.assign({}, doc);
     const out = {};
     changes.forEach((c) => {
-      if (!c || c.kind === 'batch' || c.kind === 'restore') throw new HttpsError('invalid-argument', 'Unknown kind of change.');
+      if (!c || c.kind === 'batch') throw new HttpsError('invalid-argument', 'Unknown kind of change.');
       const r = appliedProposal(cur, Object.assign({ by: q.by }, c), ctx);
       cur = Object.assign({}, cur, r);
       Object.assign(out, r);
@@ -2240,6 +2361,9 @@ function appliedProposal(doc, q, ctx){
 // it, else null: the proposal applied to the BOLDiquette as it is (appliedProposal), and
 // the table read from it, as accepting it would save it (access.checkTableChange).
 async function proposedTable(path){
+  // A branch (branches/<id>): its part on the BOLDiquette, if it has one.
+  const br = /^branches\/([A-Za-z0-9]{1,40})$/.exec(String(path || ''));
+  if (br) path = 'handbook/boldiquette/proposals/' + br[1];
   const m = /^handbook\/boldiquette\/proposals\/([A-Za-z0-9]{1,40})$/.exec(String(path || ''));
   if (!m) return null;
   const [qs, ds, as] = await Promise.all([db.doc(path).get(), db.doc('handbook/boldiquette').get(), db.doc('settings/access').get()]);
@@ -2253,6 +2377,35 @@ async function proposedTable(path){
   const pages = accessLib.parseAccessTable(part.body);
   // Compared as read from the text both ways, so a table written differently isn't a change.
   return was && JSON.stringify(accessLib.parseAccessTable(was.body)) === JSON.stringify(pages) ? null : pages;
+}
+
+// What accepting proposal q (on collection/slug, its document `snap`) writes, without writing it: [{ op: 'set' |
+// 'update' | 'delete', ref, data }]; throws if it can't be accepted. Shared by decideProposal and decideBranch (a
+// branch's pages, all in one transaction). ctx: { pages: the table in force (an 'access' row), email: who accepts,
+// by: who proposed it, note, now, creating: a new skill or tool }.
+async function acceptedOps(collection, slug, snap, q, ctx){
+  const ref = db.collection(collection).doc(slug), ops = [];
+  const stamp = { changeNote: String(ctx.note || '').slice(0, 300), updatedAt: ctx.now, updatedBy: ctx.email, proposedBy: ctx.by };
+  if (q.kind === 'delete') {
+    // Its history credits whoever accepted it, then it goes.
+    return [{ op: 'update', ref, data: stamp }, { op: 'delete', ref }];
+  }
+  let fields = appliedProposal(snap.exists ? snap.data() : {}, q, { pages: ctx.pages });
+  // A tool is checked as agents get it (name, inputs, code that compiles: functions/api-tools.js).
+  if (collection === 'agentTools') {
+    try { fields = agentApi.checkTool(slug, Object.assign({}, snap.exists ? snap.data() : {}, fields)); }
+    catch (err) { throw new HttpsError('failed-precondition', 'It can’t be accepted as it is: ' + err.message); }
+  }
+  // The BOLDiquette's Who can see what: only a table the site can read, proposed by whoever
+  // can propose on the BOLDiquette; the site then enforces it (settings/access).
+  if (collection === 'handbook' && slug === 'boldiquette') {
+    const before = snap.exists ? snap.data().parts : [];
+    const table = await access.checkTableChange(before, fields.parts || before, ctx.by);
+    if (table) ops.push({ op: 'set', ref: db.collection('settings').doc('access'), data: { pages: table, updatedAt: ctx.now, updatedBy: ctx.email, proposedBy: ctx.by } });
+  }
+  if (ctx.creating) ops.push({ op: 'set', ref, data: Object.assign(fields, { name: slug, createdAt: ctx.now, createdBy: ctx.by }, stamp) });
+  else ops.push({ op: 'update', ref, data: Object.assign(fields, stamp) });
+  return ops;
 }
 
 exports.decideProposal = onCall(
@@ -2283,30 +2436,10 @@ exports.decideProposal = onCall(
       const now = Date.now();
       if (data.accept) {
         const who = (q.by && (q.by.name || q.by.email)) || '';
-        const stamp = { changeNote: String(q.note || ('Proposed by ' + who)).slice(0, 300), updatedAt: now, updatedBy: email, proposedBy: by };
-        if (q.kind === 'delete') {
-          // Its history credits whoever accepted it, then it goes.
-          tx.update(ref, stamp);
-          tx.delete(ref);
-        } else {
-          // A row of Who can see what, without the part yet, starts from the table in force.
-          const pages = q.kind === 'access' ? ((await tx.get(db.collection('settings').doc('access'))).data() || {}).pages : null;
-          let fields = appliedProposal(snap.exists ? snap.data() : {}, q, { pages });
-          // A tool is checked as agents get it (name, inputs, code that compiles: functions/api-tools.js).
-          if (data.collection === 'agentTools') {
-            try { fields = agentApi.checkTool(data.slug, Object.assign({}, snap.exists ? snap.data() : {}, fields)); }
-            catch (err) { throw new HttpsError('failed-precondition', 'It can’t be accepted as it is: ' + err.message); }
-          }
-          // The BOLDiquette's Who can see what: only PIs' and admins' changes, and only a table
-          // the site can read; the site then enforces it (settings/access).
-          if (data.collection === 'handbook' && data.slug === 'boldiquette') {
-            const before = snap.exists ? snap.data().parts : [];
-            const pages = await access.checkTableChange(before, fields.parts || before, by);
-            if (pages) tx.set(db.collection('settings').doc('access'), { pages, updatedAt: now, updatedBy: email, proposedBy: by });
-          }
-          if (creating) tx.set(ref, Object.assign(fields, { name: data.slug, createdAt: now, createdBy: by }, stamp));
-          else tx.update(ref, Object.assign(fields, stamp));
-        }
+        // A row of Who can see what, without the part yet, starts from the table in force.
+        const pages = q.kind === 'access' ? ((await tx.get(db.collection('settings').doc('access'))).data() || {}).pages : null;
+        const ops = await acceptedOps(data.collection, data.slug, snap, q, { pages, email, by, note: String(q.note || ('Proposed by ' + who)), now, creating });
+        ops.forEach((o) => { if (o.op === 'delete') tx.delete(o.ref); else tx[o.op](o.ref, o.data); });
       }
       const status = data.accept ? 'accepted' : 'declined';
       tx.update(qRef, { status, decidedBy: email, decidedByName: name, decidedAt: now });
@@ -2314,6 +2447,170 @@ exports.decideProposal = onCall(
     }).then((r) => { access.forget(); return r; });
   }
 );
+
+// ---------- Branches of the site (functions/branches.js) ----------
+const branchLib = require('./branches');
+const branchErr = (err) => { if (err instanceof branchLib.BranchError) throw new HttpsError(err.code, err.message); throw err; };
+const branchProps = (b, id) => (b.pages || []).map((p) => db.doc(p + '/proposals/' + id));
+
+// branchCommit { on?, title?, description?, target: { collection, slug }, change } → { id, num }: a commit on a page,
+// on branch `on` (not `branch`: every call carries the one the page is on, onCall takes it off). Without it, it
+// opens one (its title: `title`, else the commit's note) with this commit. Or { on?, title?, commits: [{ target,
+// change }] }: several at once, on one or more pages, all or none. `draft: true` opens it as a draft (Save draft):
+// nobody is told, and it isn't decided until it's marked ready (branchMeta { ready }).
+exports.branchCommit = onCall(async (request) => {
+  const email = signedInEmail(request).toLowerCase(), data = request.data || {};
+  const name = String(request.auth.token.name || '');
+  const asked = Array.isArray(data.commits) ? data.commits : [{ target: data.target, change: data.change }];
+  if (!asked.length || asked.length > branchLib.MAX_COMMITS) throw new HttpsError('invalid-argument', 'Between 1 and ' + branchLib.MAX_COMMITS + ' changes at once.');
+  const list = [];
+  for (const x of asked){
+    const page = branchLib.pageKey(x && x.target && x.target.collection, x && x.target && x.target.slug);
+    if (!page) throw new HttpsError('invalid-argument', 'That page can’t be changed on a branch.');
+    await access.requireAccess(email, branchLib.areaOf(page, accessLib.guideArea), 'edit');
+    let c;
+    try { c = branchLib.validChange(page, x.change); } catch (err) { branchErr(err); }
+    list.push({ page, c });
+  }
+  const pagesOf = list.map((x) => x.page).filter((p, i, all) => all.indexOf(p) === i);
+  const docs = await Promise.all(pagesOf.map((p) => db.doc(p).get()));
+  // Each page: there already, unless its first change here makes it (a new skill or tool).
+  pagesOf.forEach((p, k) => {
+    const isNew = list.filter((x) => x.page === p)[0].c.kind === 'new';
+    if (isNew ? docs[k].exists : !docs[k].exists) throw new HttpsError(isNew ? 'already-exists' : 'not-found', isNew ? 'It exists already: change it instead.' : 'That page isn’t there.');
+  });
+  const id = String(data.on || '');
+  if (id && !branchLib.ID.test(id)) throw new HttpsError('invalid-argument', 'No such branch.');
+  const bref = id ? db.collection('branches').doc(id) : db.collection('branches').doc();
+  const now = Date.now(), by = { email, name };
+  let status = data.draft === true ? 'draft' : 'open';
+  await db.runTransaction(async (tx) => {
+    const prefs = pagesOf.map((p) => db.doc(p + '/proposals/' + bref.id));
+    const [bs, ps] = await Promise.all([id ? tx.get(bref) : Promise.resolve(null), Promise.all(prefs.map((r) => tx.get(r)))]);
+    if (id) {
+      const b = bs.exists ? bs.data() : null;
+      if (!b) throw new HttpsError('not-found', 'No such branch.');
+      if (!branchLib.isOpen(b)) throw new HttpsError('failed-precondition', 'That branch has been ' + b.status + ': go back to main to propose a change.');
+      status = b.status;
+      const pages = (b.pages || []).concat(pagesOf.filter((p) => (b.pages || []).indexOf(p) < 0));
+      if (pages.length > branchLib.MAX_PAGES) throw new HttpsError('failed-precondition', 'A branch changes ' + branchLib.MAX_PAGES + ' pages at most.');
+      const contributors = (b.contributors || []).indexOf(email) >= 0 ? b.contributors : (b.contributors || []).concat([email]);
+      tx.update(bref, { pages, contributors, editedAt: now });
+    } else {
+      if (pagesOf.length > branchLib.MAX_PAGES) throw new HttpsError('failed-precondition', 'A branch changes ' + branchLib.MAX_PAGES + ' pages at most.');
+      const title = branchLib.text(data.title || list[0].c.note, branchLib.MAX_TITLE);
+      tx.set(bref, Object.assign({ title, description: branchLib.text(data.description, branchLib.MAX_DESCRIPTION), status, by, at: now, contributors: [email], pages: pagesOf, editedAt: now },
+        status === 'draft' ? { openedAsDraft: true } : {}));
+    }
+    const props = ps.map((p) => (p.exists ? p.data() : null));
+    props.forEach((p) => { if (p && p.status !== 'open' && p.status !== 'draft') throw new HttpsError('failed-precondition', 'That branch has been decided.'); });
+    list.forEach((x, i) => {
+      const k = pagesOf.indexOf(x.page);
+      try { props[k] = branchLib.withCommit(props[k], x.page, bref.id, x.c, by, now + i, status); } catch (err) { branchErr(err); }
+    });
+    props.forEach((p, k) => tx.set(prefs[k], p));
+  });
+  // Its number (#12), as everything on BOLD.OS has one: kept on it too, for its page.
+  let num = 0;
+  if (!id) {
+    num = await numberFor('branches/' + bref.id).catch(() => 0);
+    if (num) await bref.update({ num }).catch(() => {});
+  } else num = (await bref.get()).data().num || 0;
+  return { id: bref.id, num };
+});
+
+// branchMeta { id, title?, description? } (whoever has committed to it, or a PI) or { id, withdraw: true } (its
+// author, or a PI): its title and description, or withdrawn, its pages' proposals with it. { id, ready: true }
+// (whoever has committed to it, or a PI): a draft made a proposal, for a PI or admin to decide (onBranchWritten tells them).
+exports.branchMeta = onCall(async (request) => {
+  const email = signedInEmail(request).toLowerCase(), data = request.data || {}, id = String(data.id || '');
+  if (!branchLib.ID.test(id)) throw new HttpsError('invalid-argument', 'No such branch.');
+  const full = await isFullWrite(email), bref = db.collection('branches').doc(id), now = Date.now();
+  return db.runTransaction(async (tx) => {
+    const bs = await tx.get(bref), b = bs.exists ? bs.data() : null;
+    if (!b) throw new HttpsError('not-found', 'No such branch.');
+    if (data.withdraw) {
+      if (!branchLib.canWithdraw(b, email, full)) throw new HttpsError('permission-denied', b.status !== 'open' ? 'It has already been decided.' : 'Only whoever opened it, or a PI or admin, can withdraw it.');
+      const props = await Promise.all(branchProps(b, id).map((r) => tx.get(r)));
+      const closed = { status: 'withdrawn', decidedBy: email, decidedByName: String(request.auth.token.name || ''), decidedAt: now };
+      props.forEach((p) => { if (p.exists && branchLib.isOpen(p.data())) tx.update(p.ref, closed); });
+      tx.update(bref, closed);
+      return { status: 'withdrawn' };
+    }
+    if (!branchLib.isOpen(b)) throw new HttpsError('failed-precondition', 'It has already been decided.');
+    if (!full && (b.contributors || []).indexOf(email) < 0) throw new HttpsError('permission-denied', 'Only whoever has committed to it, or a PI or admin, can change this.');
+    if (data.ready) {
+      if (b.status !== 'draft') return { status: b.status };
+      const props = await Promise.all(branchProps(b, id).map((r) => tx.get(r)));
+      props.forEach((p) => { if (p.exists && p.data().status === 'draft') tx.update(p.ref, { status: 'open' }); });
+      tx.update(bref, { status: 'open', readyAt: now, readyBy: email });
+      return { status: 'open' };
+    }
+    const up = { editedAt: b.editedAt || b.at || now, metaAt: now };
+    if (typeof data.title === 'string') { up.title = branchLib.text(data.title, branchLib.MAX_TITLE); if (!up.title) throw new HttpsError('invalid-argument', 'Give it a title.'); }
+    if (typeof data.description === 'string') up.description = branchLib.text(data.description, branchLib.MAX_DESCRIPTION);
+    tx.update(bref, up);
+    return { status: 'open' };
+  });
+});
+
+// branchRebase { id, target, changes } (whoever has committed to it, or a PI): a page's part of a branch rebased on
+// main (pages/guide.js replays its commits on the page as it is now, the conflicts resolved).
+exports.branchRebase = onCall(async (request) => {
+  const email = signedInEmail(request).toLowerCase(), data = request.data || {}, id = String(data.id || '');
+  const page = branchLib.pageKey(data.target && data.target.collection, data.target && data.target.slug);
+  if (!branchLib.ID.test(id) || !page) throw new HttpsError('invalid-argument', 'No such branch.');
+  const full = await isFullWrite(email), bref = db.collection('branches').doc(id), pref = db.doc(page + '/proposals/' + id);
+  await db.runTransaction(async (tx) => {
+    const [bs, ps] = await Promise.all([tx.get(bref), tx.get(pref)]);
+    const b = bs.exists ? bs.data() : null;
+    if (!branchLib.isOpen(b)) throw new HttpsError('failed-precondition', 'It has been decided.');
+    if (!full && (b.contributors || []).indexOf(email) < 0) throw new HttpsError('permission-denied', 'Only whoever has committed to it, or a PI or admin, can rebase it.');
+    let doc;
+    try { doc = branchLib.rebased(ps.exists ? ps.data() : null, page, data.changes, Date.now()); } catch (err) { branchErr(err); }
+    tx.set(pref, doc);
+    tx.update(bref, { editedAt: doc.editedAt });
+  });
+  return { ok: true };
+});
+
+// decideBranch { id, accept, editedAt } (a PI or admin who hasn't committed to it): every page it changes, as
+// it proposes, in one go; if one can't be, none is.
+exports.decideBranch = onCall(async (request) => {
+  const email = signedInEmail(request).toLowerCase(), data = request.data || {}, id = String(data.id || '');
+  if (!branchLib.ID.test(id)) throw new HttpsError('invalid-argument', 'No such branch.');
+  const full = await isFullWrite(email), name = String(request.auth.token.name || ''), bref = db.collection('branches').doc(id);
+  return db.runTransaction(async (tx) => {
+    const bs = await tx.get(bref), b = bs.exists ? bs.data() : null;
+    if (!b) throw new HttpsError('not-found', 'No such branch.');
+    const why = branchLib.cannotDecide(b, email, full);
+    if (why) throw new HttpsError(b.status !== 'open' ? 'failed-precondition' : 'permission-denied', why);
+    if (typeof data.editedAt === 'number' && (b.editedAt || b.at || 0) !== data.editedAt) throw new HttpsError('failed-precondition', 'It has just changed. Have a look at it again.');
+    const pages = b.pages || [];
+    const [props, docs, acc] = await Promise.all([Promise.all(branchProps(b, id).map((r) => tx.get(r))), Promise.all(pages.map((p) => tx.get(db.doc(p)))), tx.get(db.collection('settings').doc('access'))]);
+    const now = Date.now(), all = [];
+    if (data.accept) {
+      const by = String((b.by && b.by.email) || '').toLowerCase();
+      for (let i = 0; i < pages.length; i++){
+        const q = props[i].exists ? props[i].data() : null;
+        if (!q || q.status !== 'open') continue;
+        const [collection, slug] = pages[i].split('/'), creating = q.kind === 'new';
+        if (creating ? docs[i].exists : !docs[i].exists) throw new HttpsError('failed-precondition', creating ? '“' + slug + '” exists already: this branch can’t make it.' : '“' + slug + '” has been deleted since.');
+        try {
+          (await acceptedOps(collection, slug, docs[i], q, { pages: (acc.data() || {}).pages, email, by, note: b.title, now, creating })).forEach((o) => all.push(o));
+        } catch (err) {
+          const page = (docs[i].exists && docs[i].data().title) || slug;
+          throw new HttpsError(err.code || 'failed-precondition', page + ': ' + (err.message || 'it can’t be accepted.'));
+        }
+      }
+    }
+    all.forEach((o) => { if (o.op === 'delete') tx.delete(o.ref); else tx[o.op](o.ref, o.data); });
+    const status = data.accept ? 'accepted' : 'declined', closed = { status, decidedBy: email, decidedByName: name, decidedAt: now };
+    props.forEach((p) => { if (p.exists && p.data().status === 'open') tx.update(p.ref, closed); });
+    tx.update(bref, closed);
+    return { status };
+  }).then((r) => { access.forget(); return r; });
+});
 
 // ---------- 2, 3, 4: card events ----------
 
@@ -2848,12 +3145,14 @@ exports.slackEvents = onRequest(
       // one Firestore write + a views.publish call; there's no automatic
       // retry for interactivity payloads on timeout, so completing before
       // responding is the only way this reliably runs at all.
+      // A form's answer to Slack (/meeting's: what to fix, shown on the form) goes back as the reply.
+      let answer = null;
       try {
-        if (!(await groupRota.slackAction(payload))) await handleInteractivity(token, payload);
+        if (!(await groupRota.slackAction(payload))) answer = await handleInteractivity(token, payload);
       } catch (err){
         logger.error('handleInteractivity threw', { error: String(err) });
       }
-      res.status(200).send('');
+      if (answer && answer.response_action) res.status(200).json(answer); else res.status(200).send('');
       return;
     }
 
@@ -3806,6 +4105,95 @@ function isCalendarLimit(err){
 }
 const CALENDAR_LIMIT_MSG = 'Google\u2019s limit for the lab\u2019s calendar was reached: BOLD.OS tries again by itself every hour.';
 const DRIVE = 'https://www.googleapis.com/drive/v3/files';
+// One date of a recurring meeting moved (functions/meeting-moves.js): its own instance in Google Calendar moved
+// (or put back), Google emailing its guests. → the moves now in Google (`eventMoved`), or null if none changed.
+// A date Google no longer has (the series changed since) is let go.
+const meetingMoves = require('./meeting-moves');
+async function syncMoves(eventId, meeting, moved, applied){
+  const todo = meetingMoves.movesToSync(meeting, moved, applied);
+  if (!todo.length) return null;
+  const out = Object.assign({}, applied || {});
+  const at = (date, time) => new Date(busy.londonMs(date, time)).toISOString();
+  for (const x of todo){
+    const id = meetingMoves.instanceId(eventId, busy.londonMs(x.orig, meeting.time));
+    try {
+      // Cancelled: that date is cancelled in Google (its guests told); restored or moved: back, at its time.
+      if (x.to.cancelled) await googleFetch('DELETE', CAL + '/' + encodeURIComponent(id) + '?sendUpdates=all');
+      else {
+        const start = busy.londonMs(x.to.date, x.to.time);
+        await googleFetch('PATCH', CAL + '/' + encodeURIComponent(id) + '?sendUpdates=all', Object.assign(x.restore ? { status: 'confirmed' } : {}, {
+          start: { dateTime: at(x.to.date, x.to.time), timeZone: PROJECT_TZ },
+          end: { dateTime: new Date(start + x.to.minutes * 60000).toISOString(), timeZone: PROJECT_TZ } }));
+      }
+    } catch (err){
+      if (err.status !== 404 && err.status !== 410) throw err;
+      logger.warn('A moved meeting date isn’t in Google Calendar any more', { orig: x.orig });
+    }
+    if ((moved || {})[x.orig]) out[x.orig] = moved[x.orig]; else delete out[x.orig];
+  }
+  return out;
+}
+
+// /meeting's invitations (handleMeetingCommand, handleMeetingSubmit): the event, from the lab's Google account.
+exports.onOneOffMeeting = onDocumentCreated({ document: 'oneOffMeetings/{id}', secrets: [SLACK_BOT_TOKEN, GOOGLE_OAUTH], timeoutSeconds: 120 }, async (event) => {
+  const d = event.data && event.data.data();
+  if (!d || d.doneAt) return;
+  const token = SLACK_BOT_TOKEN.value();
+  const tell = async (text) => {
+    const sent = d.channel ? await slackFetch(token, 'chat.postEphemeral', { channel: d.channel, user: d.by.slackId, text }) : { ok: false };
+    if (!sent.ok) await dmBySlackId(token, d.by.slackId, text, '', { raw: true });
+  };
+  // Who's in the channel now, and whoever sent it.
+  const who = await meetingInvitees(token, d.channel);
+  const emails = ((who && who.emails) || []).concat(d.by.email).filter((e, i, a) => a.indexOf(e) === i).slice(0, slackMeeting.MAX_GUESTS + 1);
+  const footer = 'Set up by ' + d.by.name + ' for ' + (d.channelName === 'this conversation' ? 'a Slack conversation' : '#' + d.channelName) + ', with /meeting on BOLD.OS.';
+  try {
+    const ev = await googleFetch('POST', CAL + '?conferenceDataVersion=1&sendUpdates=all', slackMeeting.eventOf(d, emails, 'bold-meeting-' + event.params.id, footer));
+    const meet = d.link || ev.hangoutLink || '';
+    await event.data.ref.set({ doneAt: Date.now(), eventId: ev.id, eventLink: ev.htmlLink || '', meetUrl: meet, invited: emails.length }, { merge: true });
+    await tell('📅 Invited ' + (emails.length === 1 ? 'you' : emails.length + ' people') + ' to ' + (ev.htmlLink ? linkedTitle(slackText(d.title), ev.htmlLink) : '*' + slackText(d.title) + '*') +
+      ', ' + slackMeeting.whenText(d.start, d.minutes) + (meet ? ' · ' + linkedTitle('join', meet) : '') + '. The invitations come from the lab’s Google account.');
+  } catch (err){
+    logger.warn('A meeting from /meeting failed', { id: event.params.id, error: String(err && err.message || err) });
+    await event.data.ref.set({ doneAt: Date.now(), error: String(err && err.message || err).slice(0, 300) }, { merge: true });
+    await tell(isCalendarLimit(err) ? 'Couldn’t send the invites for ' + slackText(d.title) + ': Google’s limit for the lab’s calendar was reached. Try again in a few hours.'
+      : 'Couldn’t send the invites for ' + slackText(d.title) + ' — try again.');
+  }
+});
+
+// Suggest a time on /meeting's form: everyone it invites (and whoever asked), their busy times (personBusy:
+// their free/busy calendars and BOLD.OS meetings), the best times over the next two weeks (busy.suggestOnce),
+// shown on the form. meetingSuggestions/{id} is server only.
+exports.onMeetingSuggest = onDocumentCreated({ document: 'meetingSuggestions/{id}', secrets: [SLACK_BOT_TOKEN], timeoutSeconds: 120 }, async (event) => {
+  const d = event.data && event.data.data();
+  if (!d || d.doneAt) return;
+  const token = SLACK_BOT_TOKEN.value(), view = JSON.parse(d.view);
+  let shown;
+  try {
+    const who = (await meetingInvitees(token, d.channel)) || { emails: [], names: [] };
+    const people = who.emails.map((e, i) => ({ email: e, name: who.names[i] }));
+    if (d.by && !people.length) {
+      const me = (await db.collection('people').doc(d.by).get()).data();
+      if (me && me.email) people.push({ email: String(me.email).toLowerCase(), name: me.name || me.email });
+    }
+    const now = Date.now(), to = now + 16 * 86400000;
+    const fromCalendar = [], none = [], failed = [];
+    const list = await Promise.all(people.slice(0, slackMeeting.MAX_GUESTS).map(async (p) => {
+      const b = await personBusy(p, now, to, null);
+      if (b.read) fromCalendar.push(p.name);
+      if (!b.feeds) none.push(p.name);
+      if (b.failed) failed.push(p.name);
+      return { name: p.name, busy: b.busy };
+    }));
+    const slots = busy.suggestOnce({ people: list, minutes: d.minutes, now });
+    shown = slackMeeting.withSuggestions(view, { slots, tz: d.tz, fromCalendar, none, failed });
+  } catch (err){
+    logger.warn('Suggest a time failed', { error: String(err && err.message || err) });
+    shown = slackMeeting.withSuggestions(view, { status: 'Couldn’t find a time — try again.' });
+  }
+  const r = await slackFetch(token, 'views.update', { view_id: d.viewId, view: shown });
+  await event.data.ref.set({ doneAt: Date.now(), shown: !!r.ok, error: r.ok ? '' : String(r.error || '') }, { merge: true });
+});
 
 // The Drive folder every project's files go in, made once (drive.file can only
 // reach files this app made). settings/projectDrive has no client access.
@@ -3946,7 +4334,7 @@ function projectGroupForCards(cards, completed, started){
 // What a page reads: the workspace, as stored.
 function workspaceView(ws){
   const out = {};
-  ['cardId', 'boardId', 'venues', 'title', 'group', 'completedAt', 'startedAt', 'pausedAt', 'slackChannel', 'members', 'joined', 'meeting', 'eventLink', 'meetUrl',
+  ['cardId', 'boardId', 'venues', 'title', 'group', 'completedAt', 'startedAt', 'pausedAt', 'slackChannel', 'members', 'joined', 'meeting', 'meetingMoved', 'eventStart', 'eventLink', 'meetUrl',
     'deckUrl', 'notesUrl', 'ownDeckUrl', 'ownNotesUrl', 'noDocs', 'skipped', 'slackSkipped', 'error', 'repo', 'repoName', 'repoUrl', 'ownRepoUrl', 'repoError', 'work'].forEach(function(k){ if (ws[k] !== undefined) out[k] = ws[k]; });
   out.setupMissing = setupMissing(ws);
   return out;
@@ -4236,7 +4624,9 @@ async function syncWorkspace(id, changes){
           summary: ws.title,
           description: eventDescription(ws),
           attendees: attendees([]),
-          guestsCanModify: false
+          // Every guest can change it in their own calendar (2026-11-11): Google has no co-owner of an event
+          // besides the lab's account. BOLD.OS's own changes (its time, people, title) still win at its next sync.
+          guestsCanModify: true
         }, eventConference(ws.meeting, 'bold-' + id + '-' + Date.now()), eventTimes(ws.meeting)));
         patch.eventId = ev.id; patch.eventLink = ev.htmlLink; patch.meetUrl = ws.meeting.link || ev.hangoutLink || '';
         patch.eventMeeting = ws.meeting; patch.eventStart = seriesStart(ev);
@@ -4250,7 +4640,7 @@ async function syncWorkspace(id, changes){
         ['eventId', 'eventLink', 'meetUrl', 'eventMeeting', 'eventPausedAt', 'eventStart'].forEach(function(k){ delete ws[k]; });
       } else if (ws.eventId){
         const ev = await googleFetch('GET', CAL + '/' + ws.eventId);
-        const change = {};
+        const change = {}, timesChanged = !sameMeetingTimes(ws.eventMeeting, ws.meeting);
         const want = attendees(ev.attendees);
         if (JSON.stringify(want.map(function(a){ return a.email; })) !== JSON.stringify((ev.attendees || []).map(function(a){ return a.email; }))) change.attendees = want;
         if (ev.summary !== ws.title) change.summary = ws.title;
@@ -4259,6 +4649,7 @@ async function syncWorkspace(id, changes){
         // A new time moves the series; a new end date or a pause only changes how long it runs.
         if (!sameMeetingTimes(ws.eventMeeting, ws.meeting)) Object.assign(change, eventTimes(ws.meeting, ws.pausedAt));
         else if ((ws.eventMeeting.until || '') !== (ws.meeting.until || '') || (ws.pausedAt || 0) !== (ws.eventPausedAt || 0)) change.recurrence = meetingRecurrence(ws.meeting, ws.pausedAt);
+        if (ev.guestsCanModify !== true) change.guestsCanModify = true;   // one made before 2026-11-11 (emails nobody)
         Object.assign(change, conferenceChange(ev, ws.meeting, 'bold-' + id + '-' + Date.now()));
         let now = ev;
         if (Object.keys(change).length){
@@ -4267,6 +4658,12 @@ async function syncWorkspace(id, changes){
         } else if (!ws.eventStart && seriesStart(ev)){ patch.eventStart = seriesStart(ev); await save(); }
         const url = ws.meeting.link || now.hangoutLink || '';
         if (url !== (ws.meetUrl || '')){ patch.meetUrl = url; await save(); }
+        // Its dates moved one by one (a new time for all of them leaves none moved).
+        if (!ws.pausedAt){
+          const moves = await syncMoves(ws.eventId, ws.meeting, ws.meetingMoved, timesChanged ? {} : ws.eventMoved);
+          if (moves) { patch.eventMoved = moves; await save(); }
+          else if (timesChanged && ws.eventMoved) { patch.eventMoved = FieldValue.delete(); await save(); }
+        }
       }
       patch.error = FieldValue.delete(); patch.calendarLimitAt = FieldValue.delete();
     } catch (err){
@@ -5119,7 +5516,8 @@ async function contentWork(email, person, level){
   // All of them, filtered here: a few hundred at most, and no collection-group index needed.
   const docs = (await db.collectionGroup('proposals').get()).docs.filter(function(d){
     const q = d.data();
-    return q.status === 'open' || (q.decidedAt || 0) >= after;
+    // A branch's pages are listed as the branch, below.
+    return !q.branch && (q.status === 'open' || (q.decidedAt || 0) >= after);
   });
   const titles = {}, mayView = {};
   const items = [];
@@ -5144,6 +5542,25 @@ async function contentWork(email, person, level){
       url: place.url + proposalAnchor(collection, d.id), by: person(q.by && q.by.email, q.by && q.by.name) };
     if (q.status === 'open') Object.assign(item, { column: 'review', state: 'open', since: q.editedAt || q.at || 0, on: [], waiting: PIS_ADMINS });
     else Object.assign(item, { column: 'done', state: q.status, since: q.decidedAt || 0, on: q.decidedBy ? [person(q.decidedBy, q.decidedByName)] : [] });
+    items.push(item);
+  }
+  // Branches (functions/branches.js): one each, seen by whoever can see every page it changes.
+  // Not drafts (Save draft): nobody's asked to look at them yet, nor one withdrawn as a draft.
+  const branches = (await db.collection('branches').get()).docs.filter((d) => { const b = d.data(); return b.status !== 'draft' && !(b.openedAsDraft && !b.readyAt) && (b.status === 'open' || (b.decidedAt || 0) >= after); });
+  for (const d of branches){
+    const b = d.data(), pages = b.pages || [];
+    let sees = !!pages.length;
+    for (const p of pages){
+      const area = branchLib.areaOf(p, require('./access').guideArea);
+      if (!(area in mayView)) mayView[area] = await access.can(email, area, level === 'edit' ? 'edit' : 'view');
+      if (!mayView[area]) { sees = false; break; }
+    }
+    if (!sees) continue;
+    const item = { source: 'content', type: 'content', kind: 'proposal', ref: d.ref.path, title: String(b.title || 'A proposed change'),
+      url: branchUrl(d.id), by: person(b.by && b.by.email, b.by && b.by.name), targets: pages,
+      mine: (b.contributors || []).indexOf(String(email || '').toLowerCase()) >= 0 };
+    if (b.status === 'open') Object.assign(item, { column: 'review', state: 'open', since: b.editedAt || b.at || 0, on: [], waiting: PIS_ADMINS });
+    else Object.assign(item, { column: 'done', state: b.status, since: b.decidedAt || 0, on: b.decidedBy ? [person(b.decidedBy, b.decidedByName)] : [] });
     items.push(item);
   }
   return items;
@@ -5399,15 +5816,20 @@ exports.branches = onCall(
   { timeoutSeconds: 60 },
   async (request) => {
     const email = callerEmail(request);
-    const open = (await contentWork(email, workPerson(await workNames()), 'view')).filter((x) => x.state === 'open');
+    // Branches of the site only (functions/branches.js): every proposal is one since 2026-11-11.
+    const open = (await contentWork(email, workPerson(await workNames()), 'view')).filter((x) => x.state === 'open' && /^branches\//.test(x.ref));
     const nums = await numbersOf(open.map((x) => x.ref));
     const out = [];
     for (const x of open){
-      const b = { ref: x.ref, num: nums[x.ref] || 0, title: x.title, url: String(x.url || '').replace(/#.*$/, ''), by: (x.by && x.by.name) || '', since: x.since || 0 };
+      const b = { ref: x.ref, num: nums[x.ref] || 0, title: x.title, url: String(x.url || '').replace(/#.*$/, ''), by: (x.by && x.by.name) || '', since: x.since || 0, targets: x.targets || [], mine: !!x.mine };
       try { const pages = await proposedTable(x.ref); if (pages) b.pages = pages; }
       catch (err) { logger.warn('A branch’s table couldn’t be worked out', { ref: x.ref, error: String(err && err.message || err) }); }
       out.push(b);
     }
+    // Your drafts too (Save draft), for the branch you're on: nobody else's.
+    const drafts = (await db.collection('branches').where('contributors', 'array-contains', email).get()).docs.filter((d) => d.data().status === 'draft');
+    const dnums = await numbersOf(drafts.map((d) => d.ref.path));
+    drafts.forEach((d) => { const b = d.data(); out.push({ ref: d.ref.path, num: b.num || dnums[d.ref.path] || 0, title: b.title || '', url: branchUrl(d.id), by: (b.by && b.by.name) || '', since: b.editedAt || b.at || 0, targets: b.pages || [], mine: true, draft: true }); });
     return { branches: out.sort((a, b) => b.since - a.since) };
   }
 );
@@ -5900,7 +6322,7 @@ async function syncStudyMeeting(email){
     const want = !!s.meeting && !(s.pausedAt && !s.eventId);
     if (want && !s.eventId){
       const ev = await googleFetch('POST', CAL + '?conferenceDataVersion=1&sendUpdates=all', Object.assign({
-        summary, description, attendees: attendees([]), guestsCanModify: false
+        summary, description, attendees: attendees([]), guestsCanModify: true   // every guest can change it, as a project's
       }, eventConference(s.meeting, 'bold-study-' + crypto.randomBytes(6).toString('hex')), eventTimes(s.meeting)));
       Object.assign(patch, { eventId: ev.id, eventLink: ev.htmlLink, meetUrl: s.meeting.link || ev.hangoutLink || '', eventMeeting: s.meeting, eventStart: seriesStart(ev) });
     } else if (!want && s.eventId){
@@ -5908,13 +6330,14 @@ async function syncStudyMeeting(email){
       ['eventId', 'eventLink', 'meetUrl', 'eventMeeting', 'eventPausedAt', 'eventStart'].forEach(function(k){ patch[k] = FieldValue.delete(); });
     } else if (s.eventId){
       const ev = await googleFetch('GET', CAL + '/' + s.eventId);
-      const change = {};
+      const change = {}, timesChanged = !sameMeetingTimes(s.eventMeeting, s.meeting);
       const want = attendees(ev.attendees);
       if (JSON.stringify(want.map(function(a){ return a.email; })) !== JSON.stringify((ev.attendees || []).map(function(a){ return a.email; }))) change.attendees = want;
       if (ev.summary !== summary) change.summary = summary;
       if (ev.description !== description) change.description = description;
       if (!sameMeetingTimes(s.eventMeeting, s.meeting)) Object.assign(change, eventTimes(s.meeting, s.pausedAt));
       else if ((s.eventMeeting.until || '') !== (s.meeting.until || '') || (s.pausedAt || 0) !== (s.eventPausedAt || 0)) change.recurrence = meetingRecurrence(s.meeting, s.pausedAt);
+      if (ev.guestsCanModify !== true) change.guestsCanModify = true;
       Object.assign(change, conferenceChange(ev, s.meeting, 'bold-study-' + crypto.randomBytes(6).toString('hex')));
       let now = ev;
       if (Object.keys(change).length){
@@ -5923,6 +6346,10 @@ async function syncStudyMeeting(email){
       } else if (!s.eventStart && seriesStart(ev)) patch.eventStart = seriesStart(ev);
       const url = s.meeting.link || now.hangoutLink || '';
       if (url !== (s.meetUrl || '')) patch.meetUrl = url;
+      if (!s.pausedAt){
+        const moves = await syncMoves(s.eventId, s.meeting, s.meetingMoved, timesChanged ? {} : s.eventMoved);
+        if (moves) patch.eventMoved = moves; else if (timesChanged && s.eventMoved) patch.eventMoved = FieldValue.delete();
+      }
     }
     patch.error = FieldValue.delete(); patch.calendarLimitAt = FieldValue.delete();
   } catch (err){
@@ -5935,25 +6362,37 @@ async function syncStudyMeeting(email){
 }
 
 // ---------- Free/busy calendars and suggested meeting times (#323, 2026-11-11) ----------
-// Each person may give a free/busy calendar link (profile › Linked accounts): busyFeeds/{email}
-// { url, at, checkedAt }, server only (Google's public address has their email in it). Only when
-// they're busy is read from it (functions/busy.js), never what, and nothing of it is kept.
-// busyFeed: { action: 'get' } → { url, at } | {}; 'set' { url } → { url, busy: how many busy times in
-// the next 4 weeks } (read once, so a link that doesn't work isn't saved); 'clear'.
+// Each person may give free/busy calendar links (profile › Linked accounts), several (Google and Outlook,
+// say; up to 5): busyFeeds/{email} { feeds: [{ id, url, name (the calendar's own), at, checkedAt }] } (busy.feedsOf also reads the one
+// { url } of before), server only (Google's public address has their email in it). Only when they're busy
+// is read from them (functions/busy.js), never what, and nothing of it is kept.
+// busyFeed: { action: 'get' } → { feeds: [{ id, url, at }] }; 'set' { url } adds one → { feeds, url, busy: how
+// many busy times in the next 4 weeks } (read once, so a link that doesn't work isn't saved); 'clear' { id }
+// removes one (no id: all).
 const busy = require('./busy');
 exports.busyFeed = onCall({ timeoutSeconds: 30 }, async (request) => {
   const email = callerEmail(request), data = request.data || {};
   const ref = db.collection('busyFeeds').doc(email);
-  if (data.action === 'get'){ const d = await ref.get(); return d.exists ? { url: d.data().url, at: d.data().at || 0 } : {}; }
-  if (data.action === 'clear'){ await ref.delete(); return {}; }
+  const shown = (fs) => fs.map((f) => ({ id: f.id, url: f.url, name: f.name || '', at: f.at || 0 }));
+  const feeds = busy.feedsOf((await ref.get()).data());
+  // url, at: the first, as the profile read it before there could be several (until that page is gone).
+  if (data.action === 'get') return Object.assign({ feeds: shown(feeds) }, feeds[0] ? { url: feeds[0].url, at: feeds[0].at || 0 } : {});
+  if (data.action === 'clear'){
+    const left = data.id ? feeds.filter((f) => f.id !== String(data.id)) : [];
+    if (left.length) await ref.set({ feeds: left }); else await ref.delete();
+    return { feeds: shown(left) };
+  }
   if (data.action !== 'set') throw new HttpsError('invalid-argument', 'Unknown action.');
   const url = busy.okFeedUrl(data.url);
   if (!url) throw new HttpsError('invalid-argument', 'Give a Google, Outlook or iCloud calendar (iCal) address, starting with https:// or webcal://.');
+  if (feeds.some((f) => f.url === url)) throw new HttpsError('already-exists', 'That calendar is added already.');
+  if (feeds.length >= busy.MAX_FEEDS) throw new HttpsError('resource-exhausted', 'Up to ' + busy.MAX_FEEDS + ' calendars: remove one first.');
   let text;
   try { text = await busy.fetchIcs(url); } catch (err){ throw new HttpsError('failed-precondition', err.message); }
   const now = Date.now(), n = busy.busyFrom(text, now, now + 28 * 86400000).length;
-  await ref.set({ url, at: now, checkedAt: now });
-  return { url, busy: n };
+  const all = feeds.concat({ id: Math.random().toString(36).slice(2, 10), url, name: busy.calendarName(text), at: now, checkedAt: now });
+  await ref.set({ feeds: all });
+  return { feeds: shown(all), url, busy: n };
 });
 
 // meetingTimes: { id, board?, minutes, every } → { slots: [{ day, time, free, of, clash: [{ name, times }] }],
@@ -5961,6 +6400,32 @@ exports.busyFeed = onCall({ timeoutSeconds: 30 }, async (request) => {
 // Counted: the project's Authors (its People get the invitation, and aren't counted), each from their
 // free/busy calendar if they gave one, and from the meetings BOLD.OS knows they have: their other
 // projects', their studies' and the series they joined. Over its next 4 dates, weekdays 09:00–18:00 London (busy.suggest).
+// One person's busy times, now → to: their free/busy calendars (busy in any is busy) and the meetings BOLD.OS
+// knows they have (their projects', but `skipPid`'s, their studies', the series they joined) →
+// { busy: merged [[start, end]], feeds: how many calendars, read: how many read, failed: how many not }.
+async function personBusy(a, now, to, skipPid){
+  const list = [];
+  const [feed, wsSnap, stSnap, seSnap] = await Promise.all([
+    db.collection('busyFeeds').doc(a.email).get(),
+    db.collection('projectWorkspaces').where('members', 'array-contains', a.email).get(),
+    db.collection('studies').where('everyone', 'array-contains', a.email).get(),
+    db.collection('eventSeries').where('joined', 'array-contains', a.email).get()
+  ]);
+  wsSnap.docs.concat(stSnap.docs, seSnap.docs).forEach(function(d){
+    const w = d.data();
+    if (d.ref.parent.id === 'projectWorkspaces' && d.id === skipPid) return;
+    if (!w.meeting || w.pausedAt || w.completedAt) return;
+    busy.meetingBusy(w.meeting, now, to, String(w.eventStart || '').slice(0, 10), w.meetingMoved).forEach(function(x){ list.push(x); });
+  });
+  const feeds = busy.feedsOf(feed.data());
+  let read = 0, failed = 0;
+  for (const f of feeds){
+    try { busy.busyFrom(await busy.fetchIcs(f.url), now, to).forEach(function(x){ list.push(x); }); read++; }
+    catch (err){ failed++; logger.warn('A free/busy calendar couldn’t be read', { error: String(err && err.message || err) }); }
+  }
+  return { busy: busy.merge(list), feeds: feeds.length, read, failed };
+}
+
 exports.meetingTimes = onCall({ timeoutSeconds: 60 }, async (request) => {
   const email = callerEmail(request), data = request.data || {};
   const id = String(data.id || ''), boardId = data.board ? String(data.board) : null;
@@ -5981,35 +6446,74 @@ exports.meetingTimes = onCall({ timeoutSeconds: 60 }, async (request) => {
   const now = Date.now(), to = now + (4 * every + 1) * 7 * 86400000;
   const fromCalendar = [], boldOnly = [], failed = [];
   const people = await Promise.all(authors.map(async function(a){
-    const list = [];
-    const [feed, wsSnap, stSnap, seSnap] = await Promise.all([
-      db.collection('busyFeeds').doc(a.email).get(),
-      db.collection('projectWorkspaces').where('members', 'array-contains', a.email).get(),
-      db.collection('studies').where('everyone', 'array-contains', a.email).get(),
-      db.collection('eventSeries').where('joined', 'array-contains', a.email).get()
-    ]);
-    // The meetings BOLD.OS knows of, but this project's own.
-    wsSnap.docs.concat(stSnap.docs, seSnap.docs).forEach(function(d){
-      const w = d.data();
-      if (d.ref.parent.id === 'projectWorkspaces' && d.id === pid) return;
-      if (!w.meeting || w.pausedAt || w.completedAt) return;
-      busy.meetingBusy(w.meeting, now, to, String(w.eventStart || '').slice(0, 10)).forEach(function(x){ list.push(x); });
-    });
-    if (feed.exists){
-      try {
-        busy.busyFrom(await busy.fetchIcs(feed.data().url), now, to).forEach(function(x){ list.push(x); });
-        fromCalendar.push(a.name);
-        feed.ref.update({ checkedAt: now }).catch(function(){});
-      } catch (err){
-        logger.warn('meetingTimes: a free/busy calendar couldn’t be read', { error: String(err && err.message || err) });
-        failed.push(a.name);
-      }
-    } else boldOnly.push(a.name);
-    return { name: a.name, busy: busy.merge(list) };
+    const p = await personBusy(a, now, to, pid);
+    if (p.read) fromCalendar.push(a.name);
+    if (!p.feeds) boldOnly.push(a.name);
+    if (p.failed) failed.push(a.name);
+    return { name: a.name, busy: p.busy };
   }));
   const slots = busy.suggest({ people, minutes, every, today: todayIsoLondon() })
     .map(function(s){ return Object.assign(s, { of: people.length }); });
   return { slots, fromCalendar, boldOnly, failed };
+});
+
+// moveMeeting (the Calendar, 2026-11-11): a recurring meeting changed from the Calendar, dragged or edited, a
+// project's, a supervision or an event series'. { kind: 'project' | 'study' | 'series', id (the project's card,
+// the student's email, the series), board?, scope: 'series' (every date: { day, time, minutes }) or 'once' (one
+// date, `date`, moved to { date, time, minutes }, or cancelled: { cancelled: true }: meeting-moves.js) } → { ok, error? }.
+// Who may: as on each one's own page: a project's submitter, authors, PIs and admins; the student and the people
+// in their studies; a series' organisers, PIs and admins. Not while paused. Google emails the guests the change.
+exports.moveMeeting = onCall({ timeoutSeconds: 120, secrets: [GOOGLE_OAUTH, GITHUB_APP, SLACK_BOT_TOKEN] }, async (request) => {
+  const email = callerEmail(request), data = request.data || {};
+  const kind = String(data.kind || ''), id = String(data.id || ''), scope = data.scope === 'once' ? 'once' : 'series';
+  let ref, doc, sync;
+  if (kind === 'project') {
+    const boardId = data.board ? String(data.board) : null;
+    if (!validSlug(id) || (boardId && !validSlug(boardId))) throw new HttpsError('invalid-argument', 'No project given.');
+    const cardSnap = await cardRefFor(id, boardId).get();
+    if (!cardSnap.exists) throw new HttpsError('not-found', 'That project isn’t there any more.');
+    const pid = projectIdOf(cardSnap.data(), id);
+    await requireSeesProject(email, pid);
+    if (!(await canEditCard(email, cardSnap.data()))) throw new HttpsError('permission-denied', 'Only the project’s submitter, authors, PIs and admins can change its meeting.');
+    ref = db.collection('projectWorkspaces').doc(pid);
+    sync = (meeting) => syncWorkspace(pid, meeting ? { meeting } : {});
+  } else if (kind === 'study') {
+    ref = db.collection('studies').doc(id.toLowerCase());
+    const s = (await ref.get()).data();
+    if (!s) throw new HttpsError('not-found', 'That meeting isn’t there any more.');
+    const involved = [ref.id].concat(s.everyone || [], (s.people || []).map((p) => p.email)).map((e) => String(e || '').toLowerCase());
+    if (involved.indexOf(email) < 0 && !(await isFullWrite(email))) throw new HttpsError('permission-denied', 'Only the student and the people in their studies can change their meeting.');
+    sync = () => syncStudyMeeting(ref.id);
+  } else if (kind === 'series') {
+    if (!validSlug(id)) throw new HttpsError('invalid-argument', 'No meeting given.');
+    ref = db.collection('eventSeries').doc(id);
+    const x = (await ref.get()).data();
+    if (!x) throw new HttpsError('not-found', 'That meeting isn’t there any more.');
+    if ((x.organisers || []).map((e) => String(e).toLowerCase()).indexOf(email) < 0 && !(await isFullWrite(email))) throw new HttpsError('permission-denied', 'Only its organisers, PIs and admins can change it.');
+    sync = () => labSeries.syncSeries(id);
+  } else throw new HttpsError('invalid-argument', 'Which meeting?');
+  doc = (await ref.get()).data() || {};
+  if (!doc.meeting) throw new HttpsError('failed-precondition', 'It has no meeting.');
+  if (doc.pausedAt) throw new HttpsError('failed-precondition', 'It’s paused: resume it first.');
+  const to = data.to || {};
+  let out;
+  if (scope === 'series') {
+    const meeting = normalizeMeeting(Object.assign({}, doc.meeting, { day: to.day || doc.meeting.day, time: to.time || doc.meeting.time, minutes: to.minutes || doc.meeting.minutes }));
+    if (meeting.error) throw new HttpsError('invalid-argument', meeting.error);
+    // Every date at the new time: none stays moved.
+    await ref.set({ meeting, meetingMoved: FieldValue.delete(), movedTo: FieldValue.delete() }, { merge: true });
+    out = await sync(meeting);
+  } else {
+    const today = todayIsoLondon();
+    // Cancelled ({ cancelled: true }), or moved.
+    const move = to.cancelled ? (meetingMoves.isOccurrence(doc.meeting, doc.eventStart || '', String(data.date || '')) && String(data.date) >= today ? { cancelled: true } : { error: 'That isn’t one of its coming dates.' })
+      : meetingMoves.normalizeMove(doc.meeting, doc.eventStart || '', String(data.date || ''), to, today);
+    if (move.error) throw new HttpsError('invalid-argument', move.error);
+    const moved = meetingMoves.withMove(doc.meetingMoved, doc.meeting, String(data.date), move, today);
+    await ref.set({ meetingMoved: moved, movedTo: meetingMoves.movedTo(moved) }, { merge: true });
+    out = await sync(null);
+  }
+  return { ok: true, error: (out && out.error) || '' };
 });
 
 // The profile's Studies tab, for the caller's own studies:
@@ -6634,7 +7138,8 @@ TRACKED.forEach((c) => { exports['history' + c.charAt(0).toUpperCase() + c.slice
 // Group meeting rota. Presenter eligibility follows BOLD.OS membership category.
 const groupRota = require('./group-rota')({
   db, admin, HttpsError, onCall, onSchedule, signedInEmail, rolesEmails,
-  requireAccess: access.requireAccess, seesEvent: access.seesIt, pilotSlack, botToken: SLACK_BOT_TOKEN, logger
+  requireAccess: access.requireAccess, seesEvent: access.seesIt, groupFor: access.groupFor,
+  isFullWrite, viewingAs, pilotSlack, botToken: SLACK_BOT_TOKEN, logger
 });
 Object.keys(groupRota).filter(k => k !== 'slackAction' && k !== 'slackCommand' && k !== '_internal').forEach(k => { exports[k] = groupRota[k]; });
 // ---------- Joining BOLD: requests, approval, the welcome email ----------
@@ -8813,7 +9318,7 @@ const agentApi = require('./api')({ access, db, admin, onRequest, onCall, HttpsE
   tellPerson: (email, text, key) => sendEvent(SLACK_BOT_TOKEN.value(), { key, emails: [email], headline: text }),
   slackText, linkedTitle, joinPageUrl, skillMd, onSchedule,
   callables: () => ({ projectWorkspace: exports.projectWorkspace, projectWork: exports.projectWork, projectChannel: exports.projectChannel, introRequest: exports.introRequest, studyRequest: exports.studyRequest,
-    letterRequest: exports.letterRequest, decideProposal: exports.decideProposal, groupRequest: exports.groupRequest, setMyInviter: exports.setMyInviter,
+    letterRequest: exports.letterRequest, decideProposal: exports.decideProposal, branchCommit: exports.branchCommit, branchMeta: exports.branchMeta, decideBranch: exports.decideBranch, groupRequest: exports.groupRequest, setMyInviter: exports.setMyInviter,
     confirmJoinInvite: exports.confirmJoinInvite, decideJoinRequest: exports.decideJoinRequest, joinChanges: exports.joinChanges, myRequests: exports.myRequests, eventSeries: exports.eventSeries, profilePhoto: exports.profilePhoto, commentConversation: exports.commentConversation }) });
 exports.apiTokens = agentApi.apiTokens;
 exports.boldApi = agentApi.boldApi;
@@ -8821,7 +9326,7 @@ exports.boldApi = agentApi.boldApi;
 exports.calendarFeed = agentApi.calendarFeed;
 // Recurring lab meetings (series.html, Events): functions/series.js.
 const labSeries = require('./series')({ db, onCall, onDocumentWritten, HttpsError, logger, callerEmail, isFullWrite, access, rolesEmails,
-  googleFetch, CAL, calendarUpdates, isCalendarLimit, CALENDAR_LIMIT_MSG, eventConference, eventTimes, conferenceChange, meetingRecurrence, sameMeetingTimes, seriesStart,
+  googleFetch, syncMoves, CAL, calendarUpdates, isCalendarLimit, CALENDAR_LIMIT_MSG, eventConference, eventTimes, conferenceChange, meetingRecurrence, sameMeetingTimes, seriesStart,
   normalizeMeeting, googleAddressesFor, groupOf, tellStaff, slackText, linkedTitle, SITE_URL, GOOGLE_OAUTH, SLACK_BOT_TOKEN, FieldValue, crypto,
   onSchedule, tellPeople: (emails, text, key) => sendEvent(SLACK_BOT_TOKEN.value(), { key, emails, headline: text }) });
 exports.eventSeries = labSeries.eventSeries;
@@ -8876,23 +9381,29 @@ function meetingStartsSoon(m, start, todayIso, nowHm){
 exports.meetingReminders = onSchedule({ schedule: '*/5 * * * *', timeZone: PROJECT_TZ }, async function(){
   const today = todayIsoLondon(), now = nowHmLondon();
   const code = WEEKDAYS[(new Date(today + 'T00:00:00Z').getUTCDay() + 6) % 7];
-  const [wsSnap, seriesSnap, studySnap] = await Promise.all([
-    db.collection('projectWorkspaces').where('meeting.day', '==', code).get(),
-    db.collection('eventSeries').where('meeting.day', '==', code).get(),
-    db.collection('studies').where('meeting.day', '==', code).get(),
-  ]);
+  // On today's weekday, or with a date moved to today (meeting-moves.js), each once.
+  const both = async (col) => {
+    const [a, b] = await Promise.all([db.collection(col).where('meeting.day', '==', code).get(), db.collection(col).where('movedTo', 'array-contains', today).get()]);
+    const seen = new Set();
+    return { docs: a.docs.concat(b.docs).filter((d) => !seen.has(d.id) && seen.add(d.id)) };
+  };
+  const [wsSnap, seriesSnap, studySnap] = await Promise.all([both('projectWorkspaces'), both('eventSeries'), both('studies')]);
   const due = [];
   wsSnap.docs.forEach((d) => { const w = d.data();
-    if (w.eventId && !w.pausedAt && w.group !== 'completed') due.push({ key: 'project-' + d.id, m: w.meeting, start: w.eventStart, title: w.title || 'Your project', to: w.members || [], join: w.meetUrl || w.eventLink || '', href: projectPageUrl(w.cardId || d.id, w.boardId) });
+    if (w.eventId && !w.pausedAt && w.group !== 'completed') due.push({ key: 'project-' + d.id, m: w.meeting, moved: w.meetingMoved, start: w.eventStart, title: w.title || 'Your project', to: w.members || [], join: w.meetUrl || w.eventLink || '', href: projectPageUrl(w.cardId || d.id, w.boardId) });
   });
   seriesSnap.docs.forEach((d) => { const x = d.data();
-    if (x.eventId && !x.pausedAt && !x.hidden && x.kind !== 'editions') due.push({ key: 'series-' + d.id, m: x.meeting, start: x.eventStart, title: x.title || 'A meeting', to: x.guests || [], join: x.meetUrl || x.eventLink || '', href: SITE_URL + 'series.html?series=' + encodeURIComponent(d.id) });
+    if (x.eventId && !x.pausedAt && !x.hidden && x.kind !== 'editions') due.push({ key: 'series-' + d.id, m: x.meeting, moved: x.meetingMoved, start: x.eventStart, title: x.title || 'A meeting', to: x.guests || [], join: x.meetUrl || x.eventLink || '', href: SITE_URL + 'series.html?series=' + encodeURIComponent(d.id) });
   });
   studySnap.docs.forEach((d) => { const x = d.data();
-    if (x.eventId && !x.pausedAt) due.push({ key: 'study-' + d.id, m: x.meeting, start: x.eventStart, title: (x.name || d.id) + '\u2019s ' + (x.degree === 'Master student' ? 'Master' : 'PhD') + ' meeting', to: [d.id].concat((x.people || []).map((p) => p.email)), join: x.meetUrl || x.eventLink || '', href: SITE_URL + 'calendar.html' });
+    if (x.eventId && !x.pausedAt) due.push({ key: 'study-' + d.id, m: x.meeting, moved: x.meetingMoved, start: x.eventStart, title: (x.name || d.id) + '\u2019s ' + (x.degree === 'Master student' ? 'Master' : 'PhD') + ' meeting', to: [d.id].concat((x.people || []).map((p) => p.email)), join: x.meetUrl || x.eventLink || '', href: SITE_URL + 'calendar.html' });
   });
   for (const x of due){
-    const left = meetingStartsSoon(x.m, x.start, today, now);
+    // Today's date of it, moved or not: as a meeting of its own today.
+    const t = x.m && meetingMoves.occurrences(x.m, x.start, x.moved, today, today)[0];
+    if (!t) continue;
+    x.m = Object.assign({}, x.m, { day: code, time: t.time, minutes: t.minutes, every: 1 });
+    const left = meetingStartsSoon(x.m, '', today, now);
     if (!left || !x.to.length) continue;
     // Once per meeting and day, however many runs see it.
     try { await db.collection('meetingReminders').doc(x.key + '-' + today + '-' + x.m.time.replace(':', '')).create({ at: Date.now(), to: x.to.length }); }
@@ -8924,14 +9435,17 @@ Object.keys(partNotes).forEach((k) => { exports[k] = partNotes[k]; });
 exports.mcpSandbox = require('./sandbox')({ onRequest, logger }).mcpSandbox;
 // Claude reviews each proposed tool for whoever decides (functions/reviewer.js); needs ANTHROPIC_API_KEY.
 const ANTHROPIC_API_KEY = defineSecret('ANTHROPIC_API_KEY');
+// Sofya, BOLD's own LLM (llm.bold-lab.ai, functions/sofya.js): its key, set with firebase functions:secrets:set.
+const BOLD_LLM_KEY = defineSecret('BOLD_LLM_KEY');
 exports.reviewMcpChange = require('./reviewer')({ db, onDocumentWritten, logger, ANTHROPIC_API_KEY, SLACK_BOT_TOKEN, slackText, linkedTitle, SITE_URL,
   tellStaff }).reviewMcpChange;
 // BOLD LLM, the home letter and Talking to BOLD (functions/bold-llm.js): Claude until Sofya runs, reading as
 // each person through the agents' API (letterInputs, its reading tools).
-const boldLlm = require('./bold-llm')({ db, admin, logger, onCall, onSchedule, HttpsError, callerEmail, access, ANTHROPIC_API_KEY,
+const boldLlm = require('./bold-llm')({ db, admin, logger, onCall, onSchedule, onDocumentWritten, HttpsError, callerEmail, access, ANTHROPIC_API_KEY, BOLD_LLM_KEY,
   letterInputs: agentApi.letterInputs, chatTools: agentApi.chatTools, runChatTool: agentApi.runChatTool });
 exports.writeHomeLetters = boldLlm.writeHomeLetters;
 exports.homeLetter = boldLlm.homeLetter;
+exports.onLetterJob = boldLlm.onLetterJob;
 
 exports._internal = { replaceEmail, accountEmailsBySlackId, calendarUpdates, isCalendarLimit, meetingStartsSoon,
   slackImagesOf, slackToPlain, pingText, bugReportOf, bugNotes, bugTitle,

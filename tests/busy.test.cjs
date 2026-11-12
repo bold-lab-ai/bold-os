@@ -93,3 +93,44 @@ test('only Google, Outlook and iCloud calendar links', () => {
   assert.strictEqual(B.okFeedUrl('https://calendar.google.com.evil.example/x.ics'), '');
   assert.strictEqual(B.okFeedUrl('https://calendar.google.com:8443/x.ics'), '');
 });
+
+test('Google Calendar’s share and embed links become the calendar’s public iCal address', () => {
+  const cid = Buffer.from('someone@example.org').toString('base64').replace(/=+$/, '');
+  const ical = 'https://calendar.google.com/calendar/ical/someone%40example.org/public/basic.ics';
+  assert.strictEqual(B.okFeedUrl('https://calendar.google.com/calendar/u/0?cid=' + cid), ical);
+  assert.strictEqual(B.okFeedUrl('https://calendar.google.com/calendar/embed?src=someone%40example.org&ctz=Europe%2FLondon'), ical);
+  assert.strictEqual(B.okFeedUrl('https://calendar.google.com/calendar/r?cid=someone@example.org'), ical);
+  // An iCal address stays as it is; a link with no calendar in it too.
+  assert.strictEqual(B.okFeedUrl('https://calendar.google.com/calendar/ical/x%40y.org/private-abc/basic.ics'), 'https://calendar.google.com/calendar/ical/x%40y.org/private-abc/basic.ics');
+  assert.strictEqual(B.okFeedUrl('https://calendar.google.com/calendar/u/0/r'), 'https://calendar.google.com/calendar/u/0/r');
+  assert.strictEqual(B.googleIcal('https://calendar.google.com/calendar/u/0?cid=bm90IGFuIGlk'), '');
+});
+
+test('several calendars a person, and the one link of before', () => {
+  assert.deepStrictEqual(B.feedsOf({ url: 'https://a', at: 5, checkedAt: 6 }), [{ id: 'a', url: 'https://a', at: 5, checkedAt: 6 }]);
+  assert.deepStrictEqual(B.feedsOf({ feeds: [{ id: 'x', url: 'https://g' }, null, { id: 'y', url: 'https://o' }] }).map((f) => f.id), ['x', 'y']);
+  assert.deepStrictEqual(B.feedsOf(undefined), []);
+});
+
+test('a calendar’s own name, never an email address', () => {
+  assert.strictEqual(B.calendarName('BEGIN:VCALENDAR\r\nX-WR-CALNAME:Holidays in the UK\r\nEND:VCALENDAR'), 'Holidays in the UK');
+  assert.strictEqual(B.calendarName('X-WR-CALNAME:Lab\\, BOLD\n'), 'Lab, BOLD');
+  assert.strictEqual(B.calendarName('X-WR-CALNAME:someone@example.org\n'), '');
+  assert.strictEqual(B.calendarName('BEGIN:VCALENDAR\n'), '');
+});
+
+test('suggestOnce: a time everyone’s free, soonest first, two a day at most, an hour from now at the earliest', () => {
+  const now = B.londonMs('2026-11-11', '14:10');   // Wednesday
+  const ana = { name: 'Ana', busy: [[B.londonMs('2026-11-11', '15:00'), B.londonMs('2026-11-12', '18:00')]] };   // until Thursday's end
+  const ben = { name: 'Ben', busy: [[B.londonMs('2026-11-13', '09:00'), B.londonMs('2026-11-13', '12:00')]] };
+  const s = B.suggestOnce({ people: [ana, ben], minutes: 60, now });
+  assert.strictEqual(s.length, 5);
+  assert.ok(s.every((x) => x.free === 2 && x.of === 2));
+  const at = s.map((x) => new Date(x.start).toISOString().slice(0, 16));
+  assert.deepStrictEqual(at.slice(0, 2), ['2026-11-13T12:00', '2026-11-13T12:30']);   // Friday, after Ben's morning; in core hours
+  assert.ok(!at.some((t) => t.startsWith('2026-11-14') || t.startsWith('2026-11-15')));   // no weekend
+  // Nobody free: the times the most are, with who's busy.
+  const all = { name: 'Cy', busy: [[now, now + 30 * 86400000]] };
+  const t = B.suggestOnce({ people: [ana, all], minutes: 30, now });
+  assert.ok(t.length && t.every((x) => x.free === 1 && x.busy[0] === 'Cy'));
+});
