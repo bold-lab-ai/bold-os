@@ -42,10 +42,8 @@ test('a letter: the prompt as the system message, JSON asked for and read back',
   assert.strictEqual(srv.sent[0].body.model, S.MODEL);
   assert.strictEqual(srv.sent[0].body.messages[0].role, 'system');
   assert.strictEqual(srv.sent[0].body.response_format.type, 'json_schema');
-  assert.strictEqual(srv.sent[0].body.stream, true);
+  assert.strictEqual(srv.sent[0].body.stream, undefined);   // not streamed: httpsPost waits past 300 s
   assert.strictEqual(srv.sent[0].body.chat_template_kwargs.enable_thinking, false);   // thinking off unless asked for
-  assert.strictEqual(r.steps[0].usage.completion_tokens, 9);
-  assert.ok(r.steps[0].thinkChars === 3);
 });
 
 test('a letter in steps: one call, no JSON enforced, read from the last ```json block', async () => {

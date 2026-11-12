@@ -37,8 +37,24 @@ function argsOf(call){
   catch (e){ return {}; }
 }
 
+// A POST by Node's https (not fetch, whose 300 s wait for a reply's headers cut off letters with thinking, 2026-11-12;
+// the caller's own limit, its AbortSignal, applies) → { ok, status, json() }, as fetch's.
+function httpsPost(url, init){
+  const https = require('https');
+  return new Promise((resolve, reject) => {
+    const req = https.request(url, { method: 'POST', headers: Object.assign({ 'Content-Length': Buffer.byteLength(init.body) }, init.headers), signal: init.signal }, (res) => {
+      const parts = [];
+      res.on('data', (c) => parts.push(c));
+      res.on('end', () => { const text = Buffer.concat(parts).toString('utf8'); resolve({ ok: res.statusCode < 300, status: res.statusCode, json: async () => JSON.parse(text) }); });
+      res.on('error', reject);
+    });
+    req.on('error', (err) => reject(err.name === 'AbortError' ? new Error('This operation was aborted') : err));
+    req.end(init.body);
+  });
+}
+
 module.exports = function({ key, post }){
-  post = post || ((url, init) => fetch(url, init));
+  post = post || httpsPost;
   // One completion → { message, model, finish }. Throws on anything but an answer.
   async function complete(body, timeout){
     const ctl = new AbortController(), timer = setTimeout(() => ctl.abort(), timeout || CHAT_TIMEOUT);
@@ -52,46 +68,6 @@ module.exports = function({ key, post }){
       return { message: j.choices[0].message || {}, model: j.model || MODEL, finish: j.choices[0].finish_reason || '', usage: j.usage || null };
     } finally { clearTimeout(timer); }
   }
-  // One completion, streamed (a letter: past the 300 s Node's fetch waits for a reply's headers, 2026-11-12), the
-  // pieces put together as complete() gives them → { message, model, finish, usage, firstMs, answerMs } (firstMs: the
-  // first token; answerMs: the first of the answer, after the thinking).
-  async function stream(body, timeout){
-    const ctl = new AbortController(), timer = setTimeout(() => ctl.abort(), timeout || CHAT_TIMEOUT), t0 = Date.now();
-    try {
-      const r = await post(BASE + '/chat/completions', { method: 'POST', signal: ctl.signal,
-        headers: { Authorization: 'Bearer ' + key(), 'Content-Type': 'application/json' },
-        body: JSON.stringify(Object.assign({ model: MODEL, stream: true, stream_options: { include_usage: true } }, body)) });
-      if (!r.ok) { const j = await r.json().catch(() => ({})); throw new Error('Sofya answered ' + r.status + (j.error ? ': ' + String(j.error.message || j.error).slice(0, 200) : '')); }
-      let content = '', reasoning = '', model = MODEL, finish = '', usage = null, firstMs = 0, answerMs = 0, buf = '';
-      const dec = new TextDecoder();
-      for await (const chunk of r.body) {
-        buf += dec.decode(chunk, { stream: true });
-        let nl;
-        while ((nl = buf.indexOf('\n')) >= 0) {
-          const line = buf.slice(0, nl).trim(); buf = buf.slice(nl + 1);
-          if (!line.startsWith('data:')) continue;
-          const data = line.slice(5).trim();
-          if (data === '[DONE]') continue;
-          let j; try { j = JSON.parse(data); } catch (e){ continue; }
-          if (j.model) model = j.model;
-          if (j.usage) usage = j.usage;
-          const c = j.choices && j.choices[0];
-          if (!c) continue;
-          const d = c.delta || {};
-          const think = d.reasoning_content || d.reasoning || '';
-          if ((think || d.content) && !firstMs) firstMs = Date.now() - t0;
-          reasoning += think;
-          if (d.content) {
-            content += d.content;
-            const open = content.indexOf('<think>') >= 0 && content.indexOf('</think>') < 0;
-            if (!answerMs && !open && said({ content })) answerMs = Date.now() - t0;
-          }
-          if (c.finish_reason) finish = c.finish_reason;
-        }
-      }
-      return { message: { content, reasoning_content: reasoning }, model, finish, usage, firstMs, answerMs };
-    } finally { clearTimeout(timer); }
-  }
   // A letter: the prompt, the inputs → { value: { short, long }, model, steps: [{ ms, usage }] }. How it's asked (`mode`,
   // being measured, 2026-11-12): 'schema', JSON in `schema`'s shape, enforced by the server (response_format); 'json',
   // JSON asked for in the prompt only; 'steps', in one answer: the long letter in Markdown, then the short one
@@ -99,7 +75,7 @@ module.exports = function({ key, post }){
   // `think`: with Qwen's thinking first (2026-11-12: with it a letter took over 300 s, without it ~9 s); 'low', 'medium'
   // or 'high' asks for that much of it (reasoning_effort), true for the server's default.
   async function letter(system, user, schema, mode, think){
-    const steps = [], timed = async (body) => { const t0 = Date.now(), r = await stream(!think ? Object.assign({ chat_template_kwargs: { enable_thinking: false } }, body) : typeof think === 'string' ? Object.assign({ reasoning_effort: think }, body) : body, LETTER_TIMEOUT); steps.push({ ms: Date.now() - t0, firstMs: r.firstMs, answerMs: r.answerMs, thinkChars: r.message.reasoning_content.length, answerChars: r.message.content.length, usage: r.usage, finish: r.finish }); if (r.finish === 'length') { const e = new Error('the letter was cut off'); e.steps = steps; e.tail = { think: r.message.reasoning_content.slice(-600), answer: r.message.content.slice(-600) }; throw e; } return r; };
+    const steps = [], timed = async (body) => { const t0 = Date.now(), r = await complete(!think ? Object.assign({ chat_template_kwargs: { enable_thinking: false } }, body) : typeof think === 'string' ? Object.assign({ reasoning_effort: think }, body) : body, LETTER_TIMEOUT); steps.push({ ms: Date.now() - t0, thinkChars: String(r.message.reasoning_content || r.message.reasoning || '').length, answerChars: String(r.message.content || '').length, usage: r.usage, finish: r.finish }); if (r.finish === 'length') { const e = new Error('the letter was cut off'); e.steps = steps; e.tail = { think: String(r.message.reasoning_content || '').slice(-600), answer: String(r.message.content || '').slice(-600) }; throw e; } return r; };
     if (mode === 'steps') {
       const r = await timed({ max_tokens: 16000, messages: [{ role: 'system', content: system + '\n\n' + STEPS }, { role: 'user', content: user }] });
       return { value: lastJson(said(r.message)), model: r.model, steps };
