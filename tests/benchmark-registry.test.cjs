@@ -8,7 +8,7 @@ function harness(){
  const data=new Map();
  const snap=p=>({id:p.split('/').pop(),exists:data.has(p),data:()=>structuredClone(data.get(p))});
  const doc=p=>({path:p,get:async()=>snap(p),collection:n=>col(p+'/'+n)});
- const col=p=>({doc:id=>doc(p+'/'+id),where:(key,op,value)=>({get:async()=>({docs:[...data.keys()].filter(k=>k.startsWith(p+'/')&&k.split('/').length===p.split('/').length+1&&data.get(k)[key]===value).map(snap)})})});
+ const col=p=>({doc:id=>doc(p+'/'+id),orderBy:()=>({limit:()=>({get:async()=>({docs:[...data.keys()].filter(k=>k.startsWith(p+'/')&&k.split('/').length===p.split('/').length+1).map(snap)})})}),where:(key,op,value)=>({get:async()=>({docs:[...data.keys()].filter(k=>k.startsWith(p+'/')&&k.split('/').length===p.split('/').length+1&&data.get(k)[key]===value).map(snap)})})});
  const db={collection:col,runTransaction:async fn=>{const writes=[];const result=await fn({get:async ref=>snap(ref.path),set:(ref,x)=>writes.push(()=>data.set(ref.path,structuredClone(x))),update:(ref,x)=>writes.push(()=>data.set(ref.path,{...data.get(ref.path),...structuredClone(x)}))});writes.forEach(f=>f());return result;}};
  class ErrorWithCode extends Error{constructor(code,message){super(message);this.code=code;}}
  let denied=false;

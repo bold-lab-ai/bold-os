@@ -1,0 +1,21 @@
+---
+area: "projects"
+title: "Problem Bank | BOLD Lab"
+description: "Research problems with tested and approved evaluation modules."
+sdk: ["functions"]
+css: "benchmarks"
+scripts: ["pages/benchmarks.js"]
+permalink: "problems.html"
+nav: "problems.html"
+---
+<div class="hero"><h1>Problem Bank</h1><p>Research questions with a tested evaluation module, declared data checks, and human approval.</p></div>
+<main id="registry" data-kind="problems">
+  <nav class="registry-nav" aria-label="Research registry"><a href="problems.html" aria-current="page">Problems</a><a href="benchmarks.html">Benchmarks</a><a href="https://lite.ecc962fa-2f4c-4a3f-96c4-179af273fb7a.k8s.civo.com/lite" target="_blank" rel="noopener">Onboard in AutoKaggle Lite ↗</a></nav>
+  <p class="registry-note">A record appears here after AutoKaggle checks the declared research data and the organizer approves the exact release. Synthetic tests alone do not qualify.</p>
+  <div class="registry-filters"><label>Search problems<input id="registrySearch" type="search" autocomplete="off" placeholder="Title, task, or objective"></label><label class="registry-check"><input id="registryArchived" type="checkbox"> Include archived problems</label></div>
+  <p id="registryStatus" role="status">Sign in to load the Problem Bank.</p>
+  <button id="registryRetry" type="button" class="btn-box" hidden>Retry loading</button>
+  <div id="registryList" class="registry-list"></div>
+  <button id="registryMore" type="button" class="btn-box" hidden>Load more</button>
+  <section id="registryDetail" aria-label="Problem details" tabindex="-1" hidden></section>
+</main>

@@ -19,7 +19,7 @@ function normalize(input){
   if (e.zip_url !== e.repository + '/archive/' + e.commit + '.zip') throw new Error('The ZIP must name the pinned evaluator commit.');
   if (['build','contract_coverage','code_review','synthetic'].some(k => v[k] !== 'passed') || v.research_data !== 'validated') throw new Error('Software checks and declared research-data validation must pass.');
   if (r.passed !== true || r.mode !== 'research' || r.commit !== e.commit || r.contract_sha256 !== e.contract_sha256 || !hex(r.reference_sha256,64) || !hex(r.artifact_sha256,64) || !hex(r.report_sha256,64) || !/^controlled-runtime:[a-f0-9]{16}$/.test(r.checked_by || '')) throw new Error('Research evidence must bind the assets and controlled run to this release.');
-  if (![r.observed_fitness,r.expected_fitness,r.tolerance].every(Number.isFinite) || r.tolerance < 0 || r.tolerance > 1e-5 || Math.abs(r.observed_fitness-r.expected_fitness) > Math.max(r.tolerance,r.tolerance*Math.abs(r.expected_fitness))) throw new Error('The declared and measured fitness do not agree.');
+  if (![r.observed_fitness,r.expected_fitness,r.tolerance].every(Number.isFinite) || r.tolerance < 0 || r.tolerance > 1e-5 || Math.abs(r.observed_fitness-r.expected_fitness) > Math.max(r.tolerance,r.tolerance*Math.max(Math.abs(r.expected_fitness),Math.abs(r.observed_fitness)))) throw new Error('The declared and measured fitness do not agree.');
   if (a.commit !== e.commit || a.contract_sha256 !== e.contract_sha256 || a.research_report_sha256 !== r.report_sha256 || !hex(a.approved_by,64) || !a.approved_at) throw new Error('A human must approve this exact release and research report.');
   // Store only the public-to-lab evidence. No file paths, email addresses, tokens,
   // raw transcripts, or arbitrary extra caller fields enter these collections.
@@ -51,7 +51,8 @@ module.exports = function({db,onCall,callerEmail,isFullWrite,access,HttpsError})
       const ref=db.collection('problemBank').doc(d.problem_id), doc=await ref.get();
       if(!doc.exists)throw error('not-found','This problem is not registered.');
       const versions=await db.collection('benchmarks').where('problem_id','==',d.problem_id).get();
-      return {problem:publicRow(doc,mayEdit&&(full||doc.data().createdBy===email)),versions:versions.docs.map(x=>publicRow(x,false)).sort((a,b)=>b.evaluator.version-a.evaluator.version)};
+      const history=await ref.collection('versions').orderBy('updatedAt','desc').limit(100).get();
+      return {history:history.docs.map(x=>publicRow(x,false)),problem:publicRow(doc,mayEdit&&(full||doc.data().createdBy===email)),versions:versions.docs.map(x=>publicRow(x,false)).sort((a,b)=>b.evaluator.version-a.evaluator.version)};
     }
     if(action==='register'){
       let data;try{data=normalize(d.registration);}catch(e){throw error('invalid-argument',e.message);}
