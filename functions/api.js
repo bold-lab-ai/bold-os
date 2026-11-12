@@ -223,7 +223,7 @@ module.exports = function(deps){
     const now = Date.now();
     return db.collection('apiLog').add({
       email: who.email, token: who.prefix, tool, args: JSON.stringify(args || {}).slice(0, 300), at: now,
-      expireAt: admin.firestore.Timestamp.fromMillis(now + LOG_DAYS * 86400000),
+      expireAt: new Date(now + LOG_DAYS * 86400000),
     }).catch((err) => logger.warn('apiLog failed', { error: String(err.message) }));
   }
 
