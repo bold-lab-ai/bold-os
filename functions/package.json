@@ -9,6 +9,7 @@
   "dependencies": {
     "@anthropic-ai/sdk": "^0.136.0",
     "firebase-admin": "^12.6.0",
-    "firebase-functions": "^7.4.0"
+    "firebase-functions": "^7.4.0",
+    "jose": "^4.15.9"
   }
 }
