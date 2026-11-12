@@ -902,6 +902,14 @@ service cloud.firestore {
       allow read: if isSignedIn() && email().lower() == owner;
       allow write: if false;
     }
+    // The days someone has been on BOLD.OS (bold.js; London dates), for the order of the morning's letters
+    // (functions/bold-llm.js writeHomeLetters, which keeps the last 28). Theirs to add to, read by no one but the server.
+    match /visits/{owner} {
+      allow read: if false;
+      allow create, update: if isSignedIn() && email().lower() == owner
+        && request.resource.data.keys().hasOnly(['days'])
+        && request.resource.data.days is list && request.resource.data.days.size() <= 40;
+    }
     // A letter asked for, written in the background (functions/bold-llm.js onLetterJob): how it's going, for its person.
     match /letterJobs/{owner} {
       allow read: if isSignedIn() && email().lower() == owner;

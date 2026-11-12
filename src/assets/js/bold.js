@@ -512,6 +512,20 @@
     if (authReady) fn(current);
   };
 
+  // The days they've been on BOLD.OS (visits/{email}: days, London dates; once a day, from any page), so the morning's
+  // letters go first to whoever comes most often (functions/bold-llm.js writeHomeLetters). Only the server reads it.
+  BOLD.onUser(function(u){
+    if (!u || !u.email) return;
+    var day, key = 'boldVisit:' + u.email.toLowerCase();
+    try { day = new Intl.DateTimeFormat('en-CA', { timeZone: 'Europe/London', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date()); } catch (e){ return; }
+    try { if (localStorage.getItem(key) === day) return; } catch (e){}
+    try {
+      firebase.firestore(BOLD.getApp()).collection('visits').doc(u.email.toLowerCase())
+        .set({ days: firebase.firestore.FieldValue.arrayUnion(day) }, { merge: true })
+        .then(function(){ try { localStorage.setItem(key, day); } catch (e){} }, function(){});
+    } catch (e){}
+  });
+
   // The last visit's { n: displayName, e: email }, or null — for painting before auth resolves.
   BOLD.authHint = function(){ return hint; };
 

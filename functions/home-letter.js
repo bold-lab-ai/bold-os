@@ -7,6 +7,22 @@
 const { REFRESH, refreshHours, lastDue, isFresh } = require('./letter-due');
 // Pure: does BOLD LLM write the letters at this hour (0–23, London), with refresh r?
 function writesAt(r, hour){ return refreshHours(r).indexOf(Number(hour)) >= 0; }
+// Pure: the London date (YYYY-MM-DD) of a time.
+function londonDate(t){ return new Intl.DateTimeFormat('en-CA', { timeZone: 'Europe/London', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date(t)); }
+// Pure: whose letters the morning writes, in order (people: [{ email, name, lastSeen (ms, Firebase Auth), days (London
+// dates they came, visits/{email}) }]). Only those on BOLD.OS in the past week (their last day, or Auth's last visit);
+// those who came on most of the last 14 days first, then the latest visit, then by email (a fixed order).
+function letterOrder(people, now){
+  const week = londonDate(now - 7 * 24 * 3600000), fortnight = londonDate(now - 14 * 24 * 3600000);
+  return (people || []).map((p) => {
+    const days = (p.days || []).filter((d) => typeof d === 'string');
+    const last = days.reduce((a, d) => (d > a ? d : a), '');
+    const seen = Math.max(p.lastSeen || 0, last ? Date.parse(last + 'T12:00:00Z') : 0);
+    return { p, often: new Set(days.filter((d) => d > fortnight)).size, seen, recent: (last && last > week) || (p.lastSeen && now - p.lastSeen <= 7 * 24 * 3600000) };
+  }).filter((x) => x.recent && x.p.email)
+    .sort((a, b) => b.often - a.often || b.seen - a.seen || (a.p.email < b.p.email ? -1 : 1))
+    .map((x) => x.p);
+}
 // Pure: what a letter written now covers: since the previous one, if it's from the last day, else the last 24 hours.
 function sinceFor(prev, now){ const day = now - 24 * 3600000; return prev && prev.at > day && prev.at < now ? prev.at : day; }
 const SHORT_MAX = 4000, LONG_MAX = 40000;
@@ -71,4 +87,4 @@ function ladderOf(x){
 // Pure: the models above 'rules', in order (none: the rule-based letter for everyone).
 function modelsOf(ladder){ return ladder.slice(0, ladder.indexOf('rules') < 0 ? ladder.length : ladder.indexOf('rules')); }
 
-module.exports = { WRITERS, ladderOf, modelsOf, REFRESH, refreshHours, writesAt, lastDue, sinceFor, SHORT_MAX, LONG_MAX, checkLetter, isFresh, londonNow, inputsOf };
+module.exports = { WRITERS, ladderOf, modelsOf, REFRESH, refreshHours, writesAt, lastDue, londonDate, letterOrder, sinceFor, SHORT_MAX, LONG_MAX, checkLetter, isFresh, londonNow, inputsOf };

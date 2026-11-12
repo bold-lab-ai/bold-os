@@ -95,3 +95,17 @@ test('who writes the letters: a ladder, tried in turn; nothing below rule-based'
   assert.deepStrictEqual(HL.modelsOf(['rules', 'claude', 'sofya']), []);
   assert.deepStrictEqual(HL.modelsOf(['claude', 'sofya', 'rules']), ['claude', 'sofya']);
 });
+
+test('the morning’s line: the past week only, whoever comes most often first, then the latest visit', () => {
+  const now = Date.parse('2026-11-12T05:00:00Z'), D = 86400000;
+  const line = HL.letterOrder([
+    { email: 'daily@x', days: ['2026-11-05', '2026-11-06', '2026-11-07', '2026-11-08', '2026-11-09', '2026-11-10', '2026-11-11'] },
+    { email: 'twice@x', days: ['2026-11-04', '2026-11-11'] },
+    { email: 'twice-earlier@x', days: ['2026-11-03', '2026-11-09'] },
+    { email: 'auth-only@x', days: [], lastSeen: now - 2 * D },          // before visits were kept: Auth's last visit counts
+    { email: 'away@x', days: ['2026-10-30', '2026-11-01', '2026-11-02'], lastSeen: now - 10 * D },   // not this past week
+    { email: 'gone@x', lastSeen: now - 20 * D },
+  ], now).map((p) => p.email);
+  assert.deepStrictEqual(line, ['daily@x', 'twice@x', 'twice-earlier@x', 'auth-only@x']);
+  assert.strictEqual(HL.londonDate(Date.parse('2026-07-01T23:30:00Z')), '2026-07-02');   // London, in summer time
+});

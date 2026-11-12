@@ -100,49 +100,63 @@ module.exports = function({ db, admin, logger, onCall, onSchedule, onDocumentWri
     throw new Error('no model could write it (' + failed.join('; ') + ')');
   }
 
-  // Everyone who has been on BOLD.OS in the last 30 days (signed in, Firebase Auth), at the hours the lab chose
-  // (HL.REFRESH: once a day at 05:00, twice, or through the working day): it wakes each hour and, then, lines up each
-  // letter (letterJobs/{email} 'waiting', batch) and starts LANES of them; each written by onLetterJob, which starts
-  // the next waiting one as it finishes, so Sofya writes LANES at a time (2026-11-12: all ~150 at once, at 06:00, and
-  // none was written). Someone opening the page meanwhile has theirs written at once (homeLetter 'write').
+  // At the hours the lab chose (HL.REFRESH: once a day at 05:00, twice, or through the working day) it wakes each hour
+  // and, then, lines up the letters of everyone on BOLD.OS in the past week, those who come most often first
+  // (HL.letterOrder: the days they came in the last 14, from visits/{email}, kept by bold.js; then the latest visit), and
+  // starts LANES of them; each written by onLetterJob, which starts the next in line as it finishes, so Sofya writes
+  // LANES at a time (2026-11-12: all ~150 at once, at 06:00, and none was written). The line is letterQueue/batch
+  // (its emails, in order), each one's job letterJobs/{email} 'waiting' (batch) till it starts. Anyone not on BOLD.OS
+  // in the past week, or opening the page before theirs is written, has theirs written as they open the home page
+  // (homeLetter 'write').
   const writeHomeLetters = onSchedule({ schedule: '0 * * * *', timeZone: 'Europe/London', timeoutSeconds: 300 }, async () => {
     const l = await lab();
     if (!l.models.length || !HL.writesAt(l.refresh, Number(HL.londonNow().time.slice(0, 2)))) return;
-    // Everyone signed in recently: the Auth list, a page at a time.
-    const uids = [];
+    const now = Date.now();
+    // Everyone's last visit as Firebase Auth knows it (a page at a time), and the days they came (visits).
+    const people = [];
     let page;
     do {
       page = await admin.auth().listUsers(1000, page && page.pageToken);
-      page.users.forEach((u) => { const seen = Date.parse(u.metadata.lastRefreshTime || u.metadata.lastSignInTime || '') || 0; if (u.email && Date.now() - seen <= 30 * DAY) uids.push(u.uid); });
+      page.users.forEach((u) => { if (u.email) people.push({ email: String(u.email).toLowerCase(), name: u.displayName || '', lastSeen: Date.parse(u.metadata.lastRefreshTime || u.metadata.lastSignInTime || '') || 0 }); });
     } while (page.pageToken);
-    let asked = 0;
-    for (const uid of uids) {
-      try {
-        const u = await admin.auth().getUser(uid), email = String(u.email || '').toLowerCase();
-        if (!email) continue;
-        await db.collection('letterJobs').doc(email).set({ state: 'waiting', batch: true, at: Date.now(), name: u.displayName || '' });
-        asked++;
-      } catch (err){ logger.error('writeHomeLetters: asking for a letter failed', { uid, error: why(err) }); }
+    const visits = {};
+    (await db.collection('visits').get()).docs.forEach((d) => { visits[d.id] = Array.isArray(d.data().days) ? d.data().days : []; });
+    people.forEach((p) => { p.days = visits[p.email] || []; });
+    const line = HL.letterOrder(people, now);
+    // The visits kept: the last 28 days.
+    const keep = HL.londonDate(now - 28 * DAY);
+    for (const [email, days] of Object.entries(visits)) {
+      const kept = days.filter((d) => d >= keep);
+      if (kept.length < days.length) await db.collection('visits').doc(email).set({ days: kept }).catch((err) => logger.error('writeHomeLetters: tidying visits failed', { error: why(err) }));
     }
+    let asked = 0;
+    for (const p of line) {
+      try { await db.collection('letterJobs').doc(p.email).set({ state: 'waiting', batch: true, at: now, name: p.name }); asked++; }
+      catch (err){ logger.error('writeHomeLetters: asking for a letter failed', { error: why(err) }); }
+    }
+    await db.collection('letterQueue').doc('batch').set({ emails: line.map((p) => p.email), at: now });
     let started = 0;
     for (let i = 0; i < LANES; i++) if (await startNext()) started++;
-    logger.info('writeHomeLetters', { active: uids.length, asked, started });
+    logger.info('writeHomeLetters', { known: people.length, inLine: line.length, asked, started });
   });
 
-  // Starts the next letter waiting in the batch (letterJobs 'waiting' → 'queued', for onLetterJob). → whether one was.
+  // Starts the next letter in line (letterQueue/batch; its job 'waiting' → 'queued', for onLetterJob), skipping those
+  // already written or under way (opened the page meanwhile). → whether one was.
   async function startNext(){
-    for (let tries = 0; tries < 5; tries++) {
-      const next = (await db.collection('letterJobs').where('state', '==', 'waiting').limit(1).get()).docs[0];
-      if (!next) return false;
-      const won = await db.runTransaction(async (tx) => {
-        const j = (await tx.get(next.ref)).data();
-        if (!j || j.state !== 'waiting') return false;
-        tx.update(next.ref, { state: 'queued', at: Date.now() });
-        return true;
-      });
-      if (won) return true;
-    }
-    return false;
+    const q = db.collection('letterQueue').doc('batch');
+    return db.runTransaction(async (tx) => {
+      const emails = ((await tx.get(q)).data() || {}).emails || [];
+      for (let i = 0; i < emails.length; i++) {
+        const ref = db.collection('letterJobs').doc(emails[i]), j = (await tx.get(ref)).data();
+        if (j && j.state === 'waiting') {
+          tx.update(q, { emails: emails.slice(i + 1) });
+          tx.update(ref, { state: 'queued', at: Date.now() });
+          return true;
+        }
+      }
+      if (emails.length) tx.update(q, { emails: [] });
+      return false;
+    });
   }
 
   // Talking to BOLD is kept as a conversation of theirs (Conversations, conversations/{pid}): private, its one
