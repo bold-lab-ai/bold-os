@@ -249,13 +249,14 @@
     letterAt = al ? state.llmLetter.at : (ruleAt = ruleAt || Date.now());
     drawToday();
     if (al) { put(el, '<p>' + hello + (live ? ' ' + you[0] : '') + '</p>' + al); return; }
+    // While BOLD LLM writes it: only the greeting (and a meeting on now), and that it's being written; no other letter.
+    if (state.letterChoice === 'bold' && state.letterWriting) { put(el, '<p>' + hello + (live ? ' ' + you[0] : '') + '</p>' + writingHtml()); return; }
     put(el, '<p>' + hello + ' ' + you.join(' ') + '</p>' + (lab.length ? '<p>' + lab.join(' ') + '</p>' : '') +
-      // Who wrote it, always: the rules (the lab's choice, or BOLD LLM couldn't, or meanwhile).
-      '<p class="hl-by">Written by the rules' + (state.letterChoice !== 'bold' ? '.' : state.letterWriting ? '. ' + writingHtml() : '. BOLD LLM couldn’t write today’s.') +
-        whoLink(' ') + '</p>');
+      // Who wrote it, always: the rules (the lab's choice, or BOLD LLM couldn't).
+      '<p class="hl-by">Written by the rules' + (state.letterChoice === 'bold' ? '. BOLD LLM couldn’t write today’s.' : '.') + '</p>');
   }
   // While BOLD LLM writes their letter: B, O, L, D turn bold in turn, beside what it's doing (a verb every few
-  // seconds, made up, the lab's) and how long it's taken; the rule-based letter above meanwhile.
+  // seconds, made up, the lab's) and how long it's taken, on a line of their own.
   var VERBS = ['Reading what waits on you', 'Counting GPU hours', 'Checking your calendar', 'Consulting the BOLDiquette',
     'Skimming Conversations', 'Following the deadlines', 'Weighing what matters', 'Finding the bold bits',
     'Asking the reviewers nicely', 'Sharpening the argument', 'Licking the envelope'];
@@ -271,9 +272,9 @@
       if (!state.letterWriting || !v) { clearInterval(writingTimer); writingTimer = null; writingSince = 0; return; }
       v.innerHTML = writingText();
     }, 1000);
-    return ({ sofya: 'Sofya', claude: 'Claude' }[state.letterFirst] || 'BOLD LLM') + ' is writing today’s: ' +
-      '<span class="hl-writing"><span class="hl-bold" aria-hidden="true"><span>B</span><span>O</span><span>L</span><span>D</span></span> ' +
-      '<span class="hl-writing-what" role="status">' + writingText() + '</span></span>';
+    return '<p class="hl-by">' + ({ sofya: 'Sofya', claude: 'Claude' }[state.letterFirst] || 'BOLD LLM') + ' is writing today’s letter.</p>' +
+      '<p class="hl-by hl-writing"><span class="hl-bold" aria-hidden="true"><span>B</span><span>O</span><span>L</span><span>D</span></span> ' +
+      '<span class="hl-writing-what" role="status">' + writingText() + '</span></p>';
   }
   // BOLD LLM's letter, short or long (kept in this browser), as Markdown, with when it was written; or ''.
   var LEN_KEY = 'boldLetterLength';
@@ -284,11 +285,8 @@
     var len = letterLength();
     return '<div class="hl-agent-text">' + BoldMarkdown.render(String(l[len] || l.short || '')) + '</div>' +
       '<p class="hl-by">Written by ' + ({ sofya: 'Sofya', claude: 'Claude' }[l.writer] || 'BOLD LLM') + ' · ' +
-      '<button type="button" class="btn-text hl-len" data-len="' + (len === 'short' ? 'long' : 'short') + '">' + (len === 'short' ? 'Long' : 'Short') + '</button>' +
-      whoLink(' · ') + '</p>';
+      '<button type="button" class="btn-text hl-len" data-len="' + (len === 'short' ? 'long' : 'short') + '">' + (len === 'short' ? 'Long' : 'Short') + '</button></p>';
   }
-  // Who writes the letters is the lab's choice (Settings › BOLD Agent): a link there for PIs and admins, who set it.
-  function whoLink(sep){ return BOLD.isFullWrite && BOLD.isFullWrite() ? sep + '<a href="settings.html#bold-agent">Who writes it</a>' : ''; }
   document.addEventListener('click', function(e){
     var b = e.target.closest && e.target.closest('.hl-len');
     if (!b) return;
