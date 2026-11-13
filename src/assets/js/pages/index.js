@@ -387,7 +387,7 @@
     });
     part('homeProjects', 'Your projects', 'profile.html#projects', xs.length ? list(xs, function(p){
       return '<li><a href="project.html#id=' + encodeURIComponent(p.cardId) + '" title="' + esc(p.title || '') + '">' + esc(p.title || 'A project') + '</a></li>';
-    }, 'home-list-tight') 
+    }, 'home-list-tight')
       : '<p class="home-box-sub"><a href="projects.html">Find a project</a> and ask its lead to add you.</p>');
   }
   function drawInbox(){

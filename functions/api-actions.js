@@ -45,7 +45,7 @@ function toFields(o){
 }
 
 module.exports = function(ctx){
-  const { db, admin, logger, httpError, act, resolve, cardOf, lab, words, fold, matches, url, isFullWrite, SITE_URL, fetchImpl, checkTool } = ctx;
+  const { db, admin, logger, httpError, act, resolve, cardOf, lab, words, fold, matches, url, isFullWrite, seesEvent, SITE_URL, fetchImpl, checkTool } = ctx;
   const doFetch = fetchImpl || fetch;
 
   // ---------- writing as the person, under the rules ----------
@@ -707,6 +707,31 @@ module.exports = function(ctx){
     throw httpError(400, 'Unknown action.');
   }
 
+  // The rota page's own callables enforce Slack identity, registration,
+  // ownership, administrator status and slot revisions. Keep one action path.
+  async function groupRota(who, a){
+    const action = String(a.action || '');
+    const table = {
+      register: ['Register', []], leave: ['Leave', []],
+      edit: ['Edit', ['slotId', 'revision', 'topic', 'projectId', 'slidesUrl', 'auditNote']],
+      claim: ['Claim', ['slotId']], recuse: ['Recuse', ['slotId', 'revision', 'reason']],
+      request_swap: ['RequestSwap', ['slotId', 'otherSlotId']],
+      cancel_swap: ['CancelSwap', ['id']], retry_swap: ['RetrySwap', ['id']],
+      outcome: ['Outcome', ['slotId', 'revision', 'outcome']],
+      offer_short: ['OfferShort', ['slotId', 'recipientSlackId']],
+      save_season: ['SaveSeason', ['id', 'label', 'regularTime', 'location', 'rotationDescription', 'publicationState']],
+      save_meeting: ['SaveMeeting', ['date', 'seasonId', 'format', 'startTime', 'durationMinutes', 'location']],
+      set_meeting_visibility: ['SetMeetingVisibility', ['date', 'hidden']],
+      create_slot: ['CreateSlot', ['date', 'slotNumber']],
+      delete_slot: ['DeleteSlot', ['slotId']], delete_meeting: ['DeleteMeeting', ['date']],
+    };
+    const spec = table[action];
+    if (!spec) throw httpError(400, 'Unknown rota action.');
+    const payload = {};
+    spec[1].forEach((key) => { if (a[key] !== undefined) payload[key] = a[key]; });
+    return act(who, 'groupRota' + spec[0], payload);
+  }
+
   // ---------- reading, for acting ----------
   async function listSkills(){
     return { skills: (await lab.skills()).map((x) => ({ name: x._id, title: x.title || x.name || x._id, description: x.description || '', url: url('skill.html?skill=' + encodeURIComponent(x._id)) })) };
@@ -718,16 +743,47 @@ module.exports = function(ctx){
       files: (x.files || []).map((f) => ({ path: f.path || f.name || '', content: typeof f.content === 'string' ? f.content : '' })),
       download: SITE_URL ? url('skill.html?skill=' + encodeURIComponent(x._id)) : '' };
   }
+  async function listGroupRota(who, a){
+    const [seasons, meetings, slots, people, seriesList] = await Promise.all([lab.rotaSeasons(), lab.rotaMeetings(), lab.rotaSlots(), lab.people(), lab.series()]);
+    const series = seriesList.find((s) => s.page === 'group-meetings.html');
+    const manager = series && ((series.organisers || []).includes(who.email) || await isFullWrite(who.email));
+    if (!series || (!manager && (series.hidden || !(await seesEvent(who.email, series))))) return { url: url('group-meetings.html'), seasons: [], meetings: [], slots: [] };
+    const published = new Set(seasons.filter((s) => manager || s.publicationState === 'published').map((s) => s._id));
+    const visible = [];
+    for (const m of meetings) if (published.has(m.seasonId) && (!a.date || m.date === a.date) && (manager || !m.hidden && await seesEvent(who.email, m))) visible.push(m);
+    const dates = new Set(visible.map((m) => m.date));
+    const names = Object.fromEntries(people.map((p) => [p.slackId || p._id, p.name || '']));
+    return { url: url('group-meetings.html'), seasons: seasons.filter((s) => published.has(s._id)).map((s) => ({ id: s._id, label: s.label, regular_time: s.regularTime, location: s.location })),
+      meetings: visible.map((m) => ({ date: m.date, format: m.format, start_time: m.startTime, location: m.location, status: m.status, skip_reason: m.skipReason || '', url: url('group-meetings.html?date=' + m.date) })),
+      slots: slots.filter((s) => s.seriesId === series._id && dates.has(s.meetingId)).map((s) => ({ id: s._id, date: s.date, slot: s.slotNumber, format: s.format,
+        presenter: names[s.presenterSlackId] || s.legacyName || 'Open slot', unresolved: !!(s.presenterSlackId && !names[s.presenterSlackId]) || !!(s.legacyName && !s.presenterSlackId),
+        topic: s.topic || '', project_id: s.projectId || '', slides: s.slidesUrl || '', outcome: s.outcome || 'unconfirmed', revision: s.revision || 0,
+        url: url('group-meetings.html?date=' + encodeURIComponent(s.date) + '&slot=' + encodeURIComponent(s.slotNumber)) })) };
+  }
 
   const S = (props, required) => ({ type: 'object', properties: props, required: required || ['action'] });
   const str = (d) => ({ type: 'string', description: d });
   const READ = [
+    { name: 'list_group_rota', description: 'Published group meeting dates and slots, including presenter, topic, slides, outcome, project link and stable slot revision. A date narrows the result.',
+      inputSchema: S({ date: str('Optional YYYY-MM-DD meeting date.') }, []), run: listGroupRota },
     { name: 'read_page', description: 'The BOLDiquette or a how-to guide in full, with each part’s id (for commenting and proposing changes) and the open proposed changes.',
       inputSchema: S({ page: str('"boldiquette", or a guide’s slug (in its url: guide.html?guide=<slug>).') }, ['page']), run: readPage },
     { name: 'list_skills', description: 'The lab’s Claude skills (Skills page).', inputSchema: S({}, []), run: listSkills },
     { name: 'get_skill', description: 'One skill: its SKILL.md and files, to use or install it.', inputSchema: S({ name: str('The skill’s name.') }, ['name']), run: getSkill },
   ];
   const WRITE = [
+    { name: 'group_rota', run: groupRota,
+      description: 'The group meeting rota: BOLD-internal members and above are included automatically; register resumes participation after leaving. Presenters can edit their assigned talk, claim an open short or long slot, decline a slot with a private reason, or request a confirmed short-slot swap. Series organisers, PIs and admins can set outcomes, offer short slots, and manage seasons and meetings. Swap and offer actions send a Slack message. All actions use the same callable and permissions as the rota page.',
+      inputSchema: S({ action: ACTIONS(['register', 'leave', 'edit', 'claim', 'recuse', 'request_swap', 'cancel_swap', 'retry_swap', 'outcome', 'offer_short', 'save_season', 'save_meeting', 'set_meeting_visibility', 'create_slot', 'delete_slot', 'delete_meeting']),
+        slotId: str('Stable slot id, from the rota.'), otherSlotId: str('Swap target slot id.'), id: str('Swap id or season id, depending on action.'),
+        revision: { type: 'integer', description: 'The slot revision shown by the rota; stale edits fail.' },
+        topic: str('Talk topic, up to 140 characters.'), projectId: str('Optional linked project id.'), slidesUrl: str('Optional HTTPS slides link.'), auditNote: str('Administrator correction note.'),
+        reason: str('Private recusal reason.'),
+        outcome: ACTIONS(['unconfirmed', 'presented', 'did-not-present']), recipientSlackId: str('Verified recipient Slack id.'),
+        date: str('Meeting date, YYYY-MM-DD.'), hidden: { type: 'boolean', description: 'Hide or release a meeting edition.' }, slotNumber: { type: 'integer' }, seasonId: str('Season id.'),
+        format: ACTIONS(['short', 'long']), startTime: str('HH:MM London time.'), durationMinutes: { type: 'integer' },
+        location: str('Meeting location.'), label: str('Season label.'), regularTime: str('Season regular time.'),
+        rotationDescription: str('Season rotation description.'), publicationState: ACTIONS(['draft', 'published']) }) },
     { name: 'comments', run: comments,
       description: 'Comment on the BOLDiquette or a guide, as on the page: add (on words quoted from a part), reply, on_proposal (discuss a proposed change: its conversation, started or added to), edit or delete your own, resolve, or to_conversation: make a thread a conversation (copied to Conversations with its replies, each by whoever wrote it; it goes on there and takes no more replies here: everyone who sees Conversations is told, so ask your person first). People tagged or replied to get Slack messages.',
       inputSchema: S({ action: ACTIONS(['add', 'reply', 'on_proposal', 'edit', 'resolve', 'delete', 'to_conversation']), page: str('"boldiquette" or a guide’s slug.'), part_id: str('add: the part (read_page).'),
@@ -800,7 +856,7 @@ module.exports = function(ctx){
       description: 'PIs and admins: add a new Claude skill, or delete one. Changing a skill is a proposal, by anyone (proposals, page "skill:<name>").',
       inputSchema: S({ action: ACTIONS(['add', 'delete']), name: str('The skill’s name.'), title: str(''), description: str(''), body: str('SKILL.md body'), change_note: str('What changed') }, ['action', 'name']) },
   ];
-  WRITE.forEach((t) => { t.write = true; if (t.name === 'comments' || t.name === 'events' || t.name === 'lab_meetings' || t.name === 'lab_meetings' || t.name === 'skills' || t.name === 'projects' || t.name === 'presentations') t.destructive = true; });
+  WRITE.forEach((t) => { t.write = true; if (t.name === 'group_rota' || t.name === 'comments' || t.name === 'events' || t.name === 'lab_meetings' || t.name === 'skills' || t.name === 'projects' || t.name === 'presentations') t.destructive = true; });
   return { READ, WRITE, asUser, toFields, idTokenFor };
 };
 module.exports.toFields = toFields;

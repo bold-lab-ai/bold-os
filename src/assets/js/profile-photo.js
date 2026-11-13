@@ -58,7 +58,9 @@
   // `known`: a photo this page has already shown, so it's drawn at once (from the
   // browser's cache) rather than faded in over initials again.
   function show(node, version, photo, known){
-    if (node.dataset.photoVersion !== version || !photo || photo.state !== 'active' || !photo.url) return;
+    if (node.dataset.photoVersion !== version) return;
+    var url = photo && photo.state === 'active' && photo.url;
+    if (!url) return;
     var img = document.createElement('img');
     img.alt = '';
     img.loading = 'lazy';
@@ -66,7 +68,7 @@
     img.onload = function(){ if (node.dataset.photoVersion === version) img.classList.add('is-loaded'); else img.remove(); };
     img.onerror = function(){ img.remove(); };
     node.appendChild(img);
-    img.src = photo.url;
+    img.src = url;
   }
   // Kept photos first: fresh ones need no request; stale ones are shown now and
   // asked for again with the missing ones, in the one batch.

@@ -37,7 +37,7 @@ function escapeHtml(s){ return BOLD.escapeHtml(s); }
   var ws = null, wsLoaded = false, wsUnsub = null, wsBusy = false, wsMsg = '', wsKey = '';
   var forum = null;   // the Conversations tab's forum (conversations-forum.js), kept across redraws
   // Its presentations, projectWorkspaces/{id}/presentations, newest first.
-  var talks = [], talksUnsub = null;
+  var talks = [], talksUnsub = null, groupTalks = [], groupUnsub = null;
   // Where each was given (`occasion`): one of the site's events, a venue on the board,
   // or another occasion, named. Group meetings come later, from the meetings rota.
   // Presentations saved before had a `kind` instead; they still show by it.
@@ -981,7 +981,7 @@ function escapeHtml(s){ return BOLD.escapeHtml(s); }
     var html = '<div class="detail-abstract-label">Presentations' +
       (editing === 'talk:new' ? '' : act('<button class="btn-text detail-inline-edit" type="button" data-talk="new"' + off + '>+ Add presentation</button>')) + '</div>';
     if (editing === 'talk:new') html += talkFormHtml();
-    if (!talks.length && editing !== 'talk:new') return html + missing();
+    if (!talks.length && editing !== 'talk:new') return html + (groupTalks.length ? groupTalksHtml() : missing());
     html += '<ul class="talk-list">' + talks.map(function(t){
       if (editing === 'talk:' + t.id) return '<li>' + talkFormHtml(t) + '</li>';
       t = shown(t);
@@ -996,7 +996,18 @@ function escapeHtml(s){ return BOLD.escapeHtml(s); }
           '<button class="btn-text danger" type="button" data-talk-remove="' + esc(t.id) + '"' + (canTalk() || (t.by && isMe(t.by.email)) ? '' : off) + '>Remove</button>' +
         '</div></li>';
     }).join('') + '</ul>';
-    return html;
+    return html + groupTalksHtml();
+  }
+
+  function groupTalksHtml(){
+    if (!groupTalks.length) return '';
+    return '<div class="detail-abstract-label">Group meetings</div><ul class="talk-list">' + groupTalks.map(function(s){
+      var url = 'group-meetings.html?date=' + encodeURIComponent(s.meetingId) + '&slot=' + encodeURIComponent(s.slotNumber);
+      return '<li><div class="talk-when">' + esc(s.date || s.meetingId) + ' · ' + esc(s.outcome === 'presented' ? 'Presented' : s.outcome === 'did-not-present' ? 'Did not present' : 'Unconfirmed') + '</div>' +
+        '<div class="talk-title"><a href="' + url + '">' + esc(s.topic || 'Topic to come') + '</a></div>' +
+        '<div class="talk-actions">' + (s.slidesUrl ? '<a href="' + esc(s.slidesUrl) + '" target="_blank" rel="noopener">Slides</a>' : 'Slides not added') +
+        ' · <a href="' + url + '">Edit on rota</a></div></li>';
+    }).join('') + '</ul>';
   }
 
   function talksRef(){ return db.collection('projectWorkspaces').doc(wsKey).collection('presentations'); }
@@ -1036,7 +1047,7 @@ function escapeHtml(s){ return BOLD.escapeHtml(s); }
   function watchWorkspace(){
     var key = card && (card.projectId || projectId);
     if (!db || !key || !me || key === wsKey) return;
-    if (wsUnsub) { wsUnsub(); talksUnsub(); }
+    if (wsUnsub) { wsUnsub(); talksUnsub(); if (groupUnsub) groupUnsub(); }
     wsKey = key;
     wsUnsub = db.collection('projectWorkspaces').doc(key).onSnapshot(function(snap){
       ws = snap.exists ? snap.data() : null;
@@ -1061,6 +1072,14 @@ function escapeHtml(s){ return BOLD.escapeHtml(s); }
       var target = presWanted && document.getElementById('pres-' + presWanted);
       if (target && !presScrolled) { presScrolled = true; target.scrollIntoView({ block: 'center' }); }
     }, function(err){ console.error('[BOLD Lab] loading the presentations failed', err); });
+    var groupProject = key;
+    groupUnsub = function(){};
+    firebase.app().functions('europe-west2').httpsCallable('groupRotaSnapshot')({}).then(function(result){
+      if (key !== groupProject) return;
+      groupTalks = (result.data.slots || []).filter(function(slot){ return slot.projectId === groupProject; })
+        .sort(function(a,b){ return (b.date || '').localeCompare(a.date || ''); });
+      if (card && !editing) render();
+    }).catch(function(err){ console.error('[BOLD Lab] loading group meeting talks failed', err); });
   }
 
   function wireAbstract(){
@@ -1418,7 +1437,7 @@ function escapeHtml(s){ return BOLD.escapeHtml(s); }
     var was = me && me.email && me.email.toLowerCase();
     me = user;
     if (!user) {
-      if (wsUnsub) { wsUnsub(); talksUnsub(); wsUnsub = talksUnsub = null; wsKey = ''; }
+      if (wsUnsub) { wsUnsub(); talksUnsub(); if (groupUnsub) groupUnsub(); wsUnsub = talksUnsub = groupUnsub = null; wsKey = ''; }
       return cacheClear();
     }
     // The Edit buttons depend on who's signed in; already right if the first paint used the same person.

@@ -1475,6 +1475,9 @@ const PILOTS = {
   'conversation-invites': 'An invitation to a conversation: a DM',
   'notification-pings': 'Notifications: a ping on Slack that there are new ones, instead of each message',
   'channel-alignment': 'Slack channels follow BOLD.OS: removing whoever isn’t meant to be in one, and telling them',
+  'rota-swaps': 'Group meeting slot swap requests',
+  'rota-offers': 'Group meeting short-slot offers',
+  'rota-reminders': 'Group meeting rota reminders',
 };
 // Every Slack feature from before Pilots: listed too, and live unless switched off there
 // (listPilots sets each one live the first time; until then it counts as live). Each sends
@@ -1577,26 +1580,29 @@ async function pilotSlack(token, key, label, m){
   const st = pilotStateOf(Object.assign({}, d, { known: Object.assign({ [key]: label }, d.known || {}) }), key);
   const send = async (channel, text, blocks) => {
     const res = await slackFetch(token, 'chat.postMessage', Object.assign({ channel, text, unfurl_links: false }, blocks ? { blocks } : {}));
-    if (!res.ok) logger.warn('Slack message failed', { feature: key, error: res.error });
+    if (!res.ok) { logger.warn('Slack message failed', { feature: key, error: res.error }); if (m.requireDelivery) throw Error(res.error || 'Slack message failed'); }
   };
   const dm = async (email, text, blocks) => {
     const id = await slackIdForEmail(email);
-    if (!id) return;
+    if (!id) { if (m.requireDelivery) throw Error('Slack recipient not found'); return; }
     const open = await slackFetch(token, 'conversations.open', { users: id });
     if (open.ok) await send(open.channel.id, text, blocks);
+    else if (m.requireDelivery) throw Error(open.error || 'Cannot open Slack DM');
   };
-  // Their Inbox first, in pilot too; whoever's on pings gets a ping instead of the message.
+  // Their Inbox first, except when a pilot's action must remain with testers
+  // until the feature is live. Whoever's on pings gets a ping instead.
   const emails = [];
   for (const e of Array.from(new Set((m.emails || []).map((x) => String(x).toLowerCase())))) {
-    await noteFor([e], { text: m.text, feature: key, source: 'slack' });
+    if (st.live || !m.suppressPilotInbox) await noteFor([e], { text: m.text, feature: key, source: 'slack' });
     const way = await slackWayFor(e, key);
-    if (way === 'pings') await queuePing(e); else if (way === 'all') emails.push(e);
+    if (m.actionsRequired || way === 'all') emails.push(e);
+    else if (way === 'pings') await queuePing(e);
   }
   m = Object.assign({}, m, { emails });
   if (!emails.length && !m.channel) return { pilot: !st.live, pinged: true };
   if (st.live) {
     for (const e of emails) await dm(e, m.text, m.blocks);
-    if (m.channel) { const id = await slackChannelId(token, String(m.channel).replace(/^#/, '')); if (id) await send(id, m.text, m.blocks); }
+    if (m.channel) { const channel = String(m.channel).replace(/^#/, ''); const id = /^[CG][A-Z0-9-]+$/.test(channel) ? channel : await slackChannelId(token, channel); if (id) await send(id, m.text, m.blocks); else if (m.requireDelivery) throw Error('Slack channel not found'); }
     return { pilot: false };
   }
   const forWhom = [m.channel ? '#' + String(m.channel).replace(/^#/, '') : ''].concat(await Promise.all((m.emails || []).map(nameForEmail))).filter(Boolean).join(', ');
@@ -1635,6 +1641,7 @@ exports.onVenueProposed = onDocumentCreated(
     const data = event.data && event.data.data();
     if (!data || data.status !== 'pending') return;
     const token = SLACK_BOT_TOKEN.value();
+
     const pis = await rolesEmails('pis');
     const admins = await rolesEmails('admins');
     const proposer = (data.proposedBy && (data.proposedBy.name || data.proposedBy.email)) || 'Someone';
@@ -3092,7 +3099,11 @@ exports.slackEvents = onRequest(
     // once (Slack waits 3 seconds): it opens the card's form, or says why not, to them alone.
     if (req.body && typeof req.body.command === 'string'){
       let out = null;
-      try { out = await handleSlashCommand(token, req.body); }
+      try {
+        out = req.body.command === '/rota'
+          ? { response_type: 'ephemeral', text: await groupRota.slackCommand(req.body) }
+          : await handleSlashCommand(token, req.body);
+      }
       catch (err){ logger.error('slackEvents: slash command failed', { command: req.body.command, error: String(err && err.message || err) }); out = { response_type: 'ephemeral', text: 'That didn’t work — try again.' }; }
       // The form opened: an empty reply (anything else, even {}, shows as a message).
       if (out && out.text) res.status(200).json(out); else res.status(200).send('');
@@ -3137,7 +3148,7 @@ exports.slackEvents = onRequest(
       // A form's answer to Slack (/meeting's: what to fix, shown on the form) goes back as the reply.
       let answer = null;
       try {
-        answer = await handleInteractivity(token, payload);
+        if (!(await groupRota.slackAction(payload))) answer = await handleInteractivity(token, payload);
       } catch (err){
         logger.error('handleInteractivity threw', { error: String(err) });
       }
@@ -7062,8 +7073,8 @@ exports.skillPackage = onRequest(
 // Each version is also listed in brief in changelog/{version id} (changelog.html):
 // { at, by, note, kind, proposedBy, collection, docId, title }; clients only read it.
 
-const TRACKED = ['skills', 'guides', 'handbook', 'agentTools'];
-const VERSION_META = ['updatedAt', 'updatedBy', 'createdAt', 'createdBy', 'changeNote', 'proposedBy'];
+const TRACKED = ['skills', 'guides', 'handbook', 'agentTools', 'groupRotaSlots'];
+const VERSION_META = ['updatedAt', 'updatedBy', 'createdAt', 'createdBy', 'changeNote', 'proposedBy', 'pendingActionId'];
 
 function stableJson(v){
   if (Array.isArray(v)) return '[' + v.map(stableJson).join(',') + ']';
@@ -7082,7 +7093,9 @@ async function personFor(email){
   if (!email) return null;
   let name = '';
   try {
-    const snap = await db.collection('people').where('email', '==', email).limit(1).get();
+    const key = email.startsWith('slack:') ? 'slackId' : 'email';
+    const value = key === 'slackId' ? email.slice(6) : email;
+    const snap = await db.collection('people').where(key, '==', value).limit(1).get();
     if (!snap.empty) name = snap.docs[0].data().name || '';
   } catch (e) { /* the name is a nicety */ }
   return { email, name };
@@ -7108,14 +7121,27 @@ function recordVersions(collection){
     const added = await event.data.after.ref.collection('versions').add(version);
     // The site's changelog (changelog.html) lists it too, in brief: a version
     // holds the whole document, too much to load dozens of at once.
-    await db.collection('changelog').doc(added.id).set({
+    const entry = {
       at: version.at, by: version.by, note: version.note, kind, proposedBy: version.proposedBy,
       collection, docId: event.params.id, title: String(src.title || src.name || event.params.id),
-    });
+    };
+    if (collection === 'groupRotaSlots') {
+      entry.date = src.meetingId;
+      entry.slotNumber = src.slotNumber;
+      entry.title = 'Group meeting ' + src.meetingId + ', slot ' + src.slotNumber;
+    }
+    await db.collection('changelog').doc(added.id).set(entry);
   });
 }
 TRACKED.forEach((c) => { exports['history' + c.charAt(0).toUpperCase() + c.slice(1)] = recordVersions(c); });
 
+// Group meeting rota. Presenter eligibility follows BOLD.OS membership category.
+const groupRota = require('./group-rota')({
+  db, admin, HttpsError, onCall, onSchedule, signedInEmail, rolesEmails,
+  requireAccess: access.requireAccess, seesEvent: access.seesIt, groupFor: access.groupFor,
+  isFullWrite, viewingAs, pilotSlack, botToken: SLACK_BOT_TOKEN, logger
+});
+Object.keys(groupRota).filter(k => k !== 'slackAction' && k !== 'slackCommand' && k !== '_internal').forEach(k => { exports[k] = groupRota[k]; });
 // ---------- Joining BOLD: requests, approval, the welcome email ----------
 // Anyone can ask to join on join.html (requestToJoin; no sign-in, since they
 // aren't in the Slack yet). The PIs and admins are told in Slack and decide on
