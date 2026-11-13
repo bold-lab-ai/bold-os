@@ -66,3 +66,22 @@ test('no credential or arbitrary session URL enters the record',()=>{
  assert.doesNotMatch(JSON.stringify(out),/SECRET|evil/);
  r.session.application='unknown';assert.throws(()=>factory.normalize(r),/session/);
 });
+test('open problems require a real project, retain history, and cannot claim an evaluator stage',async()=>{
+ const h=harness();
+ const input={action:'create',project_id:'missing',title:'An open question',objective:'What works?',task_kind:'custom',details:{owner:'A researcher'},stage:'validated'};
+ await assert.rejects(h.call(input),e=>e.code==='failed-precondition');
+ input.project_id='diverging-runs';const r=await h.call(input);
+ let view=await h.call({action:'get',problem_id:r.problem_id});assert.equal(view.problem.stage,'open');assert.equal(view.history.length,1);assert.equal(view.versions.length,0);
+ await h.call({action:'update',problem_id:r.problem_id,project_id:'diverging-runs',details:{owner:'A researcher'},notes:'Next step',archived:false,definition:{title:'A revised question',objective:'Measure cost',task_kind:'optimization'}});
+ view=await h.call({action:'get',problem_id:r.problem_id});assert.equal(view.problem.title,'A revised question');assert.equal(view.history.length,2);
+});
+test('registry edits cannot change an accepted evaluation contract',async()=>{
+ const h=harness(),r=await h.call({action:'register',registration:record()});
+ await assert.rejects(h.call({action:'update',problem_id:r.problem_id,project_id:'diverging-runs',notes:'',archived:false,definition:{title:'Changed',objective:'Changed',task_kind:'custom'}}),e=>e.code==='failed-precondition');
+});
+test('registration supports a project on a publication board',async()=>{
+ const h=harness(),r=record();r.project_id='card-123';r.project_board='neurips';h.data.set('boards/neurips/cards/card-123',{title:'Board project'});
+ const out=await h.call({action:'register',registration:r});const p=(await h.call({action:'get',problem_id:out.problem_id})).problem;
+ assert.equal(p.project_board,'neurips');assert.equal(p.project_title,'Board project');
+ r.project_board='../bad';assert.throws(()=>factory.normalize(r),/board/);
+});

@@ -90,7 +90,8 @@ module.exports = function({db,onCall,callerEmail,isFullWrite,access,HttpsError})
       const project=await projectRecord(d.project_id,d.project_board);
       const id='ak-'+crypto.randomBytes(12).toString('hex'),at=Date.now();
       const value={...data,project_id:project.id,project_board:project.board,project_title:project.title,stage:'open',session:null,archived:false,notes:'',createdBy:email,createdAt:at,updatedBy:email,updatedAt:at};
-      await db.collection('problemBank').doc(id).set(value);
+      const ref=db.collection('problemBank').doc(id);
+      await db.runTransaction(async tx=>{const project=await tx.get(projectRef(d.project_id,d.project_board));if(!project.exists)throw error('failed-precondition','The project no longer exists.');tx.set(ref,value);tx.set(ref.collection('versions').doc(crypto.randomUUID()),{...value,changeNote:'Created open problem'});});
       return {problem_id:id};
     }
     if(action==='list'){
@@ -122,7 +123,7 @@ module.exports = function({db,onCall,callerEmail,isFullWrite,access,HttpsError})
         if(p.exists && p.data().latest_version===data.evaluator.version && p.data().latest_commit!==data.evaluator.commit)throw error('already-exists','This version already names another commit.');
         if(b.exists && b.data().evaluator.contract_sha256!==data.evaluator.contract_sha256)throw error('already-exists','The same commit cannot name another scientific contract.');
         const author=p.exists?p.data().createdBy:email;
-        const problemData={source_id:data.source_id,title:data.title,objective:data.objective,task_kind:data.task_kind,project_id:data.project_id,project_board:data.project_board,project_title:project.data().title||data.project_id,details:data.details,session:data.session,stage:data.stage,approval:data.approval,evaluator:data.evaluator,latest_benchmark:bid,
+        const problemData={source_id:data.source_id,title:data.title,objective:data.objective,task_kind:data.task_kind,project_id:data.project_id,project_board:data.project_board,project_title:project.data().title||data.project_id,details:{...(p.exists?p.data().details:{}),...data.details},session:data.session,stage:data.stage,approval:data.approval,evaluator:data.evaluator,latest_benchmark:bid,
           latest_commit:data.evaluator.commit,latest_version:data.evaluator.version,archived:p.exists?!!p.data().archived:false,
           notes:p.exists?(p.data().notes||''):'',createdBy:author,createdAt:p.exists?p.data().createdAt:at,updatedBy:email,updatedAt:at};
         const benchmarkData={problem_id:pid,source_id:data.source_id,title:data.title,task_kind:data.task_kind,evaluator:data.evaluator,
@@ -141,9 +142,13 @@ module.exports = function({db,onCall,callerEmail,isFullWrite,access,HttpsError})
       const project=await projectRecord(d.project_id,d.project_board);
       let metadata;try{metadata=details(d.details);}catch(e){throw error('invalid-argument',e.message);}
       const ref=db.collection('problemBank').doc(d.problem_id);
-      await db.runTransaction(async tx=>{const doc=await tx.get(ref);if(!doc.exists)throw error('not-found','This problem is not registered.');
+      await db.runTransaction(async tx=>{const [doc,linked]=await Promise.all([tx.get(ref),tx.get(projectRef(d.project_id,d.project_board))]);if(!linked.exists)throw error('failed-precondition','The linked project no longer exists.');if(!doc.exists)throw error('not-found','This problem is not registered.');
         if(doc.data().createdBy!==email&&!full)throw error('permission-denied','Only its registering account or a PI/admin can edit this problem.');
         const update={notes:d.notes.trim(),archived:d.archived,project_id:project.id,project_board:project.board,project_title:project.title,details:metadata,updatedBy:email,updatedAt:Date.now()};
+        if(d.definition){
+          if(doc.data().stage!=='open')throw error('failed-precondition','Change an evaluator contract through AutoKaggle.');
+          try{for(const [key,limit] of [['title',180],['objective',8000],['task_kind',80]])update[key]=text(d.definition[key],limit,key);}catch(e){throw error('invalid-argument',e.message);}
+        }
         tx.update(ref,update);tx.set(ref.collection('versions').doc(crypto.randomUUID()),{...doc.data(),...update,changeNote:'Updated project, descriptive details, notes or archive state'});});
       return {ok:true};
     }
