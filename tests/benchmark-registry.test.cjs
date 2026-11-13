@@ -1,11 +1,11 @@
 const {test}=require('node:test'), assert=require('node:assert/strict');
 const factory=require('../functions/benchmark-registry');
-function record(){return {schema:'bold.autokaggle.registration.v1',source_id:'autokaggle:11111111-2222-3333-4444-555555555555',idempotency_key:'1'.repeat(64),destinations:['problem_bank','benchmarks'],title:'Example benchmark',objective:'Compare independently measured outcomes.',task_kind:'optimization',
+function record(){return {schema:'bold.autokaggle.registration.v1',source_id:'autokaggle:11111111-2222-3333-4444-555555555555',idempotency_key:'1'.repeat(64),destinations:['problem_bank'],project_id:'diverging-runs',session:{application:'lite'},title:'Example benchmark',objective:'Compare independently measured outcomes.',task_kind:'optimization',
  evaluator:{repository:'https://github.com/example/evaluator',commit:'a'.repeat(40),version:1,contract_sha256:'b'.repeat(64),zip_url:'https://github.com/example/evaluator/archive/'+'a'.repeat(40)+'.zip'},
- validation:{build:'passed',contract_coverage:'passed',code_review:'passed',synthetic:'passed',research_data:'validated',research_evidence:{passed:true,mode:'research',commit:'a'.repeat(40),contract_sha256:'b'.repeat(64),reference_sha256:'c'.repeat(64),artifact_sha256:'d'.repeat(64),report_sha256:'e'.repeat(64),checked_by:'controlled-runtime:1234567890abcdef',checked_at:'2026-11-12T20:00:00Z',expected_fitness:1,observed_fitness:1,tolerance:1e-6,expected_basis:'Independent calculation on declared input.'}},
+ validation:{build:'passed',contract_coverage:'passed',code_review:'passed',synthetic:'passed',known_score:'passed',invalid_submission:'passed',clean_clone:'passed',research_data:'validated',research_evidence:{passed:true,mode:'research',commit:'a'.repeat(40),contract_sha256:'b'.repeat(64),reference_sha256:'c'.repeat(64),artifact_sha256:'d'.repeat(64),report_sha256:'e'.repeat(64),checked_by:'controlled-runtime:1234567890abcdef',checked_at:'2026-11-12T20:00:00Z',expected_fitness:1,observed_fitness:1,tolerance:1e-6,expected_basis:'Independent calculation on declared input.'}},
  human_approval:{commit:'a'.repeat(40),contract_sha256:'b'.repeat(64),research_report_sha256:'e'.repeat(64),approved_by:'f'.repeat(64),approved_at:'2026-11-12T20:01:00Z',note:'I reviewed the code and research evidence.'}};}
 function harness(){
- const data=new Map();
+ const data=new Map([['projects/diverging-runs',{title:'Diverging runs'}]]);
  const snap=p=>({id:p.split('/').pop(),exists:data.has(p),data:()=>structuredClone(data.get(p))});
  const doc=p=>({path:p,get:async()=>snap(p),collection:n=>col(p+'/'+n)});
  const col=p=>({doc:id=>doc(p+'/'+id),orderBy:()=>({limit:()=>({get:async()=>({docs:[...data.keys()].filter(k=>k.startsWith(p+'/')&&k.split('/').length===p.split('/').length+1).map(snap)})})}),where:(key,op,value)=>({get:async()=>({docs:[...data.keys()].filter(k=>k.startsWith(p+'/')&&k.split('/').length===p.split('/').length+1&&data.get(k)[key]===value).map(snap)})})});
@@ -17,7 +17,7 @@ function harness(){
  return {call,data,registry,deny:()=>{denied=true;}};
 }
 for(const change of ['research','approval','commit','reference','score','zip','mode','extra_url'])test('registration rejects '+change,()=>{
- const r=record();if(change==='research')r.validation.research_data='not_run';if(change==='approval')r.human_approval={};if(change==='commit')r.validation.research_evidence.commit='0'.repeat(40);if(change==='reference')delete r.validation.research_evidence.reference_sha256;if(change==='score')r.validation.research_evidence.observed_fitness=2;if(change==='zip')r.evaluator.zip_url='https://github.com/example/evaluator/archive/main.zip';if(change==='mode')r.validation.research_evidence.mode='synthetic';if(change==='extra_url')r.evaluator.repository+='?token=private';assert.throws(()=>factory.normalize(r));
+ const r=record();if(change==='research')r.validation.research_data='not_run';if(change==='approval')r.human_approval={commit:'bad'};if(change==='commit')r.validation.research_evidence.commit='0'.repeat(40);if(change==='reference')delete r.validation.research_evidence.reference_sha256;if(change==='score')r.validation.research_evidence.observed_fitness=2;if(change==='zip')r.evaluator.zip_url='https://github.com/example/evaluator/archive/main.zip';if(change==='mode')r.validation.research_evidence.mode='synthetic';if(change==='extra_url')r.evaluator.repository+='?token=private';assert.throws(()=>factory.normalize(r));
 });
 test('one transaction registers both records, retries return one receipt, and changed evidence conflicts',async()=>{
  const h=harness(),registration=record(),first=await h.call({action:'register',registration});
@@ -38,11 +38,31 @@ test('new commits preserve history and reject an older or conflicting version',a
 test('ownership, Slack identity and page access apply to registration and edits',async()=>{
  const h=harness(),r=record(),first=await h.call({action:'register',registration:r});
  await assert.rejects(h.call({action:'register',registration:r},'other@example.invalid'),e=>e.code==='permission-denied');
- await assert.rejects(h.call({action:'update',problem_id:first.problem_id,notes:'x',archived:false},'other@example.invalid'),e=>e.code==='permission-denied');
- await h.call({action:'update',problem_id:first.problem_id,notes:'Archive for now.',archived:true});
- await h.call({action:'update',problem_id:first.problem_id,notes:'Restored.',archived:false});
+ await assert.rejects(h.call({action:'update',problem_id:first.problem_id,project_id:'diverging-runs',notes:'x',archived:false},'other@example.invalid'),e=>e.code==='permission-denied');
+ await h.call({action:'update',problem_id:first.problem_id,project_id:'diverging-runs',notes:'Archive for now.',archived:true});
+ await h.call({action:'update',problem_id:first.problem_id,project_id:'diverging-runs',notes:'Restored.',archived:false});
  assert.equal(h.data.get('problemBank/'+first.problem_id).archived,false);
  await assert.rejects(h.registry.run({data:{action:'list'}}),e=>e.code==='unauthenticated');h.deny();
  await assert.rejects(h.call({action:'get',problem_id:first.problem_id}),e=>e.code==='permission-denied');
 });
 module.exports={record};
+
+test('project is mandatory and must exist',async()=>{
+ const h=harness(),r=record();delete r.project_id;assert.throws(()=>factory.normalize(r),/project ID/);
+ r.project_id='missing';await assert.rejects(h.call({action:'register',registration:r}),e=>e.code==='failed-precondition');
+});
+test('stages reflect evidence, approval is separate, and invalid evidence cannot raise a stage',()=>{
+ const r=record();delete r.human_approval;
+ assert.equal(factory.normalize(r).stage,'validated');assert.equal(factory.normalize(r).approval,null);
+ r.validation.research_data='not_run';delete r.validation.research_evidence;
+ assert.equal(factory.normalize(r).stage,'checked');assert.equal(factory.normalize(r).research,null);
+ r.validation.clean_clone='not_run';assert.equal(factory.normalize(r).stage,'implemented');
+ r.validation.research_data='validated';assert.throws(()=>factory.normalize(r),/software checks/);
+ r.validation.build='failed';assert.throws(()=>factory.normalize(r),/Implementation/);
+});
+test('no credential or arbitrary session URL enters the record',()=>{
+ const r=record();r.session.url='https://evil.invalid';r.session.code='SECRET';r.details={owner:'A researcher',token:'SECRET'};
+ const out=factory.normalize(r);assert.deepEqual(out.session,{application:'lite',project_id:r.source_id.slice(11)});
+ assert.doesNotMatch(JSON.stringify(out),/SECRET|evil/);
+ r.session.application='unknown';assert.throws(()=>factory.normalize(r),/session/);
+});

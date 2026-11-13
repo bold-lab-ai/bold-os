@@ -15,6 +15,7 @@ async function rules(path,method='GET',token,body){return fetch('http://127.0.0.
   const registration=record();registration.title='Registry integration test — synthetic evidence';
   registration.source_id='autokaggle:12345678-1234-1234-1234-123456789012';registration.idempotency_key=crypto.randomBytes(32).toString('hex');
   assert.equal((await api('register_benchmark',{registration},readToken)).status,403);
+  const missing=structuredClone(registration);missing.project_id='does-not-exist';const missingResponse=await api('register_benchmark',{registration:missing});assert.equal(missingResponse.status,409,await missingResponse.text());
   const invalid=structuredClone(registration);invalid.validation.research_data='not_run';
   assert.equal((await api('register_benchmark',{registration:invalid})).status,400);
   const concurrent=await Promise.all([api('register_benchmark',{registration}),api('register_benchmark',{registration})]);
@@ -28,7 +29,7 @@ async function rules(path,method='GET',token,body){return fetch('http://127.0.0.
   assert.equal((await rules('problemBank/'+receipt.problem_id,'GET',jwt())).status,200);
   assert.equal((await rules('problemBank/'+receipt.problem_id,'PATCH',jwt(),{fields:{title:{stringValue:'Direct write must fail'}}})).status,403);
   assert.equal((await rules('benchmarkReceipts/'+registration.idempotency_key,'GET',jwt())).status,403);
-  const edit=await api('edit_problem',{problem_id:receipt.problem_id,notes:'Synthetic integration fixture. Do not treat this as research validation.',archived:false});assert.equal(edit.status,200,await edit.clone().text());
+  const edit=await api('edit_problem',{problem_id:receipt.problem_id,project_id:'diverging-runs',details:{owner:'Ines Internal'},notes:'Synthetic integration fixture. Do not treat this as research validation.',archived:false});assert.equal(edit.status,200,await edit.clone().text());
   const search=await api('search?query=integration&scope=problems',null,readToken);assert.equal(search.status,200);assert.match(await search.text(),/Registry integration test/);
   console.log('Registry HTTP, transactions, search, permissions, and Firestore rules passed.');
   console.log('Browser fixture: http://localhost:8150/problems.html?problem='+receipt.problem_id);
