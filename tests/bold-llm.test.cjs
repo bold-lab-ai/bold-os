@@ -109,3 +109,34 @@ test('the morning’s line: the past week only, whoever comes most often first, 
   assert.deepStrictEqual(line, ['daily@x', 'twice@x', 'twice-earlier@x', 'auth-only@x']);
   assert.strictEqual(HL.londonDate(Date.parse('2026-07-01T23:30:00Z')), '2026-07-02');   // London, in summer time
 });
+
+test('the facts worked out for the letter: days waited, GPU hours, deadlines, today and the next meeting', () => {
+  const now = Date.parse('2026-11-12T17:45:00Z');   // Thursday, 17:45 London
+  const f = HL.factsOf({
+    waiting_on_you: [
+      { kind: 'project-proposal', title: 'Proposed project: Trading Agent (20,000 GPU hours)', from: 'Valentin', since: '2026-11-06T10:00:00Z', url: 'v' },
+      { kind: 'project-proposal', title: 'Proposed project: Benchmark (350 GPU hours)', from: 'Tobias', since: '2026-11-10T09:00:00Z', url: 't' },
+      { kind: 'letter', title: 'Recommendation letter', from: 'Anubha', since: '2026-10-30T09:00:00Z', url: 'a' },
+    ],
+    your_letters: [{ with: 'Anubha', url: 'l', recipients: [{ name: 'Oxford', deadline: '2026-12-02', submitted: false }, { name: 'Cambridge', deadline: '2026-12-08', submitted: false }, { name: 'Done', deadline: '2026-11-20', submitted: true }] }],
+    your_week: [
+      { kind: 'project', title: 'Latent Option Models', when: 'Thursdays, 11:00–12:00 London time' },
+      { kind: 'supervision', title: 'Credit Assignment', when: 'Thursdays, 17:30–18:30 London time' },
+      { kind: 'project', title: 'AMAZE', when: 'Fridays, 10:00–11:00 London time' },
+    ],
+    os_changes: { content: [] },
+  }, now);
+  assert.deepStrictEqual(f.waiting_longest_first.map((w) => [w.from, w.days_waiting, w.gpu_hours]), [['Anubha', 13, undefined], ['Valentin', 6, 20000], ['Tobias', 2, 350]]);
+  const p = f.waiting_by_kind.find((k) => k.kind === 'project-proposal');
+  assert.deepStrictEqual([p.count, p.gpu_hours, p.longest_days, p.largest.from], [2, 20350, 6, 'Valentin']);
+  assert.deepStrictEqual(f.deadlines_within_3_weeks.map((d) => [d.deadline, d.days_left]), [['2026-12-02', 20]]);   // 8 December is 26 days: not within three
+  assert.deepStrictEqual(f.today.meetings.map((m) => [m.title, m.state]), [['Latent Option Models', 'done'], ['Credit Assignment', 'on now']]);
+  assert.strictEqual(f.today.free_for_rest_of_today, false);
+  assert.deepStrictEqual(f.next_meeting, { title: 'AMAZE', weekday: 'Friday', start: '10:00', url: undefined });
+  assert.strictEqual(f.os_changes_count, 0);
+  assert.strictEqual(HL.meetingOf('Mondays, 14:00–15:00 London time, every 2 weeks').fortnightly, true);
+  // As functions/api.js gives them: { you_asked, you_write }.
+  const g = HL.factsOf({ your_letters: { you_asked: [], you_write: [{ with: 'Anubha', recipients: [{ name: 'Oxford', deadline: '2026-12-02', submitted: false }] }] } }, now);
+  assert.strictEqual(g.deadlines_within_3_weeks.length, 1);
+  assert.deepStrictEqual(HL.factsOf({ your_letters: {}, your_week: null, waiting_on_you: null }, now).deadlines_within_3_weeks, []);
+});
