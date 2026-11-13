@@ -75,14 +75,14 @@ module.exports = function({ key, post }){
   // `think`: with Qwen's thinking first (2026-11-12: with it a letter took over 300 s, without it ~9 s); 'low', 'medium'
   // or 'high' asks for that much of it (reasoning_effort), true for the server's default.
   async function letter(system, user, schema, mode, think){
-    const steps = [], timed = async (body) => { const t0 = Date.now(), r = await complete(!think ? Object.assign({ chat_template_kwargs: { enable_thinking: false } }, body) : typeof think === 'string' ? Object.assign({ reasoning_effort: think }, body) : body, LETTER_TIMEOUT); steps.push({ ms: Date.now() - t0, thinkChars: String(r.message.reasoning_content || r.message.reasoning || '').length, answerChars: String(r.message.content || '').length, usage: r.usage, finish: r.finish }); if (r.finish === 'length') { const e = new Error('the letter was cut off'); e.steps = steps; e.tail = { think: String(r.message.reasoning_content || '').slice(-600), answer: String(r.message.content || '').slice(-600) }; throw e; } return r; };
+    const steps = [], timed = async (body) => { const t0 = Date.now(), r = await complete(!think ? Object.assign({ chat_template_kwargs: { enable_thinking: false } }, body) : typeof think === 'string' ? Object.assign({ reasoning_effort: think }, body) : body, LETTER_TIMEOUT); steps.push({ ms: Date.now() - t0, thinkChars: String(r.message.reasoning_content || r.message.reasoning || '').length, answerChars: String(r.message.content || '').length, usage: r.usage, finish: r.finish }); if (r.finish === 'length') { const e = new Error('the letter was cut off'); e.steps = steps; e.tail = { think: String(r.message.reasoning_content || '').slice(-600), answer: String(r.message.content || '').slice(-600) }; e.full = { think: String(r.message.reasoning_content || r.message.reasoning || ''), answer: String(r.message.content || '') }; throw e; } return r; };
     if (mode === 'steps') {
       const r = await timed({ max_tokens: 16000, messages: [{ role: 'system', content: system + '\n\n' + STEPS }, { role: 'user', content: user }] });
-      return { value: lastJson(said(r.message)), model: r.model, steps };
+      return { value: lastJson(said(r.message)), model: r.model, steps, full: { think: String(r.message.reasoning_content || r.message.reasoning || ''), answer: String(r.message.content || '') } };
     }
     const r = await timed(Object.assign({ max_tokens: 16000, messages: [{ role: 'system', content: system + '\n\nAnswer with JSON only, as: ' + JSON.stringify(schema) }, { role: 'user', content: user }] },
       mode === 'json' ? {} : { response_format: { type: 'json_schema', json_schema: { name: 'letter', schema, strict: true } } }));
-    return { value: jsonOf(said(r.message)), model: r.model, steps };
+    return { value: jsonOf(said(r.message)), model: r.model, steps, full: { think: String(r.message.reasoning_content || r.message.reasoning || ''), answer: String(r.message.content || '') } };
   }
   // An answer: the prompt, the conversation ([{ role, content }]), the reading tools, run as them by `run(name, args)`,
   // at most `rounds` rounds. → its text.
