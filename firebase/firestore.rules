@@ -24,6 +24,9 @@ rules_version = '2';
 
 service cloud.firestore {
   match /databases/{database}/documents {
+    // Forms, anonymous responses, completion receipts and reminder claims are
+    // callable-only. Owners cannot query completion or correlate it with answers.
+    match /forms/{form}/{document=**} { allow read, write: if false; }
 
     // Signed in to a Slack account: membership of the BOLD Slack is what makes
     // someone a lab member. Checked by the account's identities, not the

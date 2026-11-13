@@ -7,6 +7,7 @@ window.BoldSearch = (function(){
   var esc = BOLD.escapeHtml;
   // Where one can search: key, label, and the pages that belong to it.
   var SCOPES = [
+    { key: 'forms', label: 'Forms', pages: /^forms\.html$/ },
     { key: 'boldiquette', label: 'BOLDiquette', pages: /^boldiquette\.html$/ },
     { key: 'guides', label: 'How to', pages: /^guides?\.html$/ },
     { key: 'skills', label: 'Agent skills', pages: /^skills?\.html$/ },

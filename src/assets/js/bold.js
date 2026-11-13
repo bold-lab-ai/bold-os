@@ -690,6 +690,7 @@
   var pi = function(){ return BOLD.isFullWrite() ? '' : 'Only PIs and admins can do this'; };
   var may = function(area, what){ return function(){ return BOLD.can(area, what) ? '' : BOLD.cannotReason(area, what); }; };
   var CREATE = [
+    { label: 'Form', href: 'forms.html?new', can: may('forms', 'edit') },
     { head: 'New' },
     { label: 'Project', href: 'projects-register.html', can: may('projects', 'edit') },
     { label: 'Event series', href: 'series.html?new', can: may('events', 'edit') },
@@ -1106,7 +1107,7 @@
   var AREA_NAMES = { boldiquette: 'BOLDiquette', projects: 'Projects', profile: 'Your profile', calendar: 'Calendar', 'ml-cycle': 'ML Conference Cycle',
     people: 'People', requests: 'Requests', events: 'Events', agents: 'Agents', tools: 'Tools', skills: 'Skills', guides: 'How to',
     'service-desk': 'Service desk', 'get-started': 'Get started', search: 'Search', changelog: 'Changes',
-    experimental: 'Experimental', conversations: 'Conversations' };
+    experimental: 'Experimental', conversations: 'Conversations', forms: 'Forms' };
   var WHAT = ['view', 'edit'];
   // Everyone signed in sees everything (the table headed Page | Edit, 2026-11-04): only who acts is chosen.
   function isOpen(){

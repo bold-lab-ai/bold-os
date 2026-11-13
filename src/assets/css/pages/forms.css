@@ -1,0 +1,17 @@
+.hero { max-width: var(--content-max); margin: 0 auto; padding: 56px var(--gutter) 10px; }
+.hero h1 { font-size: clamp(30px, 5vw, 44px); line-height: 1.14; }
+.hero-note { margin-top: 20px; color: var(--ink-soft); font-size: 16px; }
+#forms { max-width: var(--content-max); margin: 0 auto; padding: 8px var(--gutter) 40px; }
+#forms section { margin: 2rem 0; border-top: 1px solid var(--line); padding-top: 1rem; }
+#forms h2 { font-size: 26px; margin: 1rem 0; }
+#forms p { margin: .7rem 0 1rem; }
+#forms label { display: block; margin: .8rem 0; font: 14px var(--sans); }
+#forms input, #forms select, #forms textarea { padding: .6rem; color: var(--ink); background: var(--paper); border: 1px solid var(--line); border-radius: var(--radius); font: 14px var(--sans); }
+#forms input[type=text], #forms textarea, #forms select[multiple] { display: block; width: 100%; box-sizing: border-box; margin-top: .5rem; }
+#forms textarea { min-height: 6rem; }
+#forms select[multiple] { min-height: 8rem; }
+#forms fieldset, .fm-response { border: 1px solid var(--line); padding: 1rem; margin: 1rem 0; background: var(--surface); }
+#forms button { margin: .4rem .7rem .4rem 0; }
+#fmError { padding: .8rem; border-left: 3px solid var(--accent); }
+.fm-answer { white-space: pre-wrap; overflow-wrap: anywhere; }
+.fm-privacy { color: var(--ink-soft); }
