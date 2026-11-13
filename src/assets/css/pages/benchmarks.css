@@ -1,0 +1,24 @@
+.hero{max-width:var(--content-max);margin:0 auto;padding:64px var(--gutter) 10px}
+.hero h1{font-size:clamp(30px,5vw,44px);line-height:1.14;overflow-wrap:break-word;text-wrap:balance}
+.hero p{max-width:70ch;color:var(--muted)}
+#registry{max-width:var(--content-max);margin:0 auto;padding:8px var(--gutter) 24px;font-family:var(--sans);font-size:16px;line-height:1.55}
+#registry button{font-family:inherit}
+.registry-nav{display:flex;flex-wrap:wrap;gap:1.4rem;padding:0 0 1rem;border-bottom:1px solid var(--line);font-family:var(--sans)}
+.registry-nav [aria-current]{font-weight:700;text-decoration-thickness:2px}
+.registry-note{max-width:74ch;color:var(--muted)}
+.registry-filters{display:flex;align-items:end;gap:1.5rem;flex-wrap:wrap;margin:1.5rem 0;font-family:var(--sans)}
+.registry-filters label{display:grid;gap:.4rem}.registry-filters input[type=search]{min-width:min(360px,75vw);padding:.65rem;border:1px solid var(--line);border-radius:var(--radius);background:var(--surface);color:var(--ink)}
+.registry-filters .registry-check{display:flex;align-items:center;padding:.65rem 0}
+.registry-list{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,340px),1fr));gap:1rem;margin:1rem 0}
+.registry-card,.registry-release{border:1px solid var(--line);border-radius:var(--radius);padding:1.2rem;background:var(--surface);overflow-wrap:anywhere}
+.registry-card h2{margin:0 0 .5rem;font-size:1.4rem}.registry-meta{color:var(--muted);font-family:var(--sans);font-size:.9rem}
+.registry-detail-head{display:flex;gap:1rem;align-items:center;justify-content:space-between;margin-top:2rem}
+.registry-release{margin:1rem 0}.registry-release h3{margin-top:0}.registry-links{display:flex;flex-wrap:wrap;gap:1rem}
+.registry-facts{display:grid;grid-template-columns:minmax(120px,1fr) 3fr;gap:.5rem 1rem}.registry-facts dt{font-family:var(--sans);color:var(--muted)}.registry-facts dd{margin:0;overflow-wrap:anywhere}
+.registry-notes{display:grid;gap:.65rem;margin:1rem 0}.registry-notes textarea{width:100%;box-sizing:border-box;min-height:110px;padding:.7rem;background:var(--surface);color:var(--ink);border:1px solid var(--line);border-radius:var(--radius);font:inherit}.registry-notes button{justify-self:start}
+#registryDetail:focus{outline:none}#registryStatus[data-error=true]{color:var(--danger,var(--ink))}
+@media(max-width:600px){.registry-facts{grid-template-columns:1fr}.registry-facts dd{margin-bottom:.6rem}.registry-detail-head{align-items:start}.registry-nav{gap:.8rem}}
+.registry-stage{font-weight:700;color:var(--accent)}
+.registry-notes input:not([type=checkbox]),.registry-notes select,.registry-filters select{box-sizing:border-box;max-width:100%;padding:.65rem;border:1px solid var(--line);border-radius:var(--radius);background:var(--surface);color:var(--ink);font:inherit}
+.registry-notes label{display:grid;gap:.35rem}.registry-notes label:has(input[type=checkbox]){display:block}
+.registry-notes[hidden]{display:none}

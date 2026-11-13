@@ -223,7 +223,7 @@ module.exports = function(deps){
     const now = Date.now();
     return db.collection('apiLog').add({
       email: who.email, token: who.prefix, tool, args: JSON.stringify(args || {}).slice(0, 300), at: now,
-      expireAt: admin.firestore.Timestamp.fromMillis(now + LOG_DAYS * 86400000),
+      expireAt: new Date(now + LOG_DAYS * 86400000),
     }).catch((err) => logger.warn('apiLog failed', { error: String(err.message) }));
   }
 
@@ -396,7 +396,7 @@ module.exports = function(deps){
   // The tools the lab adds, from the Tools pages (agentTools), run in mcpSandbox (functions/api-tools.js).
   const added = require('./api-tools')({ db, httpError, builtins: () => TOOLS, idTokenFor: (e) => actions.idTokenFor(e), fetchImpl: deps.fetchImpl, sandboxUrl: deps.sandboxUrl, SITE_URL });
   const actions = require('./api-actions')({ db, admin, logger, httpError, act, resolve, cardOf, lab, words, fold, matches, url, isFullWrite, SITE_URL, fetchImpl: deps.fetchImpl, checkTool: (n, d) => added.check(n, d) });
-  const SCOPES = ['boldiquette', 'guides', 'skills', 'events', 'projects', 'people', 'board', 'conversations', 'comments'];
+  const SCOPES = ['boldiquette', 'guides', 'skills', 'events', 'projects', 'problems', 'benchmarks', 'people', 'board', 'conversations', 'comments'];
   const TOOLS = [
     {
       name: 'search',
@@ -476,7 +476,7 @@ module.exports = function(deps){
   // Who can see what (functions/access.js): each reading tool reads one page, and answers
   // only if its person may view that page. Acting goes through the rules and callables,
   // which check it themselves.
-  const TOOL_PAGE = { search: 'search', list_projects: 'projects', get_project: 'projects', find_people: 'people', get_person: 'people',
+  const TOOL_PAGE = { list_benchmarks: 'projects', register_benchmark: 'projects', edit_problem: 'projects', search: 'search', list_projects: 'projects', get_project: 'projects', find_people: 'people', get_person: 'people',
     calendar: 'calendar', my_items: 'profile', list_introduction_offers: 'service-desk', list_tools: 'tools', list_skills: 'skills', get_skill: 'skills' };
   const pageOfTool = (name, args) => { const p = String((args || {}).page || '').trim().toLowerCase();
     return name === 'read_page' ? (p === 'boldiquette' ? 'boldiquette' : require('./access').guideArea(p)) : TOOL_PAGE[name]; };
@@ -549,6 +549,13 @@ module.exports = function(deps){
     }));
     if (want('projects')) jobs.push(allProjects().then((g) => [].concat(g.proposed || [], g.ongoing, g.submission, g.planned, g.completed).forEach((p) =>
       item('projects', p.title, 'Project' + (p.owner ? ' · ' + p.owner : ''), [p.abstract, (p.keywords || []).join(' '), p.owner, (p.authors || []).map((x) => x.name).filter((n) => n !== p.owner).join(' ')].join(' '), projectHref(p.projectId || p.cardId, p.boardId)))));
+    for (const [scopeName,collection,page] of [['problems','problemBank','problems.html'],['benchmarks','benchmarks','problems.html']]) {
+      if(want(scopeName) && await access.can(who.email,'projects','view')) jobs.push(db.collection(collection).get().then(s=>s.docs.forEach(d=>{
+        const x=d.data();if(scopeName==='problems' && x.archived)return;
+        item(scopeName,x.title,scopeName==='problems'?'Problem Bank':'Benchmark version '+x.evaluator.version,
+          [x.objective,x.task_kind,x.notes,(x.evaluator||{}).commit,(x.research||{}).expected_basis].filter(Boolean).join(' '),page+'?problem='+encodeURIComponent(x.problem_id||d.id));
+      })));
+    }
     if (want('people')) jobs.push(Promise.all([lab.members(), profileUrlOf()]).then(([ms, profile]) => ms.forEach((x) => {
       const p = profile(x.email || x._id);
       item('people', x.name || 'A member', [x.role, x.institution].filter(Boolean).join(' · ') || 'Member', [x.interests, x.basedIn, x.pronouns].join(' '), p ? p.slice(SITE_URL.length) : 'people.html');

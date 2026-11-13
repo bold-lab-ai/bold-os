@@ -396,6 +396,20 @@ service cloud.firestore {
     // only as yourself, edited by its submitter, one of its authors (authorEmails,
     // as on a project's page) or a PI/admin, deleted or moved only by its
     // submitter or a PI/admin.
+    // Validated registry records are written only through benchmarkRegistry.
+    // That callable checks Slack identity, Projects access, ownership and evidence.
+    match /problemBank/{id} {
+      allow read: if may('projects', 'view');
+      allow write: if false;
+      match /versions/{version} { allow read: if may('projects', 'view'); allow write: if false; }
+    }
+    match /benchmarks/{id} {
+      allow read: if may('projects', 'view');
+      allow write: if false;
+      match /validations/{version} { allow read: if may('projects', 'view'); allow write: if false; }
+    }
+    match /benchmarkReceipts/{id} { allow read, write: if false; }
+
     match /projects/{projectId} {
       allow read: if seesProject(resource.data.get('projectId', projectId));
       // A new project is proposed (#226), with its compute budget in GPU hours; projectProposal decides it.

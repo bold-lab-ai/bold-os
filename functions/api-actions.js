@@ -722,12 +722,23 @@ module.exports = function(ctx){
   const S = (props, required) => ({ type: 'object', properties: props, required: required || ['action'] });
   const str = (d) => ({ type: 'string', description: d });
   const READ = [
+    { name: 'list_benchmarks', description: 'Read the Problem Bank, including open problems and evaluator stages. These use Projects access. Returns no private account identifiers.',
+      inputSchema: S({kind: ACTIONS(['problems','benchmarks']), cursor: str('Next page cursor, if returned.')}, []),
+      run: (who,a) => act(who,'benchmarkRegistry',{action:'list',kind:a.kind,cursor:a.cursor}) },
+
     { name: 'read_page', description: 'The BOLDiquette or a how-to guide in full, with each part’s id (for commenting and proposing changes) and the open proposed changes.',
       inputSchema: S({ page: str('"boldiquette", or a guide’s slug (in its url: guide.html?guide=<slug>).') }, ['page']), run: readPage },
     { name: 'list_skills', description: 'The lab’s Claude skills (Skills page).', inputSchema: S({}, []), run: listSkills },
     { name: 'get_skill', description: 'One skill: its SKILL.md and files, to use or install it.', inputSchema: S({ name: str('The skill’s name.') }, ['name']), run: getSkill },
   ];
   const WRITE = [
+    { name: 'register_benchmark', description: 'Register an implemented evaluator in the Problem Bank, linked to an existing project. The server derives its stage from evidence. Human approval is separate. Retries reuse the same registration key. This saves lab records; it sends no messages or invitations.',
+      inputSchema: S({registration:{type:'object',description:'The bold.autokaggle.registration.v1 record from the validated release.'}},['registration']),
+      run: (who,a) => act(who,'benchmarkRegistry',{action:'register',registration:a.registration}) },
+    { name: 'edit_problem', description: 'Update a Problem Bank note or archive/restore its record, as on its page. Scientific definitions and benchmark evidence are immutable here; change them through AutoKaggle and register a new tested release.',
+      inputSchema: S({project_id:str('Required BOLD OS project ID'),project_board:str('Optional board ID'),details:{type:'object'},definition:{type:'object',description:'Title, objective and task_kind, for an open problem only.'},problem_id:str('Problem Bank ID'),notes:str('Notes, at most 8000 characters.'),archived:{type:'boolean'}},['problem_id','project_id','notes','archived']),
+      run: (who,a) => act(who,'benchmarkRegistry',{action:'update',problem_id:a.problem_id,project_id:a.project_id,project_board:a.project_board,details:a.details,definition:a.definition,notes:a.notes,archived:a.archived}) },
+
     { name: 'comments', run: comments,
       description: 'Comment on the BOLDiquette or a guide, as on the page: add (on words quoted from a part), reply, on_proposal (discuss a proposed change: its conversation, started or added to), edit or delete your own, resolve, or to_conversation: make a thread a conversation (copied to Conversations with its replies, each by whoever wrote it; it goes on there and takes no more replies here: everyone who sees Conversations is told, so ask your person first). People tagged or replied to get Slack messages.',
       inputSchema: S({ action: ACTIONS(['add', 'reply', 'on_proposal', 'edit', 'resolve', 'delete', 'to_conversation']), page: str('"boldiquette" or a guide’s slug.'), part_id: str('add: the part (read_page).'),

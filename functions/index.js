@@ -1918,7 +1918,7 @@ function newTags(before, after){
 // Where a tag is: { title, url } for a document's path, or null where tags tell
 // nobody here: bookkeeping and private collections, and guides and the
 // BOLDiquette (their comments and proposed changes tell, above). Pure.
-const TAG_SILENT = ['roles', 'people', 'meta', 'settings', 'readPoints', 'changelog', 'commentQueue', 'venueCalls', 'githubLinks', 'googleLinks',
+const TAG_SILENT = ['problemBank', 'benchmarks', 'benchmarkReceipts', 'roles', 'people', 'meta', 'settings', 'readPoints', 'changelog', 'commentQueue', 'venueCalls', 'githubLinks', 'googleLinks',
   'letterRequests', 'introRequests', 'joinRequests', 'members', 'hackathonJoins', 'projectWorkspaces', 'guides', 'handbook', 'interactions', 'privateInteractions',
   // Conversations (Experimental, 2026-11-04): no Slack messages from it while it's an experiment.
   'conversations', 'conversationImports', 'cardImageImports', 'notifications'];
@@ -9283,6 +9283,9 @@ async function tellStaff(text, except, key){
   if (emails.length) await sendEvent(SLACK_BOT_TOKEN.value(), { key, emails, headline: text });
 }
 
+// Validated problems and benchmark releases; the same callable serves the pages and acting API.
+exports.benchmarkRegistry = require('./benchmark-registry')({db,onCall,callerEmail,isFullWrite,access,HttpsError}).benchmarkRegistry;
+
 // BOLD.OS for agents: personal tokens (apiTokens) and the read-only API and MCP
 // endpoint (boldApi), in functions/api.js.
 const agentApi = require('./api')({ access, db, admin, onRequest, onCall, HttpsError, logger, callerEmail, isFullWrite, allProjectsFromCards, projectGroupForCards, workspaceStarted, groupOf, SITE_URL,
@@ -9291,7 +9294,7 @@ const agentApi = require('./api')({ access, db, admin, onRequest, onCall, HttpsE
   tellStaff,
   tellPerson: (email, text, key) => sendEvent(SLACK_BOT_TOKEN.value(), { key, emails: [email], headline: text }),
   slackText, linkedTitle, joinPageUrl, skillMd, onSchedule,
-  callables: () => ({ projectWorkspace: exports.projectWorkspace, projectWork: exports.projectWork, projectChannel: exports.projectChannel, introRequest: exports.introRequest, studyRequest: exports.studyRequest,
+  callables: () => ({ benchmarkRegistry: exports.benchmarkRegistry, projectWorkspace: exports.projectWorkspace, projectWork: exports.projectWork, projectChannel: exports.projectChannel, introRequest: exports.introRequest, studyRequest: exports.studyRequest,
     letterRequest: exports.letterRequest, decideProposal: exports.decideProposal, branchCommit: exports.branchCommit, branchMeta: exports.branchMeta, decideBranch: exports.decideBranch, groupRequest: exports.groupRequest, setMyInviter: exports.setMyInviter,
     confirmJoinInvite: exports.confirmJoinInvite, decideJoinRequest: exports.decideJoinRequest, joinChanges: exports.joinChanges, myRequests: exports.myRequests, eventSeries: exports.eventSeries, profilePhoto: exports.profilePhoto, commentConversation: exports.commentConversation }) });
 exports.apiTokens = agentApi.apiTokens;
