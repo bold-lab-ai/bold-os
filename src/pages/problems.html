@@ -1,21 +1,27 @@
 ---
 area: "projects"
 title: "Problem Bank | BOLD Lab"
-description: "Research problems with tested and approved evaluation modules."
+description: "Project-linked research problems and evaluator releases."
 sdk: ["functions"]
 css: "benchmarks"
 scripts: ["pages/benchmarks.js"]
 permalink: "problems.html"
 nav: "problems.html"
 ---
-<div class="hero"><h1>Problem Bank</h1><p>Research questions with a tested evaluation module, declared data checks, and human approval.</p></div>
-<main id="registry" data-kind="problems">
-  <nav class="registry-nav" aria-label="Research registry"><a href="problems.html" aria-current="page">Problems</a><a href="benchmarks.html">Benchmarks</a><a href="https://lite.ecc962fa-2f4c-4a3f-96c4-179af273fb7a.k8s.civo.com/lite" target="_blank" rel="noopener">Onboard in AutoKaggle Lite ↗</a></nav>
-  <p class="registry-note">A record appears here after AutoKaggle checks the declared research data and the organizer approves the exact release. Synthetic tests alone do not qualify.</p>
-  <div class="registry-filters"><label>Search problems<input id="registrySearch" type="search" autocomplete="off" placeholder="Title, task, or objective"></label><label class="registry-check"><input id="registryArchived" type="checkbox"> Include archived problems</label></div>
-  <p id="registryStatus" role="status">Sign in to load the Problem Bank.</p>
-  <button id="registryRetry" type="button" class="btn-box" hidden>Retry loading</button>
-  <div id="registryList" class="registry-list"></div>
-  <button id="registryMore" type="button" class="btn-box" hidden>Load more</button>
+<div class="hero"><h1>Problem Bank</h1><p>Open research problems, evaluation code, and evidence of what works.</p></div>
+<main id="registry">
+  <nav class="registry-nav" aria-label="Problem Bank actions"><button id="registryNew" class="btn-box" disabled>Add open problem</button><a href="https://lite.ecc962fa-2f4c-4a3f-96c4-179af273fb7a.k8s.civo.com/lite" target="_blank" rel="noopener">Onboard in AutoKaggle Lite ↗</a></nav>
+  <form id="registryCreate" class="registry-notes" hidden>
+    <label>BOLD OS project (required)<select name="project" required></select></label>
+    <label>Problem title<input name="title" required maxlength="180"></label>
+    <label>Research question<textarea name="objective" class="no-tags" required maxlength="8000"></textarea></label>
+    <label>Task type<input name="task_kind" required maxlength="80" placeholder="For example: forecasting, generation, optimization"></label>
+    <label>Research owner<input name="owner" maxlength="180" required></label>
+    <button class="btn-box" type="submit">Save open problem</button><span id="registryCreateStatus" role="status"></span>
+  </form>
+  <details class="registry-note"><summary>What do the evaluator stages mean?</summary><ul><li><strong>Fully implemented:</strong> the build and full contract coverage checks pass.</li><li><strong>Checked:</strong> code review, synthetic tests, known-score and invalid-submission tests, and a clean-clone run pass.</li><li><strong>Validated on the actual task:</strong> a controlled run passes on the declared research data or environment.</li></ul><p>Human approval applies to a specific release and is recorded separately. An open problem has no evaluator stage yet.</p></details>
+  <div class="registry-filters"><label>Search problems<input id="registrySearch" type="search" autocomplete="off" placeholder="Title, project, owner, task, or objective"></label><label>Evaluator stage<select id="registryStage"><option value="">All stages</option value="open">Open problem</option><option value="implemented">Fully implemented</option><option value="checked">Checked</option><option value="validated">Validated on the actual task</option></select></label><label class="registry-check"><input id="registryArchived" type="checkbox"> Include archived problems</label></div>
+  <p id="registryStatus" role="status">Sign in to load the Problem Bank.</p><button id="registryRetry" type="button" class="btn-box" hidden>Retry loading</button>
+  <div id="registryList" class="registry-list"></div><button id="registryMore" type="button" class="btn-box" hidden>Load more</button>
   <section id="registryDetail" aria-label="Problem details" tabindex="-1" hidden></section>
 </main>

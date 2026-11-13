@@ -50,7 +50,6 @@ export default {
     { label: 'Research', href: 'projects.html', area: 'projects', areaWhat: 'titles', links: [
       // To come: `soon: true` shows the name with a Soon tag, not a link (no page yet).
       { label: 'Problem Bank', href: 'problems.html', area: 'projects' },
-      { label: 'Benchmarks', href: 'benchmarks.html', area: 'projects' },
       { label: 'Projects', href: 'projects.html', area: 'projects', areaWhat: 'titles' },
       { label: 'Internal review', href: 'audit-board.html', area: 'ml-cycle' },
     ] },

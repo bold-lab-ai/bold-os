@@ -1,21 +1,5 @@
 ---
-area: "projects"
-title: "Benchmarks | BOLD Lab"
-description: "Pinned evaluator releases and their validation evidence."
-sdk: ["functions"]
-css: "benchmarks"
-scripts: ["pages/benchmarks.js"]
+layout: false
 permalink: "benchmarks.html"
-nav: "benchmarks.html"
 ---
-<div class="hero"><h1>Benchmarks</h1><p>Exact evaluator versions and the evidence used to approve them.</p></div>
-<main id="registry" data-kind="benchmarks">
-  <nav class="registry-nav" aria-label="Research registry"><a href="problems.html">Problems</a><a href="benchmarks.html" aria-current="page">Benchmarks</a><a href="https://lite.ecc962fa-2f4c-4a3f-96c4-179af273fb7a.k8s.civo.com/lite" target="_blank" rel="noopener">Onboard in AutoKaggle Lite ↗</a></nav>
-  <p class="registry-note">Each release names a fixed Git commit. The recorded run checks the declared artifact and reference data. It does not prove a new scientific claim or exclude all data leakage.</p>
-  <div class="registry-filters"><label>Search benchmarks<input id="registrySearch" type="search" autocomplete="off" placeholder="Title, task, or commit"></label></div>
-  <p id="registryStatus" role="status">Sign in to load benchmarks.</p>
-  <button id="registryRetry" type="button" class="btn-box" hidden>Retry loading</button>
-  <div id="registryList" class="registry-list"></div>
-  <button id="registryMore" type="button" class="btn-box" hidden>Load more</button>
-  <section id="registryDetail" aria-label="Benchmark details" tabindex="-1" hidden></section>
-</main>
+<!doctype html><html lang="en"><meta charset="utf-8"><title>Problem Bank</title><p><a href="problems.html">Open the Problem Bank</a></p><script>location.replace('problems.html'+location.search+location.hash);</script></html>

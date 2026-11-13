@@ -92,7 +92,7 @@
       return db.collection('problemBank').get().then(function(s){return s.docs.filter(function(d){return !d.data().archived;}).map(function(d){var x=d.data();return item(x.title,'Problem Bank',[x.objective,x.task_kind,x.notes].join(' '),'problems.html?problem='+encodeURIComponent(d.id));});});
     },
     benchmarks: function(){
-      return db.collection('benchmarks').get().then(function(s){return s.docs.map(function(d){var x=d.data();return item(x.title,'Benchmark version '+x.evaluator.version,[x.task_kind,x.evaluator.commit,x.research.expected_basis].join(' '),'benchmarks.html?problem='+encodeURIComponent(x.problem_id));});});
+      return db.collection('benchmarks').get().then(function(s){return s.docs.map(function(d){var x=d.data();return item(x.title,'Benchmark version '+x.evaluator.version,[x.task_kind,x.evaluator.commit,(x.research||{}).expected_basis].join(' '),'problems.html?problem='+encodeURIComponent(x.problem_id));});});
     },
     people: function(){
       // Each member's own page, by their Slack id (people/{id}).

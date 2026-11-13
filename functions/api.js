@@ -549,7 +549,7 @@ module.exports = function(deps){
     }));
     if (want('projects')) jobs.push(allProjects().then((g) => [].concat(g.proposed || [], g.ongoing, g.submission, g.planned, g.completed).forEach((p) =>
       item('projects', p.title, 'Project' + (p.owner ? ' · ' + p.owner : ''), [p.abstract, (p.keywords || []).join(' '), p.owner, (p.authors || []).map((x) => x.name).filter((n) => n !== p.owner).join(' ')].join(' '), projectHref(p.projectId || p.cardId, p.boardId)))));
-    for (const [scopeName,collection,page] of [['problems','problemBank','problems.html'],['benchmarks','benchmarks','benchmarks.html']]) {
+    for (const [scopeName,collection,page] of [['problems','problemBank','problems.html'],['benchmarks','benchmarks','problems.html']]) {
       if(want(scopeName) && await access.can(who.email,'projects','view')) jobs.push(db.collection(collection).get().then(s=>s.docs.forEach(d=>{
         const x=d.data();if(scopeName==='problems' && x.archived)return;
         item(scopeName,x.title,scopeName==='problems'?'Problem Bank':'Benchmark version '+x.evaluator.version,
