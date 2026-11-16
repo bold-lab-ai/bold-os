@@ -3,6 +3,7 @@
   if (!BOLD.getAuth()) return;
   var db = firebase.firestore(BOLD.getApp());
   var call = function(name, data){ return firebase.app().functions('europe-west2').httpsCallable('groupRota' + name)(data || {}); };
+  var seriesCall = function(action, id){ return firebase.app().functions('europe-west2').httpsCallable('eventSeries')({ action: action, id: id }); };
   var esc = BOLD.escapeHtml, msg = document.getElementById('rotaMessage'), body = document.getElementById('rotaBody');
   var user = null, access = null, meetings = [], slots = [], members = [], people = [], seasons = [], projects = [], busy = false;
   var manageOpen = false, changelogOpen = false, changes = [], changesLoaded = false, changesLoading = false, changesFailed = false, changesLast = null, changesMore = false;
@@ -131,6 +132,7 @@
       '<button type="button" class="btn-text" data-action="register"' + disabled(access && access.eligible && !access.registered, access && access.registered ? 'You are already in the presenter pool' : 'Only BOLD-internal members and above can present') + '>Resume rota participation</button>' +
       '<button type="button" class="btn-text" data-action="leave"' + disabled(access && access.registered, 'Join the rota before leaving future registration') + '>Leave future registration</button>' +
       '<button type="button" class="btn-text" data-action="editSeries"' + disabled(access && access.admin && access.seriesId, 'Only a series organiser, PI or admin can edit the series') + '>Edit event series</button>' +
+      '<button type="button" class="btn-text" data-action="seriesVisibility"' + disabled(access && access.admin && access.seriesId, 'Only a series organiser, PI or admin can change visibility') + '>' + (access && access.seriesHidden ? 'Release event series' : 'Hide event series') + '</button>' +
       '<button type="button" class="btn-text" data-action="season"' + disabled(access && access.admin, 'Only a rota administrator can edit a season') + '>Edit season</button>' +
       '<button type="button" class="btn-text" data-action="meeting"' + disabled(access && access.admin, 'Only a rota administrator can edit a meeting') + '>Add or edit meeting</button></div></details>';
   }
@@ -304,6 +306,14 @@
     }
     if (action === 'leave') { act('Leave', {}); return; }
     if (action === 'editSeries') { location.href = 'series.html?series=' + encodeURIComponent(access.seriesId) + '&edit=1&back=group-meetings.html'; return; }
+    if (action === 'seriesVisibility') {
+      var release = access.seriesHidden;
+      BOLD.confirmAction({ title: release ? 'Release the group meeting series?' : 'Hide the group meeting series?', go: release ? 'Release series' : 'Hide series',
+        effects: release ? ['Show the series in Events to everyone with Events access; its meetings stay hidden until released separately']
+          : ['Hide the series and all its meetings from Events, Calendar and the rota'], always: true
+      }).then(function(ok){ if (ok) actSeries(release ? 'release' : 'hide'); });
+      return;
+    }
     if (action === 'register') { act('Register', {}); return; }
     if (action === 'season') {
       var season = seasons[0] || {};
@@ -337,6 +347,10 @@
   function act(name, data){
     busy = true; text('Saving…');
     call(name, data).then(function(){ busy = false; panel = null; refresh(); }).catch(function(e){ busy = false; text(e.message || 'Could not save. Reload and try again.'); });
+  }
+  function actSeries(action){
+    busy = true; text('Saving…');
+    seriesCall(action, access.seriesId).then(function(){ busy = false; refresh(); }).catch(function(e){ busy = false; text(e.message || 'Could not change series visibility. Reload and try again.'); });
   }
   BOLD.onUser(function(u){ user = u; if (!u) { body.hidden = true; text('Sign in to view the rota.'); return; } refresh(); });
 })();
