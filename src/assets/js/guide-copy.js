@@ -26,7 +26,7 @@ window.BoldGuideCopy = (function(){
       s = { button: button, wrap: wrap, tooltip: wrap.querySelector('.gd-copy-tooltip'),
         announcement: wrap.querySelector('.gd-copy-announcement'), recovery: wrap.querySelector('.gd-copy-recovery'),
         value: wrap.querySelector('.gd-copy-value'), label: button.getAttribute('aria-label'),
-        hovered: false, focused: false, dismissed: false, kind: '', request: 0, timer: null, announced: false };
+        hovered: false, focused: false, dismissed: false, request: 0, timer: null, announced: false };
       states.set(button, s);
       return s;
     }
@@ -64,12 +64,11 @@ window.BoldGuideCopy = (function(){
     }
     function dismissAll(){ var current = active; dismiss(current); if (recovery !== current) dismiss(recovery); pending.forEach(dismiss); }
     function reset(s){
-      s.kind = ''; s.button.removeAttribute('data-copy-state'); s.button.innerHTML = icons.copy;
+      s.button.removeAttribute('data-copy-state'); s.button.innerHTML = icons.copy;
       s.tooltip.textContent = s.label;
       if ((s.hovered || s.focused) && !s.dismissed) show(s); else hide(s);
     }
     function feedback(s, kind){
-      s.kind = kind;
       s.button.setAttribute('data-copy-state', kind);
       s.button.innerHTML = kind === 'success' ? icons.check : icons.alert;
       var message = kind === 'success' ? 'Copied!' : 'Couldn’t copy. Select the link below and copy it manually.';
