@@ -9,7 +9,8 @@ let viewedAs = '';
 const rota = require('../functions/group-rota')({
   db, admin, HttpsError, onCall: (opts, fn) => fn || opts, onSchedule: (opts, fn) => fn,
   signedInEmail: r => r.email,
-  requireAccess: async () => {},
+  // PAN-BOLD and BOLD-associate here have Events' View but not People's.
+  requireAccess: async (email, page) => { if (page === 'people' && ['pan@example.org', 'associate@example.org'].includes(email)) throw new HttpsError('permission-denied', 'No People view.'); },
   seesEvent: async () => true,
   rolesEmails: async () => [],
   groupFor: async email => viewedAs && email === 'admin@example.org' ? viewedAs :
@@ -60,6 +61,10 @@ const denied = async (fn, r) => assert.rejects(() => fn(r));
   await denied(rota.groupRotaClaim, req('viewer@example.org', { slotId: 'fl1' }));
   await db.collection('events').doc(seriesId + '-' + dates[0]).update({ hidden: true });
   assert.equal((await rota.groupRotaSnapshot(req(one, {}))).slots.some(s => s.id === 'fs1'), false);
+  // Without People's View, names only of presenters at meetings they see: not fs1's, now hidden.
+  const names = async email => (await rota.groupRotaAccess(req(email, {}))).people.map(p => p.slackId).sort();
+  assert.deepEqual(await names(pan), ['U2']);
+  assert.ok((await names(one)).includes('U1'));
   assert.equal((await rota.groupRotaSnapshot(req(boss, {}))).slots.some(s => s.id === 'fs1'), true);
   await db.collection('events').doc(seriesId + '-' + dates[0]).update({ hidden: false });
   await db.collection('eventSeries').doc(seriesId).update({ hidden: true });

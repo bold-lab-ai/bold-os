@@ -16,7 +16,7 @@ const write = (path, token) => fetch(root + '/' + path, { method: 'PATCH', heade
 const writePhoto = (id, token, path = `rota-profiles/${id}/portrait`) => fetch(root + '/groupRotaPhotos/' + id, { method: 'PATCH', headers: { Authorization: 'Bearer ' + token, 'Content-Type': 'application/json' }, body: JSON.stringify({ fields: { path: { stringValue: path }, updatedBy: { stringValue: 'one@example.org' }, updatedAt: { integerValue: String(Date.now()) } } }) });
 (async () => {
   await db.collection('roles').doc('admins').set({ emails: ['admin@example.org'] });
-  await db.collection('roles').doc('pis').set({ emails: [] });
+  await db.collection('roles').doc('pis').set({ emails: ['pi@example.org'] });
   await db.collection('settings').doc('access').set({ pages: { events: { view: 'everyone', edit: 'internal' } } });
   for (const email of ['one@example.org', 'two@example.org', 'admin@example.org']) await db.collection('members').doc(email).set({ email, name: email, category: 'internal' });
   await db.collection('members').doc('pan@example.org').set({ category: 'pan' });
@@ -60,8 +60,14 @@ const writePhoto = (id, token, path = `rota-profiles/${id}/portrait`) => fetch(r
     ['other decline denied', await get('groupRotaDeclines/decline', two), 403],
     ['admin decline', await get('groupRotaDeclines/decline', adm), 200],
     ['eligibility hidden', await get('groupRotaEligibility/U1', one), 403],
-    ['delivery hidden', await get('groupRotaNotifications/n1', one), 403]
+    ['delivery hidden', await get('groupRotaNotifications/n1', one), 403],
+    ['PI decline', await get('groupRotaDeclines/decline', jwt('pi@example.org', 'UP1')), 200],
+    ['PI swap', await get('groupRotaSwaps/swap', jwt('pi@example.org', 'UP1')), 200]
   ];
+  // Without Events' View, not even their own.
+  await db.collection('settings').doc('access').set({ pages: { events: { view: 'exec', edit: 'exec' } } });
+  cases.push(['own decline without Events view', await get('groupRotaDeclines/decline', one), 403],
+    ['own swap without Events view', await get('groupRotaSwaps/swap', one), 403]);
   for (const [label, response, code] of cases) assert.equal(response.status, code, `${label}: ${response.status} ${await response.text()}`);
   console.log(`Rota Firestore rules: ${cases.length} cases passed`);
 })().catch(e => { console.error(e); process.exitCode = 1; });

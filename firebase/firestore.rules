@@ -147,14 +147,15 @@ service cloud.firestore {
     match /groupRotaEligibility/{slackId} {
       allow read, write: if false;
     }
+    // One swap or decline at a time: PIs and admins, or its own people with Events' View.
     match /groupRotaSwaps/{id} {
-      allow get: if isAdmin() || (isLabMember() && (
+      allow get: if hasFullWrite() || (may('events', 'view') && (
         get(/databases/$(database)/documents/people/$(resource.data.requesterSlackId)).data.email.lower() == email().lower() ||
         get(/databases/$(database)/documents/people/$(resource.data.recipientSlackId)).data.email.lower() == email().lower()));
       allow list, write: if false;
     }
     match /groupRotaDeclines/{id} {
-      allow get: if isAdmin() || (isLabMember() && resource.data.byEmail.lower() == email().lower());
+      allow get: if hasFullWrite() || (may('events', 'view') && resource.data.byEmail.lower() == email().lower());
       allow list, write: if false;
     }
     match /groupRotaOffers/{id} {

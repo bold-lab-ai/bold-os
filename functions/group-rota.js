@@ -327,18 +327,35 @@ module.exports = function rota({ db, admin, HttpsError, onCall, onSchedule, sign
     }
     const ownSwaps = await swaps.where('requesterSlackId', '==', a.slackId).get();
     const offeredSwaps = await swaps.where('recipientSlackId', '==', a.slackId).get();
-    const [assigned, registered, memberships, admins, pis] = await Promise.all([
-      slots.get(), db.collection('groupRotaMembers').get(), db.collection('members').get(), rolesEmails('admins'), rolesEmails('pis')
+    const [assigned, registered, memberships, admins, pis, eventDocs, seasonDocs, people] = await Promise.all([
+      slots.get(), db.collection('groupRotaMembers').get(), db.collection('members').get(), rolesEmails('admins'), rolesEmails('pis'),
+      meetings.where('series', '==', a.seriesId).get(), db.collection('groupMeetingSeasons').get(), seesPeople(a.email)
     ]);
     const byEmail = new Map(memberships.docs.map(d => [d.id, d.data()]));
     const bySlack = new Map(registered.docs.map(d => [d.id, d.data()]));
     const eligiblePeople = a.people.filter(p => siteRole(p.email, admins, pis) || internalCategory((byEmail.get(p.email) || {}).category));
     const activePeople = eligiblePeople.filter(p => !bySlack.has(p.slackId) || bySlack.get(p.slackId).active !== false);
-    const visibleIds = new Set(assigned.docs.map(d => d.data().presenterSlackId).concat(activePeople.map(p => p.slackId)));
+    // Names go only as far as the rota shows them: the presenters of meetings they see.
+    // The whole presenter pool (for offering a slot) to rota managers and whoever has People's View.
+    const dates = new Set((await visibleMeetings(a, eventDocs, seasonDocs)).map(doc => doc.data().date));
+    const shown = assigned.docs.map(d => d.data()).filter(v => v.seriesId === a.seriesId && dates.has(v.meetingId)).map(v => v.presenterSlackId);
+    const visibleIds = new Set(shown.concat(a.admin || people ? activePeople.map(p => p.slackId) : []).filter(Boolean));
     return { slackId: a.slackId, seriesId: a.seriesId, seriesHidden: !!a.series.hidden, registered: a.registered, eligible: a.eligible, admin: a.admin, canSeeDrafts: a.canSeeDrafts,
       people: a.people.filter(p => visibleIds.has(p.slackId)).map(p => ({ slackId: p.slackId, name: p.name, eligible: activePeople.some(x => x.slackId === p.slackId) })),
       reason: !a.slackId ? 'Your Slack account is not uniquely matched in the roster' : !a.eligible ? 'Only BOLD-internal members and above can present' : !a.registered ? 'Resume rota participation to use this action' : '',
       swaps: [...ownSwaps.docs, ...offeredSwaps.docs].filter((s, i, arr) => arr.findIndex(x => x.id === s.id) === i).map(s => ({ id: s.id, ...s.data() })) };
+  }
+  // The meetings `a` sees: in a published season (any, for managers), and released and
+  // visible to them unless they manage the rota.
+  async function visibleMeetings(a, eventDocs, seasonDocs) {
+    const published = new Set(seasonDocs.docs.filter(doc => a.admin || doc.data().publicationState === 'published').map(doc => doc.id));
+    const out = [];
+    for (const doc of eventDocs.docs) { const m = doc.data(); if (published.has(m.seasonId) && (a.admin || !m.hidden && await seesEvent(a.email, m))) out.push(doc); }
+    return out;
+  }
+  async function seesPeople(email) {
+    try { await requireAccess(email, 'people', 'view'); return true; }
+    catch (e) { if (e instanceof HttpsError) return false; throw e; }
   }
   async function snapshot(request) {
     const a = await actor(request, false);
@@ -354,12 +371,8 @@ module.exports = function rota({ db, admin, HttpsError, onCall, onSchedule, sign
     const byEmail = new Map(membershipDocs.docs.map(d => [d.id, d.data()]));
     const bySlack = new Map(memberDocs.docs.map(d => [d.id, d.data()]));
     const published = new Set(seasonDocs.docs.filter(doc => a.admin || doc.data().publicationState === 'published').map(doc => doc.id));
-    const visible = [];
-    for (const doc of eventDocs.docs) {
-      const m = doc.data();
-      if (published.has(m.seasonId) && (a.admin || !m.hidden && await seesEvent(a.email, m))) visible.push(pick(doc.id, m,
-        ['date', 'seasonId', 'format', 'startTime', 'durationMinutes', 'timeZone', 'location', 'status', 'skipReason', 'origin', 'hidden']));
-    }
+    const visible = (await visibleMeetings(a, eventDocs, seasonDocs)).map(doc => pick(doc.id, doc.data(),
+      ['date', 'seasonId', 'format', 'startTime', 'durationMinutes', 'timeZone', 'location', 'status', 'skipReason', 'origin', 'hidden']));
     const dates = new Set(visible.map(m => m.date));
     return {
       meetings: visible,
