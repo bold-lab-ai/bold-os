@@ -76,11 +76,52 @@ test('how often: the hours BOLD LLM writes at, once a day by default', () => {
   assert.ok(HL.writesAt(undefined, 4) && !HL.writesAt('nonsense', 7));
 });
 
-test('a letter covers what changed since the previous one, at most a day', () => {
+test('a letter covers what changed since their last visit', () => {
+  const now = Date.parse('2026-11-09T13:00:00Z'), H = 3600000, M = 60000;
+  const ts = (t) => ({ toMillis: () => t });
+  // Left 5 hours ago: since then.
+  assert.strictEqual(HL.sinceFor(null, { seenAt: ts(now - 5 * H) }, now), now - 5 * H);
+  // On now (opening the page): since the end of the visit before.
+  assert.strictEqual(HL.sinceFor(null, { seenAt: ts(now - 2 * M), lastVisitEnd: ts(now - 3 * 24 * H) }, now), now - 3 * 24 * H);
+  // Only days (before times were kept): the start of the last day before today, London (GMT in November).
+  assert.strictEqual(HL.sinceFor(null, { days: ['2026-11-05', '2026-11-07', '2026-11-09'] }, now), Date.parse('2026-11-07T00:00:00Z'));
+  // In summer, London's midnight is 23:00 UTC the day before.
+  assert.strictEqual(HL.sinceFor(null, { days: ['2026-07-01'] }, Date.parse('2026-07-03T09:00:00Z')), Date.parse('2026-06-30T23:00:00Z'));
+  // Nothing known: the last 24 hours.
+  assert.strictEqual(HL.sinceFor(null, null, now), now - 24 * H);
+  // At most 14 days back.
+  assert.strictEqual(HL.sinceFor(null, { seenAt: ts(now - 40 * 24 * H) }, now), now - 14 * 24 * H);
+  // From the visit, not the previous letter: one they never opened doesn't hide what it said.
+  assert.strictEqual(HL.sinceFor({ at: now - 2 * H }, { seenAt: ts(now - 5 * H) }, now), now - 5 * H);
+});
+
+test('how long ago, in words', () => {
   const now = Date.parse('2026-11-09T13:00:00Z');
-  assert.strictEqual(HL.sinceFor({ at: now - 7 * 3600000 }, now), now - 7 * 3600000);
-  assert.strictEqual(HL.sinceFor({ at: now - 30 * 3600000 }, now), now - 24 * 3600000);
-  assert.strictEqual(HL.sinceFor(null, now), now - 24 * 3600000);
+  assert.strictEqual(HL.agoText(now - 40 * 60000, now), '40 minutes, since 12:20 today');
+  assert.strictEqual(HL.agoText(now - 5 * 3600000, now), '5 hours, since 08:00 today');
+  assert.strictEqual(HL.agoText(Date.parse('2026-11-08T18:40:00Z'), now), 'since yesterday 18:40');
+  assert.strictEqual(HL.agoText(Date.parse('2026-11-06T09:00:00Z'), now), '3 days, since Friday 2026-11-06 09:00');
+});
+
+test('the lab directory, trimmed to what bears on them: theirs and the closest matches first', () => {
+  const long = 'x'.repeat(1000);
+  const you = { interests: 'Reinforcement Learning, multi-agent coordination', projects: ['Mine'] };
+  const ps = [{ title: 'Unrelated', stage: 'ongoing', keywords: ['vision'], abstract: 'images', url: 'u0' },
+    { title: 'Mine', stage: 'ongoing', abstract: long, members: ['Ada'], you_are_in_it: true, url: 'u1' },
+    { title: 'Coordination games', stage: 'proposed', keywords: ['multi-agent'], abstract: 'reinforcement learning', open_cards: { count: 5, titles: ['a', 'b', 'c', 'd'] }, url: 'u2' }];
+  const people = [{ name: 'Zed', interests: 'Vision', profile: 'z' }, { name: 'Bo', role: 'PhD', interests: 'multi-agent reinforcement ' + long, profile: 'p' },
+    { name: 'Cy', interests: '', projects: ['Mine'], profile: 'q' }];
+  const d = HL.directoryOf(ps, people, 100000, you);
+  assert.deepStrictEqual(d.projects.map((p) => p.title), ['Mine', 'Coordination games']);
+  assert.deepStrictEqual(d.people.map((p) => p.name), ['Cy', 'Bo']);
+  assert.ok(d.projects[0].abstract.length <= 300 && d.projects[0].abstract.endsWith('…'));
+  assert.deepStrictEqual(d.projects[1].open_cards, { count: 5, titles: ['a', 'b', 'c'] });
+  assert.ok(d.people[1].interests.length <= 200);
+  // Small: the least related go.
+  const small = HL.directoryOf(ps, people, 900, you);
+  assert.ok(small.projects.some((p) => p.title === 'Mine') && !small.projects.some((p) => p.title === 'Unrelated'));
+  assert.ok(!small.people.some((p) => p.name === 'Zed'));
+  assert.ok(JSON.stringify(small.projects).length + JSON.stringify(small.people).length <= 900);
 });
 
 test('who writes the letters: a ladder, tried in turn; nothing below rule-based', () => {

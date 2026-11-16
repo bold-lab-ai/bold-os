@@ -752,19 +752,53 @@ module.exports = function(deps){
     since = Number(since) > 0 && since < now ? Number(since) : now - 24 * 3600000;
     const today = HL.londonNow(now).date, in7 = new Date(now + 7 * 86400000).toISOString().slice(0, 10), in30 = new Date(now + 30 * 86400000).toISOString().slice(0, 10);
     const when = async (page, fn, empty) => ((await access.can(who.email, page, 'view')) ? fn() : empty);
-    const [mine, cal, evs, waiting, notes, convs, changes, full] = await Promise.all([
+    const [mine, cal, evs, waiting, notes, convs, changes, full, directory] = await Promise.all([
       myItems(who),
       when('calendar', () => calendar(who, { from: today, to: in7, kind: 'meetings' }), {}),
       when('calendar', () => calendar(who, { from: today, to: in30, kind: 'events' }).then((c) => c.events || []), []),
       act(who, 'myRequests', {}).then((r) => r.forYou || []).catch((err) => { logger.warn('letterInputs: what waits on them failed', { error: String((err && err.message) || err) }); return []; }),
       db.collection('notifications').where('to', '==', who.email).where('read', '==', false).limit(100).get().then((x) => x.docs.map((d) => d.data())),
       when('conversations', () => db.collection('conversations').where('private', '==', false).get().then((x) => x.docs.map((d) => Object.assign({ id: d.id }, d.data()))
-        .filter((c) => (c.lastAt || c.at || 0) > weekAgo).map((c) => Object.assign(c, { yours: String(c.createdBy || '').toLowerCase() === who.email, url: url('conversations.html#post=' + encodeURIComponent(c.id)) }))), []),
+        .filter((c) => (c.lastAt || c.at || 0) > Math.min(weekAgo, since)).map((c) => Object.assign(c, { yours: String(c.createdBy || '').toLowerCase() === who.email, url: url('conversations.html#post=' + encodeURIComponent(c.id)) }))), []),
       when('changelog', () => db.collection('changelog').where('at', '>', since).get().then((x) => x.docs.map((d) => d.data())), []),
       isFullWrite(who.email),
+      letterDirectory(who).catch((err) => { logger.warn('letterInputs: the lab directory failed', { error: String((err && err.message) || err) }); return null; }),
     ]);
+    const dir = directory;
     return HL.inputsOf({ now, since, person: { first_name: String((mine.you || {}).name || who.name || '').split(' ')[0], group: (mine.you || {}).group || '', pi_or_admin: !!full },
-      waiting, calendar: cal, events: evs, mine, notes, conversations: convs, changes });
+      you: dir && dir.you, waiting, calendar: cal, events: evs, mine, notes, conversations: convs, changes,
+      directory: dir && { projects: dir.projects, people: dir.people, max: 25000 } });
+  }
+  // The lab as the home letter sees it (who they could help, who could help them), as the person: the projects they may
+  // see (as list_projects) but completed ones, with their work boards' open cards; the people (as find_people) but them;
+  // and their own interests. Trimmed in home-letter.js (directoryOf).
+  async function letterDirectory(who){
+    const [seeProjects, seePeople] = await Promise.all([access.can(who.email, pageOfTool('list_projects'), 'view'), access.can(who.email, pageOfTool('find_people'), 'view')]);
+    const [g, name, workspaces, ms, profile] = await Promise.all([seeProjects ? allProjects() : {}, nameOf(), seeProjects ? lab.workspaces() : [], seePeople ? lab.members() : [], profileUrlOf()]);
+    const ws = {};
+    workspaces.forEach((w) => { ws[w._id] = w; });
+    const projects = [], titlesOf = {};
+    let rank = 0;
+    for (const group of ['ongoing', 'submission', 'planned', 'proposed']) {
+      (g[group] || []).forEach((p) => {
+        const id = p.pid || p.projectId || p.cardId, w = ws[id] || {}, team = (w.members || []).map((e) => String(e).toLowerCase());
+        team.forEach((e) => { (titlesOf[e] = titlesOf[e] || []).push(p.title); });
+        projects.push({ id, title: p.title, stage: group, venue: p.boardLabel || '', keywords: p.keywords || [], abstract: p.abstract || '',
+          members: team.map(name), you_are_in_it: team.indexOf(who.email) >= 0, url: url(projectHref(p.projectId || p.cardId, p.boardId)), updated: -(rank++), work: !!(w.work && w.work.on) });
+      });
+    }
+    // updated: the list's order (most recently updated first within each group, ongoing first): what's dropped first is last.
+    await Promise.all(projects.filter((p) => p.work).map((p) => db.collection('projectWorkspaces').doc(p.id).collection('work').get().then((s) => {
+      const open = s.docs.map((d) => d.data()).filter((c) => c.column !== 'done').sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
+      p.open_cards = { count: open.length, titles: open.map((c) => c.title || '') };
+    }).catch(() => {})));
+    const me = ms.find((m) => String(m.email || m._id).toLowerCase() === who.email);
+    const people = ms.filter((m) => String(m.email || m._id).toLowerCase() !== who.email).map((m) => {
+      const r = personRow(m, profile), e = String(m.email || m._id).toLowerCase();
+      return { name: r.name, pronouns: r.pronouns, role: r.role, group: r.group, interests: [r.interests, (r.pillars || []).join(', ')].filter(Boolean).join('; '), projects: titlesOf[e] || [], profile: r.profile };
+    });
+    return { projects, people, you: me ? { interests: [me.interests || '', (me.pillars || []).join(', ')].filter(Boolean).join('; '), role: me.role || '',
+      projects: titlesOf[who.email] || [] } : undefined };
   }
   // The reading tools Talking to BOLD may use, as the person (each checks its page, as for their agent).
   const CHAT_TOOLS = ['search', 'list_projects', 'get_project', 'find_people', 'get_person', 'calendar', 'my_items', 'read_page', 'list_skills', 'get_skill'];

@@ -23,8 +23,76 @@ function letterOrder(people, now){
     .sort((a, b) => b.often - a.often || b.seen - a.seen || (a.p.email < b.p.email ? -1 : 1))
     .map((x) => x.p);
 }
-// Pure: what a letter written now covers: since the previous one, if it's from the last day, else the last 24 hours.
-function sinceFor(prev, now){ const day = now - 24 * 3600000; return prev && prev.at > day && prev.at < now ? prev.at : day; }
+// Pure: what a letter written now covers: since their last visit (visits/{email}: seenAt, the latest moment they were on
+// BOLD.OS, kept by bold.js; lastVisitEnd, the end of the visit before, kept by onVisit). If they're on now (seen in the
+// last 30 minutes, as when they open the page and it's written for them), since that visit before. Without times
+// (before 2026-11-15), the start of the last day they came before today; without that, the last 24 hours. Never more
+// than 14 days back. Not from their previous letter: one they never opened mustn't hide what it said. → ms.
+const ON_NOW = 30 * 60000, SINCE_MAX = 14 * 24 * 3600000;
+function sinceFor(prev, visit, now){
+  const v = visit || {}, ms = (t) => (t && typeof t.toMillis === 'function' ? t.toMillis() : Number(t) || 0);
+  const seen = ms(v.seenAt), before = ms(v.lastVisitEnd);
+  let at = 0;
+  if (seen && now - seen > ON_NOW) at = seen;
+  else if (seen && before) at = before;
+  if (!at) {
+    const today = londonDate(now), days = (v.days || []).filter((d) => typeof d === 'string' && d < today).sort();
+    if (days.length) at = Date.parse(days[days.length - 1] + 'T00:00:00Z') - (londonOffset(days[days.length - 1]) * 60000);
+  }
+  if (!at || at >= now) at = now - 24 * 3600000;
+  return Math.max(at, now - SINCE_MAX);
+}
+// Pure: London's offset from UTC on a date, in minutes (0 or 60).
+function londonOffset(date){
+  const t = Date.parse(date + 'T12:00:00Z');
+  const h = Number(new Intl.DateTimeFormat('en-GB', { timeZone: 'Europe/London', hour: '2-digit', hourCycle: 'h23' }).format(new Date(t)));
+  return (h - 12) * 60;
+}
+// Pure: how long ago a time was, in words, from now (London): "2 hours", "since yesterday 18:40", "3 days".
+function agoText(at, now){
+  const mins = Math.round((now - at) / 60000), today = londonDate(now), d = londonDate(at);
+  const hm = londonNow(at).time.slice(0, 5);
+  if (d === today) return mins < 90 ? mins + ' minutes, since ' + hm + ' today' : Math.round(mins / 60) + ' hours, since ' + hm + ' today';
+  if (d === londonDate(now - 24 * 3600000)) return 'since yesterday ' + hm;
+  const days = Math.round((Date.parse(today + 'T12:00:00Z') - Date.parse(d + 'T12:00:00Z')) / (24 * 3600000));
+  return days + ' days, since ' + londonNow(at).weekday + ' ' + d + ' ' + hm;
+}
+// Pure: the lab as the letter sees it, trimmed to what bears on them (who they could help, who could help them):
+// projects not completed, with their open cards, and people but them, each ranked by how much it shares with them
+// (`you`: their interests and projects; sharing nothing, left out): a project they're in, then shared words in keywords, title and abstract (one
+// with open cards ahead of one without); a person on a project of theirs, then shared words in their interests. Kept
+// best first until the two come to `max` characters. projects: [{ title, stage, venue, keywords, abstract, members,
+// you_are_in_it, open_cards: { count, titles }, url }]; people: [{ name, role, group, interests, projects, profile }].
+const STOP = new Set('and the for with from into that this their about learning based using towards via incl other'.split(' '));
+function wordsOf(s){ return new Set(String(s || '').toLowerCase().split(/[^a-z0-9]+/).filter((w) => w.length > 2 && !STOP.has(w))); }
+function directoryOf(projects, people, max, you){
+  max = max || 25000;
+  const cut = (s, n) => { s = String(s || '').replace(/\s+/g, ' ').trim(); return s.length > n ? s.slice(0, n - 1).replace(/\s+\S*$/, '') + '…' : s; };
+  const mine = wordsOf([(you || {}).interests, (you || {}).role].join(' ')), theirs = new Set(((you || {}).projects || []).map(String));
+  const shared = (text) => { let n = 0; wordsOf(text).forEach((w) => { if (mine.has(w)) n++; }); return n; };
+  const ps = (projects || []).map((p, i) => ({ score: (p.you_are_in_it ? 100 : 0) + 2 * shared((p.keywords || []).join(' ') + ' ' + p.title) + shared(p.abstract)
+      + (p.open_cards && p.open_cards.count ? 1 : 0) - i / 1000,
+    row: { title: p.title, stage: p.stage, venue: p.venue || undefined, keywords: (p.keywords || []).slice(0, 8),
+      abstract: cut(p.abstract, 300) || undefined, members: (p.members || []).slice(0, 15), you_are_in_it: !!p.you_are_in_it || undefined,
+      open_cards: p.open_cards && p.open_cards.count ? { count: p.open_cards.count, titles: (p.open_cards.titles || []).slice(0, 3).map((t) => cut(t, 90)) } : undefined,
+      url: p.url } }));
+  const qs = (people || []).map((m, i) => ({ score: 10 * (m.projects || []).filter((t) => theirs.has(String(t))).length + shared(m.interests) + ((m.interests || (m.projects || []).length) ? 0.5 : 0) - i / 1000,
+    row: { name: m.name, pronouns: m.pronouns || undefined, role: cut(m.role, 80) || undefined, group: m.group || undefined, interests: cut(m.interests, 200) || undefined,
+      projects: (m.projects || []).slice(0, 6), profile: m.profile } }));
+  // Best first, the two lists in turn, until the next one wouldn't fit.
+  // Nothing shared: no use to the letter.
+  const near = (x) => x.score >= 1;
+  const P = ps.filter(near).sort((a, b) => b.score - a.score), Q = qs.filter(near).sort((a, b) => b.score - a.score);
+  const out = { projects: [], people: [] };
+  let size = 30, i = 0, j = 0;
+  while (i < P.length || j < Q.length) {
+    const takeP = i < P.length && (j >= Q.length || P[i].score >= Q[j].score || out.projects.length * 2 < out.people.length);
+    const x = takeP ? P[i++] : Q[j++], n = JSON.stringify(x.row).length + 1;
+    if (size + n > max) continue;
+    size += n; (takeP ? out.projects : out.people).push(x.row);
+  }
+  return out;
+}
 const SHORT_MAX = 4000, LONG_MAX = 40000;
 
 // A letter as the model writes it → { letter } or { error }.
@@ -88,6 +156,7 @@ function factsOf(x, now){
     waiting_by_kind: Object.keys(kinds).map((k) => kinds[k]),
     deadlines_within_3_weeks: deadlines,
     os_changes_count: ((x.os_changes || {}).content || []).length,
+    since: x.since ? { at: x.since, how_long_ago: agoText(Date.parse(x.since), now) } : null,
   };
 }
 
@@ -100,6 +169,7 @@ function inputsOf(p){
   const out = {
     now: londonNow(p.now),
     person: p.person,
+    you: p.you || undefined,
     since: new Date(p.since).toISOString(),
     waiting_on_you: (p.waiting || []).map((x) => ({ kind: x.kind, title: x.title, from: (x.by && x.by.name) || '', since: x.since ? new Date(x.since).toISOString() : '', url: x.url })),
     your_week: week,
@@ -107,8 +177,10 @@ function inputsOf(p){
     your_letters: mine.letters || mine.recommendation_letters || [],
     notifications: (p.notes || []).map((n) => ({ text: n.text, at: n.at ? new Date(n.at).toISOString() : '', read: !!n.read, url: n.href || '' })),
     conversations: (p.conversations || []).map((c) => ({ title: c.title, by: c.name || '', replies: c.replies || 0,
-      last_reply: c.lastAt ? new Date(c.lastAt).toISOString() : '', started_by_you: !!c.yours, waits_for_an_answer: !(c.replies > 0), url: c.url })),
-    lab: { events: (p.events || []).map((e) => ({ title: e.title, start: e.start, end: e.end, place: e.place, url: e.url })) },
+      last_reply: c.lastAt ? new Date(c.lastAt).toISOString() : '', started_by_you: !!c.yours, waits_for_an_answer: !(c.replies > 0),
+      new_since_last_visit: (c.at || 0) > p.since || undefined, active_since_last_visit: (c.lastAt || c.at || 0) > p.since, url: c.url })),
+    lab: Object.assign({ events: (p.events || []).map((e) => ({ title: e.title, start: e.start, end: e.end, place: e.place, url: e.url })) },
+      p.directory ? directoryOf(p.directory.projects, p.directory.people, p.directory.max, p.you) : {}),
     os_changes: { content: (p.changes || []).map((c) => ({ what: c.title, kind: c.collection, note: c.note || '', by: (c.by && c.by.name) || '',
       proposed_by: (c.proposedBy && c.proposedBy.name) || '', at: c.at ? new Date(c.at).toISOString() : '' })) },
   };
@@ -131,4 +203,4 @@ function ladderOf(x){
 // Pure: the models above 'rules', in order (none: the rule-based letter for everyone).
 function modelsOf(ladder){ return ladder.slice(0, ladder.indexOf('rules') < 0 ? ladder.length : ladder.indexOf('rules')); }
 
-module.exports = { WRITERS, ladderOf, modelsOf, REFRESH, refreshHours, writesAt, lastDue, londonDate, letterOrder, sinceFor, SHORT_MAX, LONG_MAX, checkLetter, isFresh, londonNow, inputsOf, factsOf, meetingOf };
+module.exports = { WRITERS, ladderOf, modelsOf, REFRESH, refreshHours, writesAt, lastDue, londonDate, letterOrder, sinceFor, agoText, directoryOf, ON_NOW, SHORT_MAX, LONG_MAX, checkLetter, isFresh, londonNow, inputsOf, factsOf, meetingOf };
