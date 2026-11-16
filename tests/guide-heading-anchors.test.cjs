@@ -70,3 +70,9 @@ test('rendering without options preserves legacy output and phase IDs', () => {
   assert.match(html, /<h3 class="md-phase" id="phase-results">/);
   assert.doesNotMatch(html, /gd-heading-alias|id="[^\"]+--/);
 });
+
+
+test('identical heading names in different parts have distinct anchors', () => {
+  assert.match(render('#### Results', { headingPrefix: 'p-one' }), /id="p-one--results"/);
+  assert.match(render('#### Results', { headingPrefix: 'p-two' }), /id="p-two--results"/);
+});
