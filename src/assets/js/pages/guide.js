@@ -105,7 +105,28 @@
   // A part as main has it (a branch is measured against it).
   function livePart(id){ return ((x && x.parts) || []).filter(function(p){ return p.id === id; })[0] || null; }
   function anchor(p){ return PREFIX + p.id; }
+  var cachedAnchorParts, cachedAnchorData, cachedAnchors;
+  function anchorRegistry(){
+    var d = doc() || {}, list = d.parts || [];
+    if (list !== cachedAnchorParts || d.headingAnchors !== cachedAnchorData) {
+      cachedAnchorParts = list; cachedAnchorData = d.headingAnchors;
+      cachedAnchors = BoldGuideAnchors.current(list, d.headingAnchors);
+    }
+    return cachedAnchors;
+  }
+  function readableTarget(id){
+    var registry = anchorRegistry(), query = new URLSearchParams(location.search);
+    var section = query.has('section') ? query.get('section') : null;
+    var entry = BoldGuideAnchors.resolve(registry, id, section);
+    if (entry) return entry;
+    var legacy = PREFIX && id.indexOf(PREFIX) === 0 ? id.slice(PREFIX.length) : id;
+    entry = BoldGuideAnchors.resolveLegacy(registry, legacy);
+    return entry && entry.active ? entry : null;
+  }
   function headingPart(id){
+    var entry = readableTarget(id);
+    if (entry) return part(entry.partId);
+
     return parts().filter(visible).filter(function(p){
       var headings = [];
       md(p.body, { headingPrefix: anchor(p), headings: headings });
@@ -116,7 +137,10 @@
     try { return decodeURIComponent(String(hash || '').replace(/^#/, '')); }
     catch (e) { return ''; }
   }
-  function linkHtml(id, title, p){ return BoldGuideCopy.html(id, title || id, p && hasSections() ? G.slugify(p.section || '') : null); }
+  function linkHtml(id, title, p, index){
+    var entry = p && anchorRegistry().entries.filter(function(e){ return e.active && e.partId === p.id && e.index === (index == null ? -1 : index); })[0];
+    return BoldGuideCopy.html(entry ? entry.slug : id, title || id, p && hasSections() ? G.slugify(p.section || '') : null);
+  }
   function copyPath(p, title){
     return (p ? [p.section, p.title, title] : [title]).filter(Boolean).filter(function(v, i, list){ return list.indexOf(v) === i; }).join(' › ');
   }
@@ -124,7 +148,8 @@
     Array.prototype.forEach.call(body.querySelectorAll('.guide-text h3[id], .guide-text h4[id], .guide-text h5[id], .guide-text h6[id]'), function(h){
       var owner = h.closest('.guide-part');
       var p = owner && part(owner.getAttribute('data-pid'));
-      h.insertAdjacentHTML('beforeend', linkHtml(h.id, copyPath(p, h.textContent), p));
+      var siblings = owner && owner.querySelectorAll('.guide-text h3[id], .guide-text h4[id], .guide-text h5[id], .guide-text h6[id]');
+      h.insertAdjacentHTML('beforeend', linkHtml(h.id, copyPath(p, h.textContent), p, siblings ? Array.prototype.indexOf.call(siblings, h) : 0));
     });
   }
   BoldGuideCopy.mount(body);
@@ -159,6 +184,11 @@
       var at = comments && comments.show(commentFor(hash)), cp = at && !at.proposalId && part(at.partId);
       return cp ? (cp.section || '') : null;
     }
+    // Hash-only section links predate readable heading fragments.
+    var oldSection = sections().filter(function(v){ return G.slugify(v) === h; })[0];
+    if (!new URLSearchParams(location.search).has('section') && oldSection !== undefined) return oldSection;
+    var readable = readableTarget(h);
+    if (readable) { var owner = part(readable.partId); return owner ? (owner.section || '') : null; }
     var byName = sections().filter(function(v){ return G.slugify(v) === h; })[0];
     if (byName !== undefined) return byName;
     var p = parts().filter(function(q){ return anchor(q) === h; })[0] || headingPart(h);
@@ -931,7 +961,8 @@
       if (el) el.scrollIntoView({ block: 'center' });
       return;
     }
-    var id = hashId(hash);
+    var id = hashId(hash), readable = readableTarget(hashId(hash));
+    if (readable) id = PREFIX + readable.currentLegacy;
     if (id === 'proposals') { BOLD.openBranches(); return; }
     // A link to a proposed change (#proposal-<id>, from before branches): its branch's page (they share the id).
     var pm = /^proposal-(.+)$/.exec(id);
