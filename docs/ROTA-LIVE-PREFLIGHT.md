@@ -1,32 +1,57 @@
-# Group meeting rota: read-only migration preflight
+# Group meeting rota: migration and release
 
-Checked 28 October 2026. The migration target is the **current published meetings and presenter assignments**. Historical D1 change entries are not required. This is a read-only audit, not permission to import. No production data was changed.
+## Where it stands (16 November 2026)
 
-## Source and comparison
+- **Code:** merged (#30) and deployed: the rules, the indexes and the `groupRota*` functions, with `slackEvents`, `boldApi`, `eventSeries` and `historyGroupRotaSlots`.
+- **Series:** `eventSeries/group-meetings-afb58e`, created through the Events form. It is hidden, has weekly editions, `inviteGroup: 'none'`, `visibleTo: 'everyone'` and `proposals: false`. `page: 'group-meetings.html'` was added by a one-time update after checking all of these and that it had no editions.
+- **Imported:** the old rota's published schedule. Each part below is a document in production:
 
-- Source: the [old rota's public `GET /api/rota` response](https://bold-lab-meeting-rota.theo-wolf296647.chatgpt.site/api/rota), saved locally at `/private/tmp/bold-rota-public-2026-10-28.json` (SHA-256 `2f64e7b5a47bddb1047f71f43390f3a68ae71f55c3a024db7df524f9e9d747f6`). The saved file is outside this public repository because it contains people's names and assignments.
-- The response reports season `2026-27-v4`, 52 meetings, 104 slots, 71 members, six skipped meetings, and 27 open slots. Its 20 recent change entries are incidental to this snapshot migration.
-- All 57 distinct assigned presenters are marked `slackLinked` in that response. That Boolean does not give a verified Slack ID or establish present membership or rota eligibility. One of the 71 members is marked unlinked and is not assigned a slot.
-- The previously saved local preview had the same 52 meeting dates, 104 slot IDs, 71 member IDs, skipped dates, formats, and times, but four slots had changed: `2026-10-26-slot-1` and `2026-10-26-slot-3` had different presenters and revisions; `2026-10-26-slot-2` had a different revision; `2026-11-02-slot-1` had a different topic and revision. The ignored `_site/group-meetings-preview.html` was rebuilt from the 28 October response. A field-by-field check now finds no meeting-format, skipped-state, presenter, or topic differences across its 104 slots. Browser-local preview edits can still override the snapshot until **Reset local changes** is clicked.
-- Compared with the old rota's deterministic schedule generator, 33 current slots have a different presenter and two have a different topic. The generated seed cannot replace the merged live schedule.
+  | What | Where | How many |
+  |---|---|---|
+  | Season `2026-27-v4`, labelled "2026–27" | `groupMeetingSeasons` | 1 |
+  | Meetings, all hidden (17 past, 35 upcoming) | `events/group-meetings-afb58e-{date}` | 52 |
+  | Slots | `groupRotaSlots` | 104 |
+  | Presenter records | `groupRotaMembers` | 65 |
 
-## Local import dry run
+  The import was one atomic commit that only creates documents; none of them existed before.
+- **Checked after the import:** no slot differs from the export in presenter, topic or format, and the six skipped meetings stay skipped. Every meeting is on Mondays at 11:00 for 60 minutes, with no location. Each slot got its first version, and no changelog entries were written while the meetings are hidden.
+- **Nothing is visible or sent yet:** the series and every meeting are hidden, and the three rota Slack features (`rota-swaps`, `rota-offers`, `rota-reminders`) are still in pilot. Reminders also need `groupRotaConfig/current` (`reminderChannelId`, `remindersEnabled`), which isn't set.
 
-The earlier provisional dry run produced 157 document shapes: one season, 52 meetings, and 104 slots. That output predates the event-series port and **must not be imported**. The current `functions/tools/prepare-rota-import.mjs` additionally requires a reviewed local series descriptor and emits the 52 meetings as `events/{seriesId}-{date}` editions with matching `seriesId` on slots. It retains unresolved legacy presenter IDs and names, but ownership-based editing, declining and swapping cannot work until a Slack ID is verified. The tool makes no network calls or Firebase writes. The local dry run needs repeating against a frozen cutover snapshot and the actual series ID; no production import has been run.
+## The import
 
-## Required before migration approval
+- **Source:** the [old rota's public `GET /api/rota`](https://bold-lab-meeting-rota.theo-wolf296647.chatgpt.site/api/rota), frozen at 14:20 on 16 November 2026 (SHA-256 `91b0a332823da84793aef94da48bc0d35c55a6244e3c78c778a00901a19f9a7a`). It held season `2026-27-v4` and these counts:
 
-1. Re-fetch and freeze the public merged schedule at cutover. Retain its checksum and a per-slot comparison for review and reversal. The generated seed and this dated preview must not replace the cutover-day schedule.
-2. Build an explicit legacy-member-ID to Slack-ID map for the 57 assigned presenters so their existing slots work as their own on BOLD.OS. The old service keeps configured mappings in its server-only `SLACK_USER_MAP` and self registrations in `rota_members`; the public API exposes only `slackLinked`. Verify mappings against the BOLD.OS Slack roster without relying on names alone. Keep any unresolved assignment visible by its legacy name and ID, and report the unavailable owner actions rather than reassigning it.
-3. Compare every meeting date, format, time, skipped state, slot ID, presenter, and topic against the frozen snapshot. Review older manually entered group-meeting project presentations so the new project links do not duplicate them. The rota uses shared profile photos, so no separate legacy portrait transfer is planned.
-4. Create one hidden, empty weekly editions series through the ordinary BOLD.OS Events form, without a recurring Calendar invitation. Set visibility to **Everyone signed in** so PAN-BOLD and BOLD-associate members can see released details; confirm the BOLDiquette's Events View level also admits them. Check its ID, weekly cadence, `inviteGroup: 'none'`, organisers and absence of editions. During an authorised release, the maintainer makes a one-time update to that `eventSeries/{id}` record: set `page: 'group-meetings.html'` and `proposals: false`. No rota option is added to the shared event form. Prepare the import with the frozen snapshot, verified map and that series ID. Review the per-slot comparison and unresolved-owner list before a separately authorised production import. Imported editions stay hidden until reviewed and released on the rota page; release the series before releasing its editions. Presenter eligibility now follows BOLD.OS membership category (BOLD-internal and above); no Slack user-group ID is needed. The policy for inviting people to the actual meeting is still to be agreed before release.
+  | Meetings | Slots | Members | Skipped | Open slots |
+  |---|---|---|---|---|
+  | 52 (20 Jul 2026 – 12 Jul 2027) | 104 | 71 | 6 | 27 |
 
-The old public endpoint already supplies the current merged schedule, including its overrides. A full D1 history export is no longer a blocker. Verified owner IDs are still needed for existing presenters to edit, decline, and swap their slots. Deployment, reminder handover, old-URL redirect, and live validation remain separately authorised release work as described in `docs/ROTA-PLAN.md`. Before the release, add the `/rota` slash command to the Slack app (its request URL is `slackEvents`, like `/meeting`): it isn't in this repository.
+- **Kept outside this public repository,** because they contain people's names: the frozen export, the identity map and the exact documents written.
+- **Tool:** `functions/tools/prepare-rota-import.mjs`, with the live series descriptor. The season's label was then set to "2026–27".
+- **Identities:** the old rota's members were matched by name against BOLD.OS's `people` roster. Its export has no emails or Slack IDs.
 
-## Release smoke tests for the maintainer
+  | Match | How many | Linked to |
+  |---|---|---|
+  | Exact name, one person | 54 | That person |
+  | Exact name, two Slack accounts | 5 | The account with a BOLD.OS account, for 4 of them |
+  | Shortened or first name, confirmed by a PI | 7 | The BOLD-internal account with that name |
 
-With synthetic emulator records first, verify that creating a normal weekly editions series and attaching the page to its hidden, empty record makes no Calendar invite; an organiser can edit the series and manage editions; a member sees only released editions and their slots; hiding the series also hides its editions from Events and Calendar; releasing the series leaves imported editions hidden until individually released; and the rota appears once in Events, Calendar, search and agent reads. Check PAN-BOLD and BOLD-associate viewing of released presenters, slides and linked-project links, while claim and swap remain denied; check that a BOLD-internal member is automatically eligible and may claim both short and long vacancies. Verify edit, decline, swap, short-slot offer, reminder and project links against the same edition IDs. Check the three rota Slack pilots in the emulator outbox and then with testers in real Slack before switching any live. Repeat a read-only comparison with the frozen old-rota snapshot before and after the separately authorised import. Do not enable the new reminder until the old one is disabled.
+  Four people with talks stay unresolved: one has two Slack accounts and neither has a BOLD.OS account, and three have no clear match. Their slots show the old name (`legacyName`, `legacyMemberId`), but nobody can edit, decline or swap them until a Slack ID is set on the slot.
+- **Undoing it:** delete the 222 documents listed in the kept output: the season, the meetings, the slots and the presenter records.
 
-## Presenter identity handoff
+## Release, in order
 
-The local worksheet `/private/tmp/bold-rota-presenter-identity-check-2026-10-28.csv` lists the 57 distinct assigned legacy presenter IDs, display names, and assignment counts, with a blank verified Slack ID column. Fifty-six are in the old rota's configured roster and one came from self-registration. This is a local review aid containing people's names, so it is not committed to the public repository. The old service has no read-only public route for its mapping, the local `.env` has no `SLACK_USER_MAP`, and the local D1 emulator has no `rota_members` table. The next read-only route is to match these names against BOLD.OS's `people` roster, which contains Slack IDs and is available to signed-in members with People or Projects view access. Exact unique matches can be proposed from that roster; ambiguous or absent matches need separate review. This session has no signed-in roster connection yet. Until the matches are made, the imported legacy names can display, but their ownership-based actions remain unavailable.
+1. **Review** the rota as a PI or organiser on `group-meetings.html`. A manager sees hidden meetings.
+2. **Link the four unresolved presenters:** set `presenterSlackId` on their slots once their Slack accounts are confirmed.
+3. **Release the series** from its page, then **release the meetings**, one at a time from the rota page.
+4. **Hand over from the old rota:**
+   - Changes made in the old rota after the freeze aren't imported; re-check them, or re-run the comparison against a fresh export.
+   - Retire the old rota and redirect its URL.
+   - Switch off the old rota's reminder before setting `groupRotaConfig/current`.
+5. **Slack:**
+   - Add `/rota` to the Slack app; its request URL is `slackEvents`, like `/meeting`. It isn't in this repository.
+   - Try the three rota pilots with testers, then switch them live under Settings › Features.
+6. **Check after release:**
+   - PAN-BOLD and BOLD-associate members can see released presenters, slides and project links, but can't claim or swap.
+   - BOLD-internal members can claim short and long vacancies.
+   - Edit, decline, swap, short-slot offer and withdrawal, the reminder and the project links all work on the same meetings.
+   - The rota appears once in Events, the Calendar, search and agents' reads.
