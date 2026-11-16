@@ -1,6 +1,6 @@
 # Problem Bank
 
-The Research menu has one Problem Bank page. It holds open problems and their pinned evaluator releases. The old `benchmarks.html` address redirects to `problems.html`. This branch is for PR review. It is not deployed.
+The Research menu has one Problem Bank page. It holds open problems and their pinned evaluator releases.
 
 ## Project and evidence requirements
 
