@@ -105,6 +105,44 @@
   // A part as main has it (a branch is measured against it).
   function livePart(id){ return ((x && x.parts) || []).filter(function(p){ return p.id === id; })[0] || null; }
   function anchor(p){ return PREFIX + p.id; }
+  function headingPart(id){
+    return parts().filter(visible).filter(function(p){
+      var headings = [];
+      md(p.body, { headingPrefix: anchor(p), headings: headings });
+      return headings.some(function(h){ return h.id === id || h.legacy === id; });
+    })[0];
+  }
+  function hashId(hash){
+    try { return decodeURIComponent(String(hash || '').replace(/^#/, '')); }
+    catch (e) { return ''; }
+  }
+  var LINK_ICON = '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M10 13a5 5 0 0 0 7 0l3-3a5 5 0 0 0-7-7l-2 2M14 11a5 5 0 0 0-7 0l-3 3a5 5 0 0 0 7 7l2-2"/></svg>';
+  function linkHtml(id){
+    return '<a class="icon-btn gd-copy-link" href="#' + encodeURIComponent(id) + '" aria-label="Copy link to this heading" title="Copy link to this heading">' + LINK_ICON + '</a>';
+  }
+  function linkHeadings(){
+    Array.prototype.forEach.call(body.querySelectorAll('.guide-text h3[id], .guide-text h4[id], .guide-text h5[id], .guide-text h6[id]'), function(h){
+      h.insertAdjacentHTML('beforeend', linkHtml(h.id));
+    });
+  }
+  // Links retain a normal href for right-click copying and a clipboard fallback.
+  body.addEventListener('click', function(e){
+    var a = e.target.closest('.gd-copy-link');
+    if (!a || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
+    e.preventDefault();
+    var url = new URL(a.getAttribute('href'), location.href).href;
+    function feedback(message){
+      var status = body.querySelector('.gd-copy-status');
+      if (!status) { status = document.createElement('span'); status.className = 'gd-copy-status'; status.setAttribute('role', 'status'); body.appendChild(status); }
+      status.textContent = message;
+    }
+    function fallback(){
+      feedback('Copy the link from the address bar.');
+      location.hash = a.getAttribute('href');
+    }
+    if (!navigator.clipboard || !navigator.clipboard.writeText) { fallback(); return; }
+    navigator.clipboard.writeText(url).then(function(){ feedback('Link copied.'); }, fallback);
+  });
   function hasSections(){ return parts().some(function(p){ return p.section; }); }
 
   // ---------- tabs (one per section) ----------
@@ -130,7 +168,7 @@
   function commentFor(hash){ var m = /^#?c=(.+)$/.exec(String(hash || '')); return m ? decodeURIComponent(m[1]) : ''; }
   // The section a #hash names: a section's slug, one of its parts' id, or a comment's part.
   function tabFor(hash){
-    var h = decodeURIComponent(String(hash || '').replace(/^#/, ''));
+    var h = hashId(hash);
     if (!h) return null;
     if (commentFor(hash)) {
       var at = comments && comments.show(commentFor(hash)), cp = at && !at.proposalId && part(at.partId);
@@ -138,7 +176,7 @@
     }
     var byName = sections().filter(function(v){ return G.slugify(v) === h; })[0];
     if (byName !== undefined) return byName;
-    var p = parts().filter(function(q){ return anchor(q) === h; })[0];
+    var p = parts().filter(function(q){ return anchor(q) === h; })[0] || headingPart(h);
     return p ? (p.section || '') : null;
   }
   function tabsHtml(){
@@ -185,8 +223,8 @@
       (q ? '' : '<div class="guide-part-controls">' + (form ? '' : grip) + icon('gd-edit', 'Suggest a change', BOLD.ICON_PENCIL) +
         icon('gd-up', 'Suggest moving it up', BOLD.ICON_UP, at === 0) + icon('gd-down', 'Suggest moving it down', BOLD.ICON_DOWN, at === all.length - 1) + '</div>') +
       '<h2><button type="button" class="gd-fold" data-id="' + esc(p.id) + '" aria-expanded="' + !fold + '" title="' + (fold ? 'Show' : 'Fold') + ' this part">' +
-        '<span class="guide-num">' + (i + 1) + '</span>' + esc(p.title) + '</button></h2></div>' +
-      (fold ? '' : '<div class="guide-text">' + md(p.body) + '</div>') + '</section>';
+        '<span class="guide-num">' + (i + 1) + '</span>' + esc(p.title) + '</button>' + linkHtml(anchor(p)) + '</h2></div>' +
+      (fold ? '' : '<div class="guide-text">' + md(p.body, { headingPrefix: anchor(p) }) + '</div>') + '</section>';
   }
 
   // Marks the contents entry of the part being read.
@@ -474,6 +512,7 @@
     keepSlot();
     var open = body.querySelector('.guide-form');
     if (open) bindForm(open);
+    linkHeadings();
     watchContents();
     if (comments && !form) comments.decorate();
   }
@@ -655,6 +694,7 @@
       '<div class="hero">' + BACK + EYEBROW_HTML + '<h1>' + esc(d.title) + '</h1>' +
         (d.description ? '<p class="hero-note">' + esc(d.description) + '</p>' : '') + '</div>' +
       '<main>' + tabsHtml() + '<div class="guide-layout"><div class="guide-main">' + shown().map(partHtml).join('') + '</div>' + contentsHtml() + '</div></main>';
+    linkHeadings();
     watchContents();
   }
 
@@ -891,12 +931,12 @@
       if (el) el.scrollIntoView({ block: 'center' });
       return;
     }
-    var id = decodeURIComponent(String(hash).replace(/^#/, ''));
+    var id = hashId(hash);
     if (id === 'proposals') { BOLD.openBranches(); return; }
     // A link to a proposed change (#proposal-<id>, from before branches): its branch's page (they share the id).
     var pm = /^proposal-(.+)$/.exec(id);
     if (pm) { location.replace(BOLD.branchPage(pm[1])); return; }
-    var fp = parts().filter(function(q){ return anchor(q) === id; })[0];
+    var fp = parts().filter(function(q){ return anchor(q) === id; })[0] || headingPart(id);
     if (fp && folded[fp.id]) { folded[fp.id] = false; saveFolded(); render(); }
     var target = document.getElementById(id);
     if (!target && tabFor(hash) !== null) target = document.getElementById('gdTabs');
