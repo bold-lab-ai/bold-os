@@ -22,7 +22,7 @@ The receiver checks that the evidence is complete and consistent. It doesn't rer
 
 ## Page and access
 
-`problems.html` supports search, stage filters, archive filtering, and direct `?problem=<id>` links. Details show the project, owner, collaborators, objective, task, submission format, metrics, run command, dependencies, seeds, compute, data access and licence notes, limitations, open issues, and next action. Missing fields say **Not recorded**.
+`problems.html` is laid out as Projects: List or Grid, search, and tabs by stage (Open, Implemented, Checked, Validated, Archived). **+ Add a project problem** opens `problems-register.html`. Each problem has its own page, `problem.html?problem=<id>`, laid out and edited as a project's page (`project.css`): the title and its badges, a line with its project and owner, and the tabs Overview (each field edited in place, the research question as the abstract), Evaluator releases and History. A field that isn't filled in says **Not set**.
 
 Each release has a pinned evaluator repository, commit, ZIP, contract digest, check results, research evidence where available, and separate approval. Earlier releases and changes remain in history.
 

@@ -47,7 +47,7 @@
     project = JSON.parse(project);
     submitBtn.disabled = true; submitBtn.textContent = 'Adding…';
     call({ action: 'create', project_id: project[0], project_board: project[1], title: title, objective: objective, task_kind: task, owner_id: owner })
-      .then(function(r){ location.href = 'problems.html?problem=' + encodeURIComponent(r.problem_id); })
+      .then(function(r){ location.href = 'problem.html?problem=' + encodeURIComponent(r.problem_id); })
       .catch(function(e){ showError('Not added. ' + (e.message || '')); submitBtn.disabled = false; submitBtn.textContent = 'Add'; });
   });
 })();

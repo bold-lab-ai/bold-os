@@ -34,6 +34,6 @@ async function rules(path,method='GET',token,body){return fetch('http://127.0.0.
   const edit=await api('edit_problem',{problem_id:receipt.problem_id,project_id:'diverging-runs',details:{owner:'Ines Internal'},notes:'Synthetic integration fixture. Do not treat this as research validation.',archived:false});assert.equal(edit.status,200,await edit.clone().text());
   const search=await api('search?query=integration&scope=problems',null,readToken);assert.equal(search.status,200);assert.match(await search.text(),/Registry integration test/);
   console.log('Registry HTTP, transactions, search, permissions, and Firestore rules passed.');
-  console.log('Browser fixture: http://localhost:8150/problems.html?problem='+receipt.problem_id);
+  console.log('Browser fixture: http://localhost:8150/problem.html?problem='+receipt.problem_id);
   await admin.app().delete();
 })().catch(e=>{console.error(e);process.exitCode=1;});

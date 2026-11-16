@@ -58,7 +58,7 @@
   function problemBank(kind){
     bank = bank || firebase.app().functions('europe-west2').httpsCallable('benchmarkRegistry')({ action: 'search' }).then(function(r){ return r.data.items; });
     return bank.then(function(rows){
-      return rows.filter(function(x){ return x.kind === kind; }).map(function(x){ return item(x.title, x.label, x.text, 'problems.html?problem=' + encodeURIComponent(x.problem_id)); });
+      return rows.filter(function(x){ return x.kind === kind; }).map(function(x){ return item(x.title, x.label, x.text, 'problem.html?problem=' + encodeURIComponent(x.problem_id)); });
     });
   }
   var LOAD = {

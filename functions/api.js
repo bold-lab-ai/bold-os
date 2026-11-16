@@ -577,9 +577,9 @@ module.exports = function(deps){
     if ((want('problems') || want('benchmarks')) && await access.can(who.email, 'projects', 'view')) jobs.push(Promise.all([db.collection('problemBank').get(), db.collection('benchmarks').get()]).then(([problems, releases]) => {
       const live = new Set(problems.docs.filter((d) => !d.data().archived).map((d) => d.id));
       if (want('problems')) problems.docs.filter((d) => live.has(d.id)).forEach((d) => { const x = d.data();
-        item('problems', x.title, 'Problem Bank', [x.objective, x.task_kind, x.notes].filter(Boolean).join(' '), 'problems.html?problem=' + encodeURIComponent(d.id)); });
+        item('problems', x.title, 'Problem Bank', [x.objective, x.task_kind, x.notes].filter(Boolean).join(' '), 'problem.html?problem=' + encodeURIComponent(d.id)); });
       if (want('benchmarks')) releases.docs.filter((d) => live.has(d.data().problem_id)).forEach((d) => { const x = d.data();
-        item('benchmarks', x.title, 'Evaluator version ' + x.evaluator.version, [x.task_kind, x.evaluator.commit, (x.research || {}).expected_basis].filter(Boolean).join(' '), 'problems.html?problem=' + encodeURIComponent(x.problem_id)); });
+        item('benchmarks', x.title, 'Evaluator version ' + x.evaluator.version, [x.task_kind, x.evaluator.commit, (x.research || {}).expected_basis].filter(Boolean).join(' '), 'problem.html?problem=' + encodeURIComponent(x.problem_id)); });
     }));
     if (want('people')) jobs.push(Promise.all([lab.members(), profileUrlOf()]).then(([ms, profile]) => ms.forEach((x) => {
       const p = profile(x.email || x._id);

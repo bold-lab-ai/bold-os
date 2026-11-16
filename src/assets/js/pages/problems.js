@@ -1,6 +1,6 @@
-// The Problem Bank (problems.html), laid out as Projects: a list (List or Grid, tabs by stage,
-// search), and one problem (?problem=<id>) as a project's page. Everything is read and
-// written through the benchmarkRegistry callable (functions/benchmark-registry.js).
+// The Problem Bank (problems.html), laid out as Projects: List or Grid, tabs by stage, search.
+// Each problem has its own page (problem.html, pages/problem.js). Read through the
+// benchmarkRegistry callable (functions/benchmark-registry.js).
 (function(){
   'use strict';
   if (!document.getElementById('pbList') || !BOLD.getAuth()) return;
@@ -11,18 +11,11 @@
 
   // A stage is AutoKaggle's report; an open problem has no evaluator yet.
   var STAGES = { open: 'Open problem', implemented: 'Implemented', checked: 'Checked', validated: 'Validated' };
-  var FIELDS = { owner: 'Research owner', collaborators: 'Collaborators', submission_format: 'Submission format', metrics: 'Metrics and score direction',
-    run_command: 'Run command', dependencies: 'Dependencies', seeds: 'Seeds', compute: 'Compute requirements',
-    data_assets: 'Data and assets: source, version, access and licence', limitations: 'Known limitations', open_issues: 'Open issues',
-    next_action: 'Next action and responsible person' };
   // AutoKaggle's addresses (settings/problemBank, set by PIs and admins at the foot of the list); these until one is saved.
   var urls = { autokaggleUrl: 'https://ecc962fa-2f4c-4a3f-96c4-179af273fb7a.k8s.civo.com/', autokaggleLiteUrl: 'https://lite.ecc962fa-2f4c-4a3f-96c4-179af273fb7a.k8s.civo.com/lite' };
 
-  var rows = [], cursor = null, projects = [], q = '', loaded = false, generation = 0;
-  var problemId = new URLSearchParams(location.search).get('problem');
+  var rows = [], cursor = null, q = '', loaded = false, generation = 0;
 
-  function when(value){ var d = new Date(value); return isNaN(d) ? 'Not recorded' : d.toLocaleString('en-GB', { dateStyle: 'medium', timeStyle: 'short' }); }
-  function external(href, label){ return '<a href="' + esc(href) + '" target="_blank" rel="noopener">' + esc(label) + ' ↗</a>'; }
   function projectHref(p){ return 'project.html#id=' + encodeURIComponent(p.project_id) + (p.project_board ? '&board=' + encodeURIComponent(p.project_board) : ''); }
   function tabOf(p){ return p.archived ? 'archived' : (STAGES[p.stage] ? p.stage : 'open'); }
   function badges(p){
@@ -31,12 +24,6 @@
     if (p.approval) out.push('<span class="badge badge-approved">Approved</span>');
     if (p.archived) out.push('<span class="badge">Archived</span>');
     return out.join('');
-  }
-  function projectOptions(selected){
-    return '<option value="">Choose a project</option>' + projects.map(function(x){
-      var on = selected && selected.project_id === x.id && (selected.project_board || '') === (x.board || '');
-      return '<option value="' + esc(JSON.stringify([x.id, x.board])) + '"' + (on ? ' selected' : '') + '>' + esc(x.title + (x.venue ? ' · ' + x.venue : '')) + '</option>';
-    }).join('');
   }
 
   /* ---------- the list ---------- */
@@ -51,7 +38,7 @@
     if (p.task_kind) meta.push(esc(p.task_kind));
     if (p.evaluator) meta.push('Evaluator v' + esc(String(p.evaluator.version)));
     return '<li><div class="proj-main">' +
-      '<a class="proj-title" href="problems.html?problem=' + encodeURIComponent(p.id) + '">' + esc(p.title) + '</a>' +
+      '<a class="proj-title" href="problem.html?problem=' + encodeURIComponent(p.id) + '">' + esc(p.title) + '</a>' +
       '<span class="proj-meta">' + meta.join(' · ') + '</span>' +
       (p.objective ? '<p class="proj-abstract">' + esc(p.objective) + '</p>' : '') +
       (badges(p) ? '<div class="proj-badges">' + badges(p) + '</div>' : '') +
@@ -141,107 +128,7 @@
       .catch(function(e){ el('pbUrlsStatus').textContent = 'Not saved. ' + e.message; });
   });
 
-  /* ---------- one problem, as a project's page ---------- */
-  function sessionUrl(p, handoff){
-    var base = p.session.application === 'lite' ? urls.autokaggleLiteUrl : urls.autokaggleUrl;
-    return base + '?project=' + encodeURIComponent(p.session.project_id) + (handoff ? '&review=handoff' : '');
-  }
-  function grid(pairs){
-    return '<dl class="detail-grid">' + pairs.map(function(x){
-      return '<dt>' + esc(x[0]) + '</dt><dd>' + (x[2] ? x[1] : BOLDRegistryLinks.formatText(x[1] == null || x[1] === '' ? 'Not recorded' : String(x[1]))) + '</dd>';
-    }).join('') + '</dl>';
-  }
-  function release(r, canApprove){
-    var e = r.evaluator, v = r.research, a = r.approval, ra = r.reported_approval;
-    var checks = Object.keys(r.validation || {}).map(function(k){ return [k.replace(/_/g, ' '), r.validation[k]]; });
-    if (v) checks = checks.concat([['Measured fitness', v.observed_fitness], ['Expected fitness', v.expected_fitness], ['Tolerance', v.tolerance], ['Expected-score basis', v.expected_basis],
-      ['Reference SHA-256', v.reference_sha256], ['Artifact SHA-256', v.artifact_sha256], ['Validation report SHA-256', v.report_sha256], ['Controlled run', v.checked_by], ['Validated', when(v.checked_at)]]);
-    if (ra) checks = checks.concat([['AutoKaggle reports approval', when(ra.approved_at)], ['Its approval note', ra.note]]);
-    var approve = !a && r.stage === 'validated'
-      ? ' <button type="button" class="btn-text" data-approve="' + esc(r.id) + '"' + (canApprove ? '' : ' disabled title="Only a PI or admin approves a release"') + '>Approve this release</button>' : '';
-    return '<li class="pb-release"><div class="pb-release-head"><span class="pb-release-title">Evaluator version ' + esc(String(e.version)) + '</span>' +
-      '<span class="badge badge-stage">' + esc(STAGES[r.stage] || r.stage) + '</span>' + (a ? '<span class="badge badge-approved">Approved</span>' : '') + '</div>' +
-      '<p class="pb-release-meta">' + (a ? 'Approved by ' + esc(a.name) + ', ' + esc(when(a.at)) + (a.note ? ': ' + esc(a.note) : '') : 'Not approved in BOLD.OS') + ' · registered ' + esc(when(r.createdAt)) + approve + '</p>' +
-      '<p class="pb-links">' + external(e.repository, 'Repository') + external(e.repository + '/tree/' + e.commit, 'Pinned code') + external(e.zip_url, 'Download ZIP') + '</p>' +
-      '<details><summary>Checks and evidence</summary>' + grid([['Commit', e.commit], ['Contract SHA-256', e.contract_sha256]].concat(checks)) + '</details></li>';
-  }
-  function editForm(p){
-    var off = p.can_edit ? '' : ' disabled';
-    var field = function(label, html){ return '<div class="field"><label>' + esc(label) + '</label>' + html + '</div>'; };
-    return '<form class="pb-form" id="pbEdit">' +
-      field('Project', '<select name="project" required' + off + '>' + projectOptions(p) + '</select>') +
-      (p.stage === 'open'
-        ? field('Problem', '<input name="title" maxlength="180" required value="' + esc(p.title) + '"' + off + '>') +
-          field('Research question', '<textarea name="objective" class="no-tags" required maxlength="8000"' + off + '>' + esc(p.objective) + '</textarea>') +
-          field('Task type', '<input name="task_kind" required maxlength="80" value="' + esc(p.task_kind) + '"' + off + '>')
-        : '') +
-      field(FIELDS.owner, '<select name="owner_id" id="pbOwner"' + off + '><option value="">' + esc((p.details || {}).owner || 'Loading the lab’s people…') + '</option></select>') +
-      Object.keys(FIELDS).filter(function(k){ return k !== 'owner'; }).map(function(k){ return field(FIELDS[k], '<textarea name="' + k + '" class="no-tags" maxlength="8000"' + off + '>' + esc((p.details || {})[k] || '') + '</textarea>'); }).join('') +
-      field('Notes', '<textarea name="notes" class="no-tags" maxlength="8000"' + off + '>' + esc(p.notes || '') + '</textarea>') +
-      '<label class="pb-check"><input name="archived" type="checkbox"' + (p.archived ? ' checked' : '') + off + '> Archive this problem</label>' +
-      '<div class="pb-form-actions"><button class="btn btn-primary" type="submit"' + (p.can_edit ? '' : ' disabled title="Only whoever registered it, or a PI or admin, edits it"') + '>Save</button>' +
-      '<span class="pb-status" id="pbEditStatus" role="status"></span></div>' +
-      (p.stage === 'open' ? '' : '<p class="detail-hint">The problem itself is the evaluator’s contract: change it in AutoKaggle and register a new version.</p>') +
-      '</form>';
-  }
-  function renderDetail(data){
-    var p = data.problem;
-    document.title = p.title + ' | BOLD Lab';
-    var project = '<a href="' + esc(projectHref(p)) + '">' + esc(p.project_title || p.project_id) + '</a>';
-    var session = p.session
-      ? '<p class="pb-links">' + external(sessionUrl(p, false), 'Resume in AutoKaggle' + (p.session.application === 'lite' ? ' Lite' : '')) + external(sessionUrl(p, true), 'Manage session handoff') + '</p>' +
-        '<p class="detail-hint">Sign in to the original session. Its owner can create a single-use handoff code, valid for 24 hours, and revoke access there. Codes are not stored in the Problem Bank.</p>'
-      : '';
-    el('pbBody').innerHTML =
-      '<div class="detail-head"><h2>' + esc(p.title) + '</h2>' + (badges(p) ? '<div class="detail-badges">' + badges(p) + '</div>' : '') + '</div>' +
-      '<p class="detail-venue">Project: ' + project + (p.stage !== 'open' ? ' · Stage reported by AutoKaggle' : '') + '</p>' +
-      session +
-      grid([['Research question', p.objective], ['Task type', p.task_kind]].concat(Object.keys(FIELDS).map(function(k){
-        var v = (p.details || {})[k];
-        // The owner, when chosen from the lab's people: their page.
-        if (k === 'owner' && v && p.owner_id) return [FIELDS[k], '<a href="person.html?id=' + encodeURIComponent(p.owner_id) + '">' + esc(v) + '</a>', true];
-        return [FIELDS[k], v];
-      })).concat(p.notes ? [['Notes', p.notes]] : [])) +
-      '<h3 class="pb-section">Evaluator releases</h3>' +
-      (data.versions.length ? '<ul class="pb-releases">' + data.versions.map(function(r){ return release(r, data.can_approve); }).join('') + '</ul>' : '<p class="detail-muted">No evaluator yet.</p>') +
-      '<details class="pb-section-details"><summary>Edit</summary>' + editForm(p) + '</details>' +
-      '<details class="pb-section-details"><summary>History</summary><ul class="pb-history">' + (data.history || []).map(function(h){
-        return '<li><span class="pb-history-when">' + esc(when(h.updatedAt)) + '</span> ' + esc(h.changeNote || 'Changed') +
-          ' · ' + esc(STAGES[h.stage] || h.stage || '') + ' · ' + esc(h.project_title || '') + (h.latest_commit ? ' · ' + esc(h.latest_commit.slice(0, 12)) : '') + '</li>';
-      }).join('') + '</ul></details>';
-    el('pbDetailMsg').hidden = true; el('pbBody').hidden = false;
-
-    BoldPeopleSelect.load().then(function(people){
-      var known = people.some(function(x){ return x.id === p.owner_id; });
-      el('pbOwner').innerHTML = BoldPeopleSelect.options(people, p.owner_id, known ? 'Choose the research owner' : ((p.details || {}).owner ? (p.details.owner + ' (keep)') : 'Choose the research owner'));
-    }).catch(function(){});
-    Array.prototype.forEach.call(el('pbBody').querySelectorAll('[data-approve]'), function(b){
-      b.addEventListener('click', function(){
-        if (!data.can_approve) return;
-        b.disabled = true;
-        call({ action: 'approve', benchmark_id: b.getAttribute('data-approve') }).then(loadDetail).catch(function(e){ b.disabled = false; b.insertAdjacentText('afterend', ' Not approved. ' + e.message); });
-      });
-    });
-    el('pbEdit').addEventListener('submit', function(event){
-      event.preventDefault();
-      if (!p.can_edit) return;
-      var form = event.currentTarget, button = form.querySelector('[type=submit]'), project = JSON.parse(form.elements.project.value), details = {};
-      Object.keys(FIELDS).forEach(function(k){ if (k === 'owner') return; var v = form.elements[k].value.trim(); if (v) details[k] = v; });
-      var data = { action: 'update', problem_id: p.id, project_id: project[0], project_board: project[1], details: details, owner_id: form.elements.owner_id.value,
-        notes: form.elements.notes.value, archived: form.elements.archived.checked };
-      if (p.stage === 'open') data.definition = { title: form.elements.title.value, objective: form.elements.objective.value, task_kind: form.elements.task_kind.value };
-      button.disabled = true; el('pbEditStatus').textContent = 'Saving…';
-      call(data).then(loadDetail).catch(function(e){ el('pbEditStatus').textContent = 'Not saved. ' + e.message; button.disabled = false; });
-    });
-  }
-  function loadDetail(){
-    var epoch = generation;
-    return call({ action: 'get', problem_id: problemId }).then(function(data){ if (epoch === generation) renderDetail(data); })
-      .catch(function(e){ if (epoch === generation) { el('pbDetailMsg').hidden = false; el('pbDetailMsg').textContent = 'Could not load this problem. ' + (e.message || ''); } });
-  }
-
   /* ---------- start ---------- */
-  el('pbHero').hidden = !!problemId; el('pbList').hidden = !!problemId; el('pbDetail').hidden = !problemId;
   BOLD.onUser(function(user){
     generation++;
     if (!user) { el('pbMsg').textContent = 'Sign in to see the Problem Bank.'; return; }
@@ -252,7 +139,6 @@
       loadUrls();
     });
     // The project picker: one row per project, as Projects lists them.
-    if (problemId) Promise.all([call({ action: 'projects' }).then(function(r){ projects = r.items; }).catch(function(){}), loadUrls()]).then(loadDetail);
-    else loadList(false);
+    loadList(false);
   });
 })();
