@@ -17,10 +17,6 @@ permalink: "problems-register.html"
 <main>
   <form id="problemForm" novalidate>
     <div class="field">
-      <label for="prProject">Project</label>
-      <select id="prProject"><option value="">Loading projects&hellip;</option></select>
-    </div>
-    <div class="field">
       <label for="prTitle">Problem</label>
       <input type="text" id="prTitle" maxlength="180" autocomplete="off">
     </div>
@@ -31,6 +27,11 @@ permalink: "problems-register.html"
     <div class="field">
       <label for="prTask">Task type</label>
       <input type="text" id="prTask" maxlength="80" autocomplete="off" placeholder="Forecasting, generation, optimisation…">
+    </div>
+    <div class="field">
+      <label for="prProject">Project</label>
+      <select id="prProject"><option value="">Loading projects&hellip;</option></select>
+      <div class="field-hint">The project it belongs to. Every problem in the bank has one.</div>
     </div>
     <div class="field">
       <label for="prOwner">Research owner</label>

@@ -1,5 +1,5 @@
 // Adding an open problem to the Problem Bank (problems-register.html), as proposing a
-// project (projects-register.html): its project, the question, its task and owner. Saved
+// project (projects-register.html): the question, its task, its project and owner. Saved
 // through benchmarkRegistry 'create' (functions/benchmark-registry.js), then its page opens.
 (function(){
   'use strict';
@@ -33,8 +33,8 @@
     event.preventDefault();
     var project = el('prProject').value, title = el('prTitle').value.trim(), objective = el('prObjective').value.trim(),
       task = el('prTask').value.trim(), owner = el('prOwner').value.trim();
-    var missing = !project ? 'Choose its project.' : !title ? 'Give the problem a title.' : !objective ? 'Say what the research question is.'
-      : !task ? 'Say what kind of task it is.' : !owner ? 'Say who leads the work on it.' : '';
+    var missing = !title ? 'Give the problem a title.' : !objective ? 'Say what the research question is.'
+      : !task ? 'Say what kind of task it is.' : !project ? 'Choose its project.' : !owner ? 'Say who leads the work on it.' : '';
     if (missing) { showError(missing); return; }
     showError('');
     project = JSON.parse(project);
