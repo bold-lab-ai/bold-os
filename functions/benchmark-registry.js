@@ -1,5 +1,5 @@
-// The Problem Bank (problems.html): open research problems, each linked to a BOLD.OS
-// project, and the evaluator releases AutoKaggle registers for them.
+// The Problem Bank (problems.html): research problems, each linked to a BOLD.OS project, and
+// the evaluator releases AutoKaggle Lite registers for them. Problems start in Lite, never here.
 //
 // problemBank/{id}            a problem: title, objective, task_kind, project_id/_board/_title,
 //                             details, notes, archived, stage, and its latest release
@@ -46,9 +46,9 @@ function details(input){
   for (const k of DETAIL_FIELDS) if (input[k] != null && input[k] !== '') out[k] = text(input[k], 8000, k.replace(/_/g, ' '));
   return out;
 }
+// Every problem starts in an AutoKaggle Lite session (docs/BENCHMARK_REGISTRY.md).
 function session(input, source){
-  if (!input) return null;
-  if (!['full', 'lite'].includes(input.application)) throw new Error('Choose AutoKaggle or AutoKaggle Lite for the session.');
+  if (!input || input.application !== 'lite') throw new Error('Register a problem through an AutoKaggle Lite session.');
   return { application: input.application, project_id: source.replace('autokaggle:', '') };
 }
 
@@ -153,25 +153,8 @@ module.exports = function({ db, onCall, callerEmail, isFullWrite, access, HttpsE
       })) };
     }
 
-    if (action === 'create') {
-      let data;
-      try { data = { title: text(d.title, 180, 'the title'), objective: text(d.objective, 8000, 'the objective'), task_kind: text(d.task_kind, 80, 'the task kind'), details: details(d.details) }; }
-      catch (e) { throw error('invalid-argument', e.message); }
-      const owner = await ownerOf(d.owner_id);
-      if (!owner) throw error('invalid-argument', 'Choose the research owner.');
-      data.details.owner = owner.owner; data.owner_id = owner.owner_id;
-      const project = await projectRecord(d.project_id, d.project_board);
-      const id = 'ak-' + crypto.randomBytes(12).toString('hex'), at = Date.now();
-      const value = Object.assign({}, data, { project_id: project.id, project_board: project.board, project_title: project.title, stage: 'open', session: null,
-        archived: false, notes: '', createdBy: email, createdAt: at, updatedBy: email, updatedAt: at });
-      const ref = db.collection('problemBank').doc(id);
-      await db.runTransaction(async (tx) => {
-        if (!(await tx.get(projectRef(d.project_id, d.project_board))).exists) throw error('failed-precondition', 'The project no longer exists.');
-        tx.set(ref, value);
-        tx.set(ref.collection('versions').doc(crypto.randomUUID()), Object.assign({}, value, { changeNote: 'Created open problem' }));
-      });
-      return { problem_id: id };
-    }
+    // New problems start in AutoKaggle Lite, never here: not even for PIs and admins.
+    if (action === 'create') throw error('failed-precondition', 'Add problems through AutoKaggle Lite. Direct creation in the Problem Bank is disabled.');
 
     if (action === 'list') {
       let q = db.collection('problemBank').orderBy('__name__').limit(100);

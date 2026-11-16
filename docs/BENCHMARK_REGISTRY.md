@@ -1,12 +1,14 @@
 # Problem Bank
 
-The Research menu has one Problem Bank page. It holds open problems and their pinned evaluator releases.
+The Research menu has one Problem Bank page. It holds research problems and their pinned evaluator releases.
 
 ## Project and evidence requirements
 
 Every new problem and evaluator must name an existing BOLD OS project. The server checks the project in the same transaction as registration. Projects can be normal project records or publication-board cards. A free-text name is insufficient.
 
-An open problem can exist before an evaluator is built. Evaluator stages are derived from supplied evidence:
+**New problems start in AutoKaggle Lite.** The Problem Bank has no form to add one, and `benchmarkRegistry` refuses `create` for everyone, PIs and admins included. A registration needs a Lite session (`session: { "application": "lite" }`). Open problems added before this stay, and can still be edited.
+
+Evaluator stages are derived from supplied evidence:
 
 | Stage | Required evidence |
 | --- | --- |
@@ -22,7 +24,7 @@ The receiver checks that the evidence is complete and consistent. It doesn't rer
 
 ## Page and access
 
-`problems.html` is laid out as Projects: List or Grid, search, and tabs by stage (Open, Implemented, Checked, Validated, Archived). **+ Add a project problem** opens `problems-register.html`. Each problem has its own page, `problem.html?problem=<id>`, laid out and edited as a project's page (`project.css`): the title and its badges, a line with its project and owner, and the tabs Overview (each field edited in place, the research question as the abstract), Evaluator releases and History. A field that isn't filled in says **Not set**.
+`problems.html` is laid out as Projects: List or Grid, search, and tabs by stage (Open, Implemented, Checked, Validated, Archived). **Onboard in AutoKaggle Lite** opens Lite, where new problems start. Each problem has its own page, `problem.html?problem=<id>`, laid out and edited as a project's page (`project.css`): the title and its badges, a line with its project and owner, and the tabs Overview (each field edited in place, the research question as the abstract), Evaluator releases and History. A field that isn't filled in says **Not set**.
 
 Each release has a pinned evaluator repository, commit, ZIP, contract digest, check results, research evidence where available, and separate approval. Earlier releases and changes remain in history.
 
@@ -32,9 +34,9 @@ Resume links open the full or Lite AutoKaggle session. **Manage handoff access**
 
 ## Registration interface
 
-After deployment, AutoKaggle sends `POST /boldApi/v1/register_benchmark` with `Authorization: Bearer <approved acting token>` and JSON `{ "registration": <record> }`. A read-only token cannot register records. No Firebase service-account key is needed.
+After deployment, AutoKaggle Lite sends `POST /boldApi/v1/register_benchmark` with `Authorization: Bearer <approved acting token>` and JSON `{ "registration": <record> }`. A read-only token cannot register records. No Firebase service-account key is needed.
 
-Schema `bold.autokaggle.registration.v1` requires `source_id`, `idempotency_key`, `project_id`, optional `project_board`, `destinations: ["problem_bank"]`, title, objective, task kind, pinned evaluator details, and validation states. Descriptive metadata, a full/Lite session reference, research evidence, and human approval are supported. Field checks are in `functions/benchmark-registry.js`.
+Schema `bold.autokaggle.registration.v1` requires `source_id`, `idempotency_key`, `project_id`, optional `project_board`, `destinations: ["problem_bank"]`, `session: {"application": "lite"}`, title, objective, task kind, pinned evaluator details, and validation states. Descriptive metadata, a full/Lite session reference, research evidence, and human approval are supported. Field checks are in `functions/benchmark-registry.js`.
 
 One Firestore transaction saves `problemBank`, pinned releases in `benchmarks`, their history, and a private receipt. The response contains `problem_id`, `benchmark_id`, `commit`, and `idempotency_key`. Retries return the same receipt. A reused key with different content fails.
 

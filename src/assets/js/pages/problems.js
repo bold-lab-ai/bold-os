@@ -49,7 +49,7 @@
     rows.filter(matches).forEach(function(p){ groups[tabOf(p)].push(p); });
     Object.keys(groups).forEach(function(k){
       var cap = k.charAt(0).toUpperCase() + k.slice(1);
-      el('pb' + cap).innerHTML = groups[k].length ? groups[k].map(row).join('') : '<li class="proj-none"><p class="proj-empty">' + (q ? 'No problems match.' : 'None') + '</p></li>';
+      el('pb' + cap).innerHTML = groups[k].length ? groups[k].map(row).join('') : '<li class="proj-none"><p class="proj-empty">' + (q ? 'No problems match.' : 'None yet: problems start in AutoKaggle Lite.') + '</p></li>';
       el('cnt' + cap).textContent = groups[k].length || (q ? '0' : '');
     });
     el('pbClear').hidden = !q;
@@ -104,8 +104,6 @@
   el('pbClear').addEventListener('click', function(){ q = ''; el('pbSearch').value = ''; renderList(); });
   el('pbMore').addEventListener('click', function(){ loadList(true); });
 
-  el('pbNew').addEventListener('click', function(e){ if (el('pbNew').getAttribute('aria-disabled') === 'true') e.preventDefault(); });
-
   // AutoKaggle's addresses (settings/problemBank, set on Settings): the Lite link.
   function loadUrls(){
     return firebase.firestore(BOLD.getApp()).collection('settings').doc('problemBank').get().then(function(x){
@@ -118,9 +116,6 @@
     generation++;
     if (!user) { el('pbMsg').textContent = 'Sign in to see the Problem Bank.'; return; }
     BOLD.onAccess(function(){
-      // Adding one is for Projects' Edit, as proposing a project: greyed out, with the reason.
-      var can = BOLD.can('projects', 'edit'), add = el('pbNew');
-      add.classList.toggle('is-off', !can); add.setAttribute('aria-disabled', String(!can)); add.title = can ? '' : BOLD.cannotReason('projects', 'edit');
       loadUrls();
     });
     // The project picker: one row per project, as Projects lists them.

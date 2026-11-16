@@ -788,7 +788,7 @@ module.exports = function(ctx){
         format: ACTIONS(['short', 'long']), startTime: str('HH:MM London time.'), durationMinutes: { type: 'integer' },
         location: str('Meeting location.'), label: str('Season label.'), regularTime: str('Season regular time.'),
         rotationDescription: str('Season rotation description.'), publicationState: ACTIONS(['draft', 'published']) }) },
-    { name: 'register_benchmark', description: 'Register an implemented evaluator in the Problem Bank, linked to an existing project. The server derives its stage from the evidence, shown as reported by AutoKaggle. Approval is a PI’s or admin’s, on the page; a release is written once. Retries reuse the same registration key. This saves lab records; it sends no messages or invitations.',
+    { name: 'register_benchmark', description: 'Register an implemented evaluator from AutoKaggle Lite in the Problem Bank, linked to an existing project and its Lite session. The server derives its stage from the evidence, shown as reported by AutoKaggle. Approval is a PI’s or admin’s, on the page; a release is written once. Retries reuse the same registration key. This saves lab records; it sends no messages or invitations.',
       inputSchema: S({registration:{type:'object',description:'The bold.autokaggle.registration.v1 record from the validated release.'}},['registration']),
       run: (who,a) => act(who,'benchmarkRegistry',{action:'register',registration:a.registration}) },
     { name: 'edit_problem', description: 'Update a Problem Bank note or archive/restore its record, as on its page. Scientific definitions and benchmark evidence are immutable here; change them through AutoKaggle and register a new tested release.',

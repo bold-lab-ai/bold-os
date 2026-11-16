@@ -8,7 +8,6 @@ main button{font-family:inherit;}
 .hero{max-width:var(--content-max); margin:0 auto; padding:64px var(--gutter) 10px;}
 .hero h1{font-size:clamp(30px, 5vw, 44px); line-height:1.14; overflow-wrap:break-word; text-wrap:balance;}
 .actions{display:flex; align-items:center; justify-content:space-between; gap:16px; margin-top:28px; flex-wrap:wrap;}
-.pb-actions{display:flex; gap:10px; flex-wrap:wrap;}
 .btn{
   font-family:var(--sans); font-weight:600; font-size:14px; color:var(--ink);
   background:var(--surface); border:1px solid var(--line); border-radius:var(--radius);
@@ -22,7 +21,6 @@ main button{font-family:inherit;}
 .btn-primary:disabled{background:var(--surface); color:var(--muted); border-color:var(--line); opacity:.5;}
 .btn-primary:disabled:hover{background:var(--surface); border-color:var(--line); color:var(--muted);}
 a.btn{display:inline-block; text-decoration:none;}
-a.btn.is-off{opacity:.5; cursor:default;}
 .btn-text{
   font-family:var(--sans); font-size:13px; color:var(--link); background:none; border:none; padding:0;
   cursor:pointer; text-decoration:underline; text-decoration-color:var(--underline); text-underline-offset:2px;

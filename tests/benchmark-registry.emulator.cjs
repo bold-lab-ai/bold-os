@@ -15,6 +15,14 @@ async function rules(path,method='GET',token,body){return fetch('http://127.0.0.
   const registration=record();registration.title='Registry integration test — synthetic evidence';
   registration.source_id='autokaggle:12345678-1234-1234-1234-123456789012';registration.idempotency_key=crypto.randomBytes(32).toString('hex');
   assert.equal((await api('register_benchmark',{registration},readToken)).status,403);
+  const direct=await fetch(base+'/benchmarkRegistry',{method:'POST',headers:{Authorization:'Bearer '+jwt(),'Content-Type':'application/json'},body:JSON.stringify({data:{action:'create',project_id:'diverging-runs',title:'Must not be created',objective:'Direct creation test',task_kind:'custom'}})});
+  assert.equal(direct.status,400,await direct.clone().text());
+  assert.match((await direct.json()).error.message,/Add problems through AutoKaggle Lite/);
+  for(const session of [null,{application:'full'}]){
+    const rejected=await api('register_benchmark',{registration:{...registration,session}});
+    assert.equal(rejected.status,400,await rejected.clone().text());
+    assert.match(await rejected.text(),/AutoKaggle Lite/);
+  }
   const missing=structuredClone(registration);missing.project_id='does-not-exist';const missingResponse=await api('register_benchmark',{registration:missing});assert.equal(missingResponse.status,409,await missingResponse.text());
   const invalid=structuredClone(registration);invalid.validation.research_data='not_run';
   assert.equal((await api('register_benchmark',{registration:invalid})).status,400);

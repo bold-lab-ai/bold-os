@@ -1,5 +1,5 @@
 // Choosing one person from the lab's people (the Slack roster, `people/{Slack ID}`), as a
-// <select>: the Problem Bank's research owner, on problems-register.html and a problem's page.
+// <select>: the Problem Bank's research owner, edited on a problem's page (pages/problem.js).
 // BoldPeopleSelect.load() → [{ id, name }] by name (once a page); .options(people, selectedId).
 window.BoldPeopleSelect = (function(){
   'use strict';
