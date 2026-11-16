@@ -116,7 +116,8 @@
     try { return decodeURIComponent(String(hash || '').replace(/^#/, '')); }
     catch (e) { return ''; }
   }
-  var LINK_ICON = '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M10 13a5 5 0 0 0 7 0l3-3a5 5 0 0 0-7-7l-2 2M14 11a5 5 0 0 0-7 0l-3 3a5 5 0 0 0 7 7l2-2"/></svg>';
+  // Primer Octicons link-16 (MIT, GitHub Inc.). License: assets/licenses/octicons-LICENSE.txt
+  var LINK_ICON = '<svg aria-hidden="true" fill="currentColor" width="16" height="16" viewBox="0 0 16 16"><path d="m7.775 3.275 1.25-1.25a3.5 3.5 0 1 1 4.95 4.95l-2.5 2.5a3.5 3.5 0 0 1-4.95 0 .751.751 0 0 1 .018-1.042.751.751 0 0 1 1.042-.018 1.998 1.998 0 0 0 2.83 0l2.5-2.5a2.002 2.002 0 0 0-2.83-2.83l-1.25 1.25a.751.751 0 0 1-1.042-.018.751.751 0 0 1-.018-1.042Zm-4.69 9.64a1.998 1.998 0 0 0 2.83 0l1.25-1.25a.751.751 0 0 1 1.042.018.751.751 0 0 1 .018 1.042l-1.25 1.25a3.5 3.5 0 1 1-4.95-4.95l2.5-2.5a3.5 3.5 0 0 1 4.95 0 .751.751 0 0 1-.018 1.042.751.751 0 0 1-1.042.018 1.998 1.998 0 0 0-2.83 0l-2.5 2.5a1.998 1.998 0 0 0 0 2.83Z"/></svg>';
   function linkHtml(id){
     return '<span class="gd-permalink"><a class="icon-btn gd-copy-link" href="#' + encodeURIComponent(id) + '" aria-label="Copy link to this heading" title="Copy link to this heading">' + LINK_ICON + '</a><span class="gd-copy-status" role="status" aria-live="polite" aria-atomic="true"></span></span>';
   }
