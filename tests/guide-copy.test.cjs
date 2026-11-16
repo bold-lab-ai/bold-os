@@ -85,7 +85,9 @@ test('tooltip is clamped into the viewport near either edge', () => {
   h.fire(h.buttons[0], 'focusin');
   assert.equal(tip.style.left, '162px'); assert.equal(tip.style.top, '38px');
   h.buttons[0].getBoundingClientRect = () => ({ left: 0, top: 200, bottom: 232, width: 32 });
-  h.fire(h.ctx.window, 'resize'); assert.equal(tip.style.left, '8px');
+  h.fire(h.ctx.window, 'resize'); assert.equal(tip.hidden, true);
+  h.fire(h.buttons[0], 'focusout'); h.fire(h.buttons[0], 'focusin');
+  assert.equal(tip.style.left, '8px');
 });
 test('unavailable, rejected and throwing clipboard APIs expose a selectable recovery URL', async () => {
   for (const clipboard of [null, { writeText: () => Promise.reject(new Error()) }, { writeText() { throw new Error(); } }]) {
@@ -115,4 +117,66 @@ test('latest request wins and repeated copies announce again without disturbing 
   h.fire(h.buttons[1], 'click'); pending[3](); await flush();
   assert.equal(h.buttons[0].getAttribute('data-copy-state'), 'success');
   assert.equal(h.buttons[1].getAttribute('data-copy-state'), 'success');
+});
+
+
+test('pointer click focus does not keep the label open after leaving the icon', async () => {
+  const h = harness(), tip = h.field(0, '.gd-copy-tooltip');
+  h.fire(h.buttons[0], 'pointerover');
+  h.fire(h.buttons[0], 'pointerdown');
+  h.fire(h.buttons[0], 'focusin');
+  h.fire(h.buttons[0], 'click'); await flush();
+  h.fire(h.buttons[0], 'pointerout', { relatedTarget: h.document.body });
+  h.tick(150); assert.equal(tip.hidden, true);
+  h.tick(2000); assert.equal(tip.hidden, true, 'reset must not reopen the label for pointer focus');
+});
+
+test('scroll dismisses a clicked tooltip and its reset never sticks the label to the viewport', async () => {
+  const h = harness(), tip = h.field(0, '.gd-copy-tooltip');
+  h.fire(h.buttons[0], 'pointerover'); h.fire(h.buttons[0], 'pointerdown');
+  h.fire(h.buttons[0], 'focusin'); h.fire(h.buttons[0], 'click'); await flush();
+  h.fire(h.ctx.window, 'scroll'); assert.equal(tip.hidden, true);
+  h.tick(2000); assert.equal(tip.hidden, true);
+  h.fire(h.buttons[0], 'pointerout', { relatedTarget: h.document.body });
+  h.fire(h.buttons[0], 'pointerover'); assert.equal(tip.hidden, false, 'deliberate re-entry opens the label again');
+});
+
+test('a clipboard promise resolving after scroll cannot reopen an abandoned tooltip', async () => {
+  let resolve;
+  const h = harness({ writeText: () => new Promise(done => { resolve = done; }) });
+  const tip = h.field(0, '.gd-copy-tooltip');
+  h.fire(h.buttons[0], 'click');
+  h.fire(h.ctx.window, 'scroll');
+  resolve(); await flush();
+  assert.equal(tip.hidden, true);
+  assert.equal(h.buttons[0].getAttribute('data-copy-state'), 'success', 'copy still completes');
+  h.tick(2000); assert.equal(tip.hidden, true);
+});
+
+test('outside interaction, window blur and Escape dismiss tooltips and recovery panels', async () => {
+  for (const trigger of ['outside', 'blur', 'escape']) {
+    const h = harness(null), panel = h.field(0, '.gd-copy-recovery'), tip = h.field(0, '.gd-copy-tooltip');
+    h.fire(h.buttons[0], 'click'); await flush(); assert.equal(panel.hidden, false);
+    if (trigger === 'outside') h.fire(h.document.body, 'pointerdown');
+    if (trigger === 'blur') h.fire(h.ctx.window, 'blur');
+    if (trigger === 'escape') h.fire(h.document, 'keydown', { key: 'Escape' });
+    assert.equal(tip.hidden, true); assert.equal(panel.hidden, true);
+  }
+});
+
+test('an off-screen anchor never gets a tooltip clamped back onto the screen', () => {
+  const h = harness();
+  h.buttons[0].getBoundingClientRect = () => ({ left: 10, right: 42, top: -100, bottom: -68, width: 32 });
+  h.fire(h.buttons[0], 'focusin'); assert.equal(h.field(0, '.gd-copy-tooltip').hidden, true);
+});
+
+
+test('a rejected clipboard promise after scroll does not reopen recovery either', async () => {
+  let reject;
+  const h = harness({ writeText: () => new Promise((_, no) => { reject = no; }) });
+  h.fire(h.buttons[0], 'click'); h.fire(h.ctx.window, 'scroll');
+  reject(new Error('denied')); await flush();
+  assert.equal(h.field(0, '.gd-copy-tooltip').hidden, true);
+  assert.equal(h.field(0, '.gd-copy-recovery').hidden, true);
+  assert.equal(h.buttons[0].getAttribute('data-copy-state'), 'error');
 });

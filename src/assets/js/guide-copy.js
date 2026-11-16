@@ -11,7 +11,7 @@ window.BoldGuideCopy = (function(){
       '<span class="gd-copy-recovery" hidden><span>Couldn’t copy. Select this link and copy it manually.</span><input class="gd-copy-value" readonly aria-label="' + esc('Link to “' + title + '” — copy manually') + '"></span></span>';
   }
   function mount(root){
-    var states = new WeakMap(), active = null;
+    var states = new WeakMap(), active = null, recovery = null, keyboard = true, pending = new Set();
     function state(button){
       var s = states.get(button);
       if (s) return s;
@@ -41,9 +41,21 @@ window.BoldGuideCopy = (function(){
     function show(s){
       if (s.dismissed || !s.button.isConnected) return;
       if (active && active !== s) active.tooltip.hidden = true;
+      var box = s.button.getBoundingClientRect();
+      var width = document.documentElement.clientWidth || window.innerWidth;
+      var height = document.documentElement.clientHeight || window.innerHeight;
+      if (box.bottom < 0 || box.top > height || box.right < 0 || box.left > width) { hide(s); return; }
       active = s; s.tooltip.hidden = false; position(s);
     }
     function hide(s){ s.tooltip.hidden = true; if (active === s) active = null; }
+    function dismiss(s){
+      if (!s) return;
+      clearTimeout(s.hoverTimer);
+      s.dismissed = true; s.hovered = false;
+      hide(s); s.recovery.hidden = true;
+      if (recovery === s) recovery = null;
+    }
+    function dismissAll(){ var current = active; dismiss(current); if (recovery !== current) dismiss(recovery); pending.forEach(dismiss); }
     function reset(s){
       s.kind = ''; s.button.removeAttribute('data-copy-state'); s.button.innerHTML = icons.copy;
       s.tooltip.textContent = s.label;
@@ -58,18 +70,30 @@ window.BoldGuideCopy = (function(){
       // Alternating an inaudible space makes repeated results live-region updates.
       s.announced = !s.announced;
       s.announcement.textContent = message + (s.announced ? '' : '\u00a0');
-      s.dismissed = false; show(s);
+      show(s);
       if (kind === 'success') s.timer = setTimeout(function(){ reset(s); }, 2000);
-      else { s.value.value = new URL('#' + encodeURIComponent(s.button.getAttribute('data-copy-hash')), location.href).href; s.recovery.hidden = false; position(s); }
+      else {
+        s.value.value = new URL('#' + encodeURIComponent(s.button.getAttribute('data-copy-hash')), location.href).href;
+        if (!s.dismissed) {
+          if (recovery && recovery !== s) recovery.recovery.hidden = true;
+          recovery = s; s.recovery.hidden = false; position(s);
+        }
+      }
     }
     root.addEventListener('click', function(e){
       var button = e.target.closest('.gd-copy-button');
       if (!button) return;
       var s = state(button), request = ++s.request;
-      clearTimeout(s.timer); s.recovery.hidden = true;
+      pending.add(s);
+      clearTimeout(s.timer); s.recovery.hidden = true; s.dismissed = false;
+      if (recovery === s) recovery = null;
       reset(s);
       var url = new URL('#' + encodeURIComponent(button.getAttribute('data-copy-hash')), location.href).href;
-      function done(kind){ if (button.isConnected && request === s.request) feedback(s, kind); }
+      function done(kind){
+        if (request !== s.request) return;
+        pending.delete(s);
+        if (button.isConnected) feedback(s, kind);
+      }
       if (!navigator.clipboard || !navigator.clipboard.writeText) { done('error'); return; }
       try { navigator.clipboard.writeText(url).then(function(){ done('success'); }, function(){ done('error'); }); }
       catch (err) { done('error'); }
@@ -84,26 +108,39 @@ window.BoldGuideCopy = (function(){
       var wrap = e.target.closest('.gd-permalink');
       if (!wrap || (e.relatedTarget && wrap.contains(e.relatedTarget))) return;
       var s = state(wrap.querySelector('.gd-copy-button'));
-      s.hovered = false; s.dismissed = false;
+      s.hovered = false;
       if (!s.focused) s.hoverTimer = setTimeout(function(){ if (!s.hovered && !s.focused) hide(s); }, 150);
     });
     root.addEventListener('focusin', function(e){
       if (e.target.matches('.gd-copy-value')) { e.target.select(); return; }
       if (!e.target.matches('.gd-copy-button')) return;
-      var s = state(e.target); s.focused = true; s.dismissed = false; show(s);
+      var s = state(e.target); s.focused = keyboard;
+      if (keyboard) { s.dismissed = false; show(s); }
     });
     root.addEventListener('focusout', function(e){
       if (!e.target.matches('.gd-copy-button')) return;
       var s = state(e.target); s.focused = false;
       if (!s.hovered) hide(s);
     });
+    // A click leaves DOM focus on the button. Only keyboard focus should keep
+    // its label open after the pointer leaves; never blur the control to hide it.
+    document.addEventListener('pointerdown', function(e){
+      keyboard = false;
+      if (active) active.focused = false;
+      if (active && !active.wrap.contains(e.target)) dismiss(active);
+      if (recovery && !recovery.wrap.contains(e.target)) dismiss(recovery);
+    }, true);
     document.addEventListener('keydown', function(e){
-      if (e.key !== 'Escape' || !active) return;
-      active.dismissed = true; hide(active);
-    });
-    function reposition(){ if (active && active.button.isConnected) position(active); }
-    window.addEventListener('resize', reposition);
-    window.addEventListener('scroll', reposition, true);
+      keyboard = true;
+      if (e.key === 'Escape') { dismissAll(); return; }
+      // Tabbing back to the control will open its label on focusin.
+    }, true);
+    // Scroll invalidates pointer hover and fixed overlay positions. Suppression
+    // also stops an in-flight clipboard result or reset timer from reopening it.
+    window.addEventListener('scroll', dismissAll, true);
+    window.addEventListener('resize', dismissAll);
+    window.addEventListener('blur', dismissAll);
+    document.addEventListener('visibilitychange', function(){ if (document.hidden) dismissAll(); });
   }
   return { html: html, mount: mount };
 })();
