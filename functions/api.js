@@ -223,6 +223,7 @@ module.exports = function(deps){
     const now = Date.now();
     return db.collection('apiLog').add({
       email: who.email, token: who.prefix, tool, args: JSON.stringify(args || {}).slice(0, 300), at: now,
+      // A Date is stored as a Timestamp; the Functions emulator's firebase-admin has no admin.firestore.Timestamp.
       expireAt: new Date(now + LOG_DAYS * 86400000),
     }).catch((err) => logger.warn('apiLog failed', { error: String(err.message) }));
   }
@@ -572,13 +573,14 @@ module.exports = function(deps){
     }));
     if (want('projects')) jobs.push(allProjects().then((g) => [].concat(g.proposed || [], g.ongoing, g.submission, g.planned, g.completed).forEach((p) =>
       item('projects', p.title, 'Project' + (p.owner ? ' · ' + p.owner : ''), [p.abstract, (p.keywords || []).join(' '), p.owner, (p.authors || []).map((x) => x.name).filter((n) => n !== p.owner).join(' ')].join(' '), projectHref(p.projectId || p.cardId, p.boardId)))));
-    for (const [scopeName,collection,page] of [['problems','problemBank','problems.html'],['benchmarks','benchmarks','problems.html']]) {
-      if(want(scopeName) && await access.can(who.email,'projects','view')) jobs.push(db.collection(collection).get().then(s=>s.docs.forEach(d=>{
-        const x=d.data();if(scopeName==='problems' && x.archived)return;
-        item(scopeName,x.title,scopeName==='problems'?'Problem Bank':'Benchmark version '+x.evaluator.version,
-          [x.objective,x.task_kind,x.notes,(x.evaluator||{}).commit,(x.research||{}).expected_basis].filter(Boolean).join(' '),page+'?problem='+encodeURIComponent(x.problem_id||d.id));
-      })));
-    }
+    // The Problem Bank: problems not archived, and their evaluator releases.
+    if ((want('problems') || want('benchmarks')) && await access.can(who.email, 'projects', 'view')) jobs.push(Promise.all([db.collection('problemBank').get(), db.collection('benchmarks').get()]).then(([problems, releases]) => {
+      const live = new Set(problems.docs.filter((d) => !d.data().archived).map((d) => d.id));
+      if (want('problems')) problems.docs.filter((d) => live.has(d.id)).forEach((d) => { const x = d.data();
+        item('problems', x.title, 'Problem Bank', [x.objective, x.task_kind, x.notes].filter(Boolean).join(' '), 'problems.html?problem=' + encodeURIComponent(d.id)); });
+      if (want('benchmarks')) releases.docs.filter((d) => live.has(d.data().problem_id)).forEach((d) => { const x = d.data();
+        item('benchmarks', x.title, 'Evaluator version ' + x.evaluator.version, [x.task_kind, x.evaluator.commit, (x.research || {}).expected_basis].filter(Boolean).join(' '), 'problems.html?problem=' + encodeURIComponent(x.problem_id)); });
+    }));
     if (want('people')) jobs.push(Promise.all([lab.members(), profileUrlOf()]).then(([ms, profile]) => ms.forEach((x) => {
       const p = profile(x.email || x._id);
       item('people', x.name || 'A member', [x.role, x.institution].filter(Boolean).join(' · ') || 'Member', [x.interests, x.basedIn, x.pronouns].join(' '), p ? p.slice(SITE_URL.length) : 'people.html');

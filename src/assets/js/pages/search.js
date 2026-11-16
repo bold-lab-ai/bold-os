@@ -54,6 +54,13 @@
     return cards;
   }
   function cardHref(c){ return 'audit-board.html#board=' + encodeURIComponent(c.board) + '&card=' + encodeURIComponent(c.id); }
+  var bank = null;
+  function problemBank(kind){
+    bank = bank || firebase.app().functions('europe-west2').httpsCallable('benchmarkRegistry')({ action: 'search' }).then(function(r){ return r.data.items; });
+    return bank.then(function(rows){
+      return rows.filter(function(x){ return x.kind === kind; }).map(function(x){ return item(x.title, x.label, x.text, 'problems.html?problem=' + encodeURIComponent(x.problem_id)); });
+    });
+  }
   var LOAD = {
     boldiquette: function(){
       return parts('handbook', function(id){ return id === 'boldiquette' ? 'boldiquette.html' : 'index.html'; }, '', 'BOLDiquette');
@@ -101,12 +108,10 @@
         });
       });
     },
-    problems: function(){
-      return db.collection('problemBank').get().then(function(s){return s.docs.filter(function(d){return !d.data().archived;}).map(function(d){var x=d.data();return item(x.title,'Problem Bank',[x.objective,x.task_kind,x.notes].join(' '),'problems.html?problem='+encodeURIComponent(d.id));});});
-    },
-    benchmarks: function(){
-      return db.collection('benchmarks').get().then(function(s){return s.docs.map(function(d){var x=d.data();return item(x.title,'Benchmark version '+x.evaluator.version,[x.task_kind,x.evaluator.commit,(x.research||{}).expected_basis].join(' '),'problems.html?problem='+encodeURIComponent(x.problem_id));});});
-    },
+    // The Problem Bank: through its callable, which keeps people's emails out and leaves
+    // archived problems (and their releases) out of search. One call serves both sections.
+    problems: function(){ return problemBank('problems'); },
+    benchmarks: function(){ return problemBank('benchmarks'); },
     people: function(){
       // Each member's own page, by their Slack id (people/{id}).
       return Promise.all([db.collection('members').get(), db.collection('people').get().catch(function(){ return { docs: [] }; })]).then(function(r){

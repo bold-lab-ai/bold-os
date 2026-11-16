@@ -26,7 +26,9 @@ async function rules(path,method='GET',token,body){return fetch('http://127.0.0.
   const list=await api('list_benchmarks?kind=benchmarks',null,readToken);assert.equal(list.status,200);assert.doesNotMatch(await list.text(),/internal@example\.com/);
   assert.equal((await rules('problemBank/'+receipt.problem_id)).status,403);
   assert.equal((await rules('problemBank/'+receipt.problem_id,'GET',jwt(false))).status,403);
-  assert.equal((await rules('problemBank/'+receipt.problem_id,'GET',jwt())).status,200);
+  // Only through benchmarkRegistry, which keeps people's emails out: no direct reads.
+  assert.equal((await rules('problemBank/'+receipt.problem_id,'GET',jwt())).status,403);
+  assert.equal((await rules('benchmarks/'+receipt.benchmark_id,'GET',jwt())).status,403);
   assert.equal((await rules('problemBank/'+receipt.problem_id,'PATCH',jwt(),{fields:{title:{stringValue:'Direct write must fail'}}})).status,403);
   assert.equal((await rules('benchmarkReceipts/'+registration.idempotency_key,'GET',jwt())).status,403);
   const edit=await api('edit_problem',{problem_id:receipt.problem_id,project_id:'diverging-runs',details:{owner:'Ines Internal'},notes:'Synthetic integration fixture. Do not treat this as research validation.',archived:false});assert.equal(edit.status,200,await edit.clone().text());

@@ -8,7 +8,8 @@ function harness(){
  const data=new Map([['projects/diverging-runs',{title:'Diverging runs'}]]);
  const snap=p=>({id:p.split('/').pop(),exists:data.has(p),data:()=>structuredClone(data.get(p))});
  const doc=p=>({path:p,get:async()=>snap(p),collection:n=>col(p+'/'+n)});
- const col=p=>({doc:id=>doc(p+'/'+id),orderBy:()=>({limit:()=>({get:async()=>({docs:[...data.keys()].filter(k=>k.startsWith(p+'/')&&k.split('/').length===p.split('/').length+1).map(snap)})})}),where:(key,op,value)=>({get:async()=>({docs:[...data.keys()].filter(k=>k.startsWith(p+'/')&&k.split('/').length===p.split('/').length+1&&data.get(k)[key]===value).map(snap)})})});
+ const kids=p=>[...data.keys()].filter(k=>k.startsWith(p+'/')&&k.split('/').length===p.split('/').length+1).map(snap);
+ const col=p=>({get:async()=>({docs:kids(p)}),doc:id=>doc(p+'/'+id),orderBy:()=>({limit:()=>({get:async()=>({docs:[...data.keys()].filter(k=>k.startsWith(p+'/')&&k.split('/').length===p.split('/').length+1).map(snap)})})}),where:(key,op,value)=>({get:async()=>({docs:[...data.keys()].filter(k=>k.startsWith(p+'/')&&k.split('/').length===p.split('/').length+1&&data.get(k)[key]===value).map(snap)})})});
  const db={collection:col,runTransaction:async fn=>{const writes=[];const result=await fn({get:async ref=>snap(ref.path),set:(ref,x)=>writes.push(()=>data.set(ref.path,structuredClone(x))),update:(ref,x)=>writes.push(()=>data.set(ref.path,{...data.get(ref.path),...structuredClone(x)}))});writes.forEach(f=>f());return result;}};
  class ErrorWithCode extends Error{constructor(code,message){super(message);this.code=code;}}
  let denied=false;
@@ -32,7 +33,11 @@ test('new commits preserve history and reject an older or conflicting version',a
  const h=harness(),r=record(),first=await h.call({action:'register',registration:r});
  r.idempotency_key='2'.repeat(64);r.evaluator.version=2;r.evaluator.commit='2'.repeat(40);r.evaluator.zip_url='https://github.com/example/evaluator/archive/'+r.evaluator.commit+'.zip';r.validation.research_evidence.commit=r.evaluator.commit;r.human_approval.commit=r.evaluator.commit;
  const next=await h.call({action:'register',registration:r});assert.equal(first.problem_id,next.problem_id);assert.notEqual(first.benchmark_id,next.benchmark_id);
- const old=record();old.idempotency_key='3'.repeat(64);await assert.rejects(h.call({action:'register',registration:old}),e=>e.code==='failed-precondition');
+ const same=record();same.idempotency_key='3'.repeat(64);assert.deepEqual((await h.call({action:'register',registration:same})).benchmark_id,first.benchmark_id);
+ const changed=record();changed.idempotency_key='5'.repeat(64);changed.validation.code_review='not_run';changed.validation.research_data='not_run';delete changed.validation.research_evidence;delete changed.human_approval;
+ await assert.rejects(h.call({action:'register',registration:changed}),e=>e.code==='already-exists');
+ const older=record();older.idempotency_key='6'.repeat(64);older.evaluator.commit='6'.repeat(40);older.evaluator.zip_url='https://github.com/example/evaluator/archive/'+older.evaluator.commit+'.zip';older.validation.research_evidence.commit=older.evaluator.commit;older.human_approval.commit=older.evaluator.commit;
+ await assert.rejects(h.call({action:'register',registration:older}),e=>e.code==='failed-precondition');
  assert.equal((await h.call({action:'get',problem_id:first.problem_id})).versions.length,2);
 });
 test('ownership, Slack identity and page access apply to registration and edits',async()=>{
@@ -45,7 +50,7 @@ test('ownership, Slack identity and page access apply to registration and edits'
  await assert.rejects(h.registry.run({data:{action:'list'}}),e=>e.code==='unauthenticated');h.deny();
  await assert.rejects(h.call({action:'get',problem_id:first.problem_id}),e=>e.code==='permission-denied');
 });
-module.exports={record};
+module.exports={record,harness};
 
 test('project is mandatory and must exist',async()=>{
  const h=harness(),r=record();delete r.project_id;assert.throws(()=>factory.normalize(r),/project ID/);
@@ -53,7 +58,7 @@ test('project is mandatory and must exist',async()=>{
 });
 test('stages reflect evidence, approval is separate, and invalid evidence cannot raise a stage',()=>{
  const r=record();delete r.human_approval;
- assert.equal(factory.normalize(r).stage,'validated');assert.equal(factory.normalize(r).approval,null);
+ assert.equal(factory.normalize(r).stage,'validated');assert.equal(factory.normalize(r).reported_approval,null);
  r.validation.research_data='not_run';delete r.validation.research_evidence;
  assert.equal(factory.normalize(r).stage,'checked');assert.equal(factory.normalize(r).research,null);
  r.validation.clean_clone='not_run';assert.equal(factory.normalize(r).stage,'implemented');
@@ -84,4 +89,26 @@ test('registration supports a project on a publication board',async()=>{
  const out=await h.call({action:'register',registration:r});const p=(await h.call({action:'get',problem_id:out.problem_id})).problem;
  assert.equal(p.project_board,'neurips');assert.equal(p.project_title,'Board project');
  r.project_board='../bad';assert.throws(()=>factory.normalize(r),/board/);
+});
+
+test('AutoKaggle\'s approval is only its report; a PI or admin approves a validated release, once',async()=>{
+ const h=harness(),out=await h.call({action:'register',registration:record()});
+ let view=await h.call({action:'get',problem_id:out.problem_id});
+ assert.equal(view.versions[0].approval,null);assert.ok(view.versions[0].reported_approval);assert.equal(view.can_approve,false);
+ await assert.rejects(h.call({action:'approve',benchmark_id:out.benchmark_id}),e=>e.code==='permission-denied');
+ h.data.set('members/admin@example.invalid',{name:'Ada Admin'});
+ await h.call({action:'approve',benchmark_id:out.benchmark_id,note:'Read the report.'},'admin@example.invalid');
+ view=await h.call({action:'get',problem_id:out.problem_id},'admin@example.invalid');
+ assert.equal(view.versions[0].approval.name,'Ada Admin');assert.equal(view.problem.approval.name,'Ada Admin');assert.equal(view.can_approve,true);
+ assert.doesNotMatch(JSON.stringify(view),/@example/);
+ await assert.rejects(h.call({action:'approve',benchmark_id:out.benchmark_id},'admin@example.invalid'),e=>e.code==='already-exists');
+ const r=record();r.source_id='autokaggle:99999999-2222-3333-4444-555555555555';r.idempotency_key='7'.repeat(64);r.validation.research_data='not_run';delete r.validation.research_evidence;delete r.human_approval;
+ const checked=await h.call({action:'register',registration:r});
+ await assert.rejects(h.call({action:'approve',benchmark_id:checked.benchmark_id},'admin@example.invalid'),e=>e.code==='failed-precondition');
+});
+test('search leaves out archived problems and their releases; null details are none',async()=>{
+ const h=harness(),out=await h.call({action:'register',registration:record()});
+ let s=(await h.call({action:'search'})).items;assert.deepEqual(s.map(x=>x.kind).sort(),['benchmarks','problems']);
+ await h.call({action:'update',problem_id:out.problem_id,project_id:'diverging-runs',details:null,notes:'',archived:true});
+ s=(await h.call({action:'search'})).items;assert.equal(s.length,0);
 });

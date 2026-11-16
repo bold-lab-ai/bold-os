@@ -2,7 +2,7 @@
 area: "projects"
 title: "Problem Bank | BOLD Lab"
 description: "Project-linked research problems and evaluator releases."
-sdk: ["functions"]
+sdk: ["firestore", "functions"]
 css: "benchmarks"
 scripts: ["registry-links.js", "pages/benchmarks.js"]
 permalink: "problems.html"
@@ -10,7 +10,7 @@ nav: "problems.html"
 ---
 <div class="hero"><h1>Problem Bank</h1><p>Open research problems, evaluation code, and evidence of what works.</p></div>
 <main id="registry">
-  <nav class="registry-nav" aria-label="Problem Bank actions"><button id="registryNew" class="btn-box" disabled>Add open problem</button><a href="https://lite.ecc962fa-2f4c-4a3f-96c4-179af273fb7a.k8s.civo.com/lite" target="_blank" rel="noopener">Onboard in AutoKaggle Lite ↗</a></nav>
+  <nav class="registry-nav" aria-label="Problem Bank actions"><button id="registryNew" class="btn-box" disabled>Add open problem</button><a id="registryLite" href="https://lite.ecc962fa-2f4c-4a3f-96c4-179af273fb7a.k8s.civo.com/lite" target="_blank" rel="noopener">Onboard in AutoKaggle Lite ↗</a></nav>
   <form id="registryCreate" class="registry-notes" hidden>
     <label>BOLD OS project (required)<select name="project" required></select></label>
     <label>Problem title<input name="title" required maxlength="180"></label>
@@ -24,4 +24,9 @@ nav: "problems.html"
   <p id="registryStatus" role="status">Sign in to load the Problem Bank.</p><button id="registryRetry" type="button" class="btn-box" hidden>Retry loading</button>
   <div id="registryList" class="registry-list"></div><button id="registryMore" type="button" class="btn-box" hidden>Load more</button>
   <section id="registryDetail" aria-label="Problem details" tabindex="-1" hidden></section>
+  <details class="registry-note"><summary>AutoKaggle's addresses</summary><form id="registryUrls" class="registry-notes">
+    <label>AutoKaggle<input name="autokaggleUrl" type="url" required maxlength="300" pattern="https://.*"></label>
+    <label>AutoKaggle Lite<input name="autokaggleLiteUrl" type="url" required maxlength="300" pattern="https://.*"></label>
+    <button class="btn-box" type="submit">Save addresses</button><span id="registryUrlsStatus" role="status"></span>
+  </form></details>
 </main>

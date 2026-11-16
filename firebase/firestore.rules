@@ -253,6 +253,14 @@ service cloud.firestore {
         && (!('refresh' in request.resource.data) || request.resource.data.refresh in ['daily', 'twice', 'working'])
         && request.resource.data.updatedBy == email();
     }
+    // AutoKaggle's addresses, for the Problem Bank's links: PIs and admins set them on its page.
+    match /settings/problemBank {
+      allow read: if isSignedIn();
+      allow write: if hasFullWrite() && request.resource.data.keys().hasOnly(['autokaggleUrl', 'autokaggleLiteUrl', 'updatedAt', 'updatedBy'])
+        && request.resource.data.updatedBy == email()
+        && request.resource.data.autokaggleUrl is string && request.resource.data.autokaggleUrl.matches('https://[^\\s"<>]{1,300}')
+        && request.resource.data.autokaggleLiteUrl is string && request.resource.data.autokaggleLiteUrl.matches('https://[^\\s"<>]{1,300}');
+    }
     match /settings/joinForm {
       allow read: if true;
       allow write: if hasFullWrite() && request.resource.data.keys().hasOnly(['roles', 'pillars', 'updatedAt', 'updatedBy'])
@@ -439,17 +447,16 @@ service cloud.firestore {
     // only as yourself, edited by its submitter, one of its authors (authorEmails,
     // as on a project's page) or a PI/admin, deleted or moved only by its
     // submitter or a PI/admin.
-    // Validated registry records are written only through benchmarkRegistry.
-    // That callable checks Slack identity, Projects access, ownership and evidence.
+    // The Problem Bank (problems.html): read and written only through benchmarkRegistry,
+    // which checks Slack identity, Projects access and ownership, and keeps people's
+    // emails (createdBy, updatedBy, approvedBy) from pages and agents.
     match /problemBank/{id} {
-      allow read: if may('projects', 'view');
-      allow write: if false;
-      match /versions/{version} { allow read: if may('projects', 'view'); allow write: if false; }
+      allow read, write: if false;
+      match /versions/{version} { allow read, write: if false; }
     }
     match /benchmarks/{id} {
-      allow read: if may('projects', 'view');
-      allow write: if false;
-      match /validations/{version} { allow read: if may('projects', 'view'); allow write: if false; }
+      allow read, write: if false;
+      match /validations/{version} { allow read, write: if false; }
     }
     match /benchmarkReceipts/{id} { allow read, write: if false; }
 

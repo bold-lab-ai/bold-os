@@ -9322,7 +9322,17 @@ async function tellStaff(text, except, key){
 }
 
 // Validated problems and benchmark releases; the same callable serves the pages and acting API.
-exports.benchmarkRegistry = require('./benchmark-registry')({db,onCall,callerEmail,isFullWrite,access,HttpsError}).benchmarkRegistry;
+// projectChoices: the Problem Bank's project picker, one row per project as Projects lists them.
+exports.benchmarkRegistry = require('./benchmark-registry')({ db, onCall, callerEmail, isFullWrite, access, HttpsError, projectChoices: async function(){
+  const [boardsSnap, cardsSnap, unassignedSnap] = await Promise.all([db.collection('boards').get(), db.collectionGroup('cards').get(), db.collection('projects').get()]);
+  const groups = allProjectsFromCards(
+    boardsSnap.docs.map(function(d){ return { id: d.id, label: d.data().label, status: d.data().status || 'approved' }; }),
+    cardsSnap.docs.map(function(d){ return { boardId: d.ref.parent.parent.id, id: d.id, data: d.data() }; }),
+    unassignedSnap.docs.map(function(d){ return { id: d.id, data: d.data() }; }), [], []);
+  return [].concat(groups.proposed, groups.ongoing, groups.submission, groups.planned, groups.completed)
+    .map(function(i){ return { id: i.cardId || i.projectId, board: i.boardId || '', title: i.title, venue: i.boardLabel || '' }; })
+    .sort(function(a, b){ return a.title.localeCompare(b.title); });
+} }).benchmarkRegistry;
 
 // BOLD.OS for agents: personal tokens (apiTokens) and the read-only API and MCP
 // endpoint (boldApi), in functions/api.js.
