@@ -8,8 +8,8 @@ function between(start, end) { return source.slice(source.indexOf(start), source
 function harness(clipboard) {
   const nodes = new Map(), handlers = [], messages = [], scrolled = [], statuses = [], timers = [];
   const data = [
-    { id: 'one', section: 'First', body: '# Details' },
-    { id: 'two', section: 'Second', body: '# Details\n# Details' },
+    { id: 'one', title: 'First Part', section: 'First', body: '# Details' },
+    { id: 'two', title: 'Second Part', section: 'Second', body: '# Details\n# Details' },
   ];
   const body = { addEventListener: (name, fn) => handlers.push(fn) };
   const ctx = {
@@ -19,7 +19,7 @@ function harness(clipboard) {
       createElement: () => ({ setAttribute() {}, remove() {}, set textContent(v) { messages.push(v); } }),
       body: { appendChild() {} }, getElementById: id => nodes.get(id),
     },
-    PREFIX: 'p-', parts: () => data, visible: () => true,
+    PREFIX: 'p-', parts: () => data, part: id => data.find(p => p.id === id), doc: () => ({ parts: data }), BoldGuideAnchors: require('../functions/guide-anchors.js'), visible: () => true,
     body, esc: s => String(s), navigator: { clipboard }, URL, URLSearchParams,
     location: new URL('http://localhost:8137/guide.html?guide=test'),
     setTimeout: fn => { timers.push(fn); return timers.length; }, clearTimeout: id => { if (id) timers[id - 1] = null; },
@@ -129,4 +129,30 @@ test('rendered copy controls receive the owning section slug', () => {
   assert.equal(ctx.linkHtml('p-two--details', 'Details', { section: 'Second' }).section, 'second');
   ctx.hasSections = () => false;
   assert.equal(ctx.linkHtml('p-two--details', 'Details', { section: 'Second' }).section, null);
+});
+
+test('copy controls now expose text-derived slugs instead of opaque IDs', () => {
+  const { ctx } = harness();
+  ctx.hasSections = () => true;
+  const control = ctx.linkHtml('p-two--details', 'Details', { id: 'two', section: 'Second' }, 0);
+  assert.equal(control.hash, 'details');
+  assert.equal(control.section, 'second');
+});
+
+test('readable URLs locate a nested heading and unfold its parent on reload', () => {
+  const { ctx, scrolled } = harness();
+  ctx.location.search = '?guide=test&section=second'; ctx.location.hash = '#details-1';
+  ctx.refresh();
+  assert.equal(ctx.tab, 'Second'); assert.equal(ctx.folded.two, false);
+  assert.deepEqual(scrolled, ['p-two--details-2']);
+});
+
+
+test('top-level part URLs are readable and opaque bookmarks still expand that part', () => {
+  const { ctx, scrolled } = harness();
+  ctx.hasSections = () => true;
+  assert.equal(ctx.linkHtml('p-two', 'Second Part', { id: 'two', section: 'Second' }).hash, 'second-part');
+  ctx.location.search = '?guide=test&section=second'; ctx.location.hash = '#second-part';
+  ctx.refresh();
+  assert.equal(ctx.folded.two, false); assert.deepEqual(scrolled, ['p-two']);
 });
