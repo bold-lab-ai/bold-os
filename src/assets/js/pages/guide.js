@@ -141,7 +141,7 @@
       a.insertAdjacentElement('afterend', status);
       status.textContent = message;
       clearTimeout(copyFeedbackTimer);
-      copyFeedbackTimer = setTimeout(function(){ status.remove(); }, 5000);
+      copyFeedbackTimer = setTimeout(function(){ status.remove(); }, 4000);
     }
     function fallback(){
       feedback('Couldn’t copy. Right-click the icon to copy the link.');
