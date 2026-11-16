@@ -202,12 +202,35 @@
     if (!url.searchParams.has('section')) return null;
     var name = url.searchParams.get('section');
     var match = sections().filter(function(v){ return G.slugify(v) === name; })[0];
-    return match === undefined ? null : match;
+    if (match !== undefined) return match;
+    // Section-only bookmarks can follow a renamed tab when its persisted aliases
+    // identify exactly one current destination (a split must not guess).
+    var previous = anchorRegistry().entries.filter(function(e){
+      return e.active && e.aliases.some(function(a){ return a.section === name; });
+    }).map(function(e){ var p = part(e.partId); return p ? (p.section || '') : null; })
+      .filter(function(v, i, all){ return v !== null && all.indexOf(v) === i; });
+    return previous.length === 1 ? previous[0] : null;
   }
   function sectionHref(section){
     var url = new URL(location.href);
     url.searchParams.set('section', G.slugify(section)); url.hash = '';
     return url.pathname + url.search;
+  }
+  // Normalize old bookmarks and in-page fragment links without adding a second
+  // history entry. Query selects a tab; a fragment only identifies its content.
+  function canonicalizeUrl(section){
+    if (!hasSections() || section === null) return;
+    var url = new URL(location.href), id = hashId(url.hash);
+    if (!id && !url.searchParams.has('section')) return; // the page's default view
+    var sectionOnly = !url.searchParams.has('section') && sections().some(function(v){ return G.slugify(v) === id; });
+    var target = sectionOnly ? null : readableTarget(id);
+    url.searchParams.set('section', G.slugify(section));
+    if (sectionOnly) url.hash = '';
+    else if (target) url.hash = '#' + encodeURIComponent(target.slug);
+    var next = url.pathname + url.search + url.hash;
+    if (next !== location.pathname + location.search + location.hash) {
+      try { history.replaceState(history.state, '', next); } catch (e){}
+    }
   }
   function tabsHtml(){
     var t = currentTab();
@@ -944,7 +967,7 @@
     if (form) return;
     var ready = !jumped && x && (proposalsLoaded || !/^#proposal/.test(location.hash)) &&
       (!commentFor(location.hash) || (comments && comments.ready() && proposalsLoaded));
-    if (ready) tab = tabFromUrl();
+    if (ready) { tab = tabFromUrl(); canonicalizeUrl(tab); }
     render();
     if (ready) { jumped = true; goTo(location.hash); }
   }
@@ -983,7 +1006,7 @@
   // A section tab switches in place, the tab bar staying where it is on screen.
   body.addEventListener('click', function(e){
     var a = e.target.closest('.guide-tab');
-    if (!a || !x || form || e.metaKey || e.ctrlKey || e.shiftKey) return;
+    if (!a || a.tagName !== 'A' || !x || form || e.metaKey || e.ctrlKey || e.shiftKey) return;
     var t = tabFromUrl(a.getAttribute('href'));
     if (t === null) return;
     e.preventDefault();
@@ -997,6 +1020,7 @@
     var t = tabFromUrl();
     if (t === null) t = sections()[0] || null;
     tab = t;
+    canonicalizeUrl(tab);
     render();
     goTo(location.hash);
   }

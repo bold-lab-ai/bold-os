@@ -206,3 +206,14 @@ change or client migration is needed: guides/handbook content remains server-onl
 Existing links whose target was removed cannot navigate to deleted content. Reviewers
 can run `node --test tests/guide-readable-anchors.test.cjs tests/guide-link-behavior.test.cjs`
 for URL allocation, alias persistence, preview/server parity and navigation regressions.
+
+
+Guide navigation uses one URL convention: the bare page is the default view,
+`?section=<tab-slug>` selects a tab, and `?section=<tab-slug>#<heading-slug>`
+selects content within it. Tabs and the BOLDiquette sidebar generate query-based
+links. Old hash-only tab links and opaque heading bookmarks are resolved, then
+normalized with `history.replaceState`, preserving the current history state and
+other query parameters. Hash navigation to a heading in another tab corrects a
+stale section selector. Back/Forward restore the selected tab. An old section-only
+selector follows a renamed tab if the persisted heading aliases identify exactly
+one current destination; a section split cannot choose arbitrarily.

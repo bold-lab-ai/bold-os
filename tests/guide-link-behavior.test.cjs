@@ -19,7 +19,7 @@ function harness(clipboard) {
       createElement: () => ({ setAttribute() {}, remove() {}, set textContent(v) { messages.push(v); } }),
       body: { appendChild() {} }, getElementById: id => nodes.get(id),
     },
-    PREFIX: 'p-', parts: () => data, part: id => data.find(p => p.id === id), doc: () => ({ parts: data }), BoldGuideAnchors: require('../functions/guide-anchors.js'), visible: () => true,
+    PREFIX: 'p-', parts: () => data, hasSections: () => true, part: id => data.find(p => p.id === id), doc: () => ({ parts: data }), BoldGuideAnchors: require('../functions/guide-anchors.js'), visible: () => true,
     body, esc: s => String(s), navigator: { clipboard }, URL, URLSearchParams,
     location: new URL('http://localhost:8137/guide.html?guide=test'),
     setTimeout: fn => { timers.push(fn); return timers.length; }, clearTimeout: id => { if (id) timers[id - 1] = null; },
@@ -27,6 +27,8 @@ function harness(clipboard) {
     x: {}, proposalsLoaded: true, form: null, comments: null, commentFor: () => '',
     sections: () => ['First', 'Second'], G: { slugify: s => s.toLowerCase() },
   };
+  const replacements = [];
+  ctx.history = { state: { retained: true }, replaceState(state, _, href) { replacements.push({ state, href }); ctx.location.href = new URL(href, ctx.location.href).href; } };
   vm.createContext(ctx);
   vm.runInContext(fs.readFileSync('src/assets/js/markdown.js', 'utf8'), ctx);
   ctx.md = ctx.window.BoldMarkdown.render;
@@ -43,7 +45,7 @@ function harness(clipboard) {
     between('  function refresh(){', '  // Shows what #hash') +
     between('  function goTo(hash)', '  // What you type while') +
     between('  function navigateFromUrl(){', '  BOLD.onUser'), ctx);
-  return { ctx, handlers, messages, scrolled, statuses, timers };
+  return { ctx, handlers, messages, scrolled, statuses, timers, replacements };
 }
 test('cold load selects the owning tab, unfolds its section and scrolls to the exact duplicate heading', () => {
   const h = harness();
@@ -155,4 +157,62 @@ test('top-level part URLs are readable and opaque bookmarks still expand that pa
   ctx.location.search = '?guide=test&section=second'; ctx.location.hash = '#second-part';
   ctx.refresh();
   assert.equal(ctx.folded.two, false); assert.deepEqual(scrolled, ['p-two']);
+});
+
+
+test('legacy hash-only section selection normalizes to query without a heading fragment', () => {
+  const { ctx, replacements } = harness();
+  ctx.location.search = '?guide=test&branch=example'; ctx.location.hash = '#second';
+  ctx.refresh();
+  assert.equal(ctx.tab, 'Second');
+  assert.equal(ctx.location.href, 'http://localhost:8137/guide.html?guide=test&branch=example&section=second');
+  assert.equal(replacements.length, 1);
+  assert.equal(replacements[0].state.retained, true);
+});
+
+test('legacy opaque heading bookmarks normalize section and fragment together', () => {
+  const { ctx, scrolled } = harness();
+  ctx.location.hash = '#p-two'; ctx.refresh();
+  assert.equal(ctx.location.search, '?guide=test&section=second');
+  assert.equal(ctx.location.hash, '#second-part');
+  assert.deepEqual(scrolled, ['p-two']);
+});
+
+test('in-page heading navigation fixes a stale section selector without adding history', () => {
+  const { ctx, replacements, scrolled } = harness();
+  ctx.location.search = '?guide=test&section=first'; ctx.location.hash = '#p-two--details';
+  ctx.navigateFromUrl();
+  assert.equal(ctx.location.href, 'http://localhost:8137/guide.html?guide=test&section=second#details');
+  assert.equal(ctx.tab, 'Second'); assert.deepEqual(scrolled, ['p-two--details']);
+  assert.equal(replacements.length, 1);
+});
+
+test('canonical section and heading URLs are idempotent and the bare page stays bare', () => {
+  const { ctx, replacements } = harness();
+  ctx.location.search = '?guide=test&section=second'; ctx.location.hash = '#details';
+  ctx.navigateFromUrl(); ctx.navigateFromUrl();
+  assert.equal(replacements.length, 0);
+  ctx.location.href = 'http://localhost:8137/guide.html?guide=test'; ctx.navigateFromUrl();
+  assert.equal(ctx.location.search, '?guide=test'); assert.equal(ctx.location.hash, '');
+});
+
+
+test('TL;DR legacy section fragments normalize to ?section=tl-dr', () => {
+  const { ctx } = harness();
+  ctx.parts()[0].section = 'TL;DR'; ctx.sections = () => ['TL;DR', 'Second'];
+  ctx.G.slugify = ctx.BoldGuideAnchors.sectionSlug;
+  ctx.location.hash = '#tl-dr'; ctx.refresh();
+  assert.equal(ctx.location.search, '?guide=test&section=tl-dr');
+  assert.equal(ctx.location.hash, ''); assert.equal(ctx.tab, 'TL;DR');
+});
+
+test('section-only URLs follow an unambiguous accepted tab rename and normalize its name', () => {
+  const { ctx } = harness(), A = ctx.BoldGuideAnchors;
+  const before = JSON.parse(JSON.stringify(ctx.parts())), saved = A.current(before);
+  const data = ctx.parts(); data[1].section = 'Renamed';
+  const headingAnchors = A.update(before, data, saved);
+  ctx.doc = () => ({ parts: data, headingAnchors }); ctx.sections = () => ['First', 'Renamed'];
+  ctx.location.search = '?guide=test&section=second'; ctx.refresh();
+  assert.equal(ctx.tab, 'Renamed'); assert.equal(ctx.location.search, '?guide=test&section=renamed');
+  assert.equal(ctx.location.hash, '');
 });
