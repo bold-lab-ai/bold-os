@@ -25,7 +25,7 @@
     var shown=rows.filter(function(r){return (!r.archived||el('registryArchived').checked)&&(!filter||r.stage===filter)&&[r.title,r.objective,r.task_kind,r.project_title,(r.details||{}).owner,(r.evaluator||{}).commit].join(' ').toLowerCase().indexOf(q)!==-1;});
     el('registryList').innerHTML=shown.map(function(r){return '<article class="registry-card"><p class="registry-meta">'+projectLink(r)+'</p><h2><a href="problems.html?problem='+encodeURIComponent(r.id)+'">'+esc(r.title)+'</a></h2><p>'+esc(r.objective)+'</p><p class="registry-stage">'+esc(stage(r))+(r.archived?' · Archived':'')+'</p><p class="registry-meta">'+esc(r.task_kind)+' · '+esc((r.details||{}).owner||'Owner not recorded')+'</p>'+(r.evaluator?external(r.evaluator.repository,'Evaluator repository'):'')+'</article>';}).join('');
     el('registryMore').hidden=!cursor;el('registryMore').disabled=busy;
-    status(shown.length?shown.length+' shown. '+rows.length+' loaded.':rows.length?'No matching records in the loaded results.':'No problems yet. Add an open problem or register an evaluator from AutoKaggle.');
+    status(shown.length?shown.length+' shown. '+rows.length+' loaded.':rows.length?'No matching records in the loaded results.':'No problems yet. Start in AutoKaggle Lite to add a problem.');
   }
   async function load(more){
     if(!signedIn||busy)return;busy=true;var epoch=generation;el('registryRetry').hidden=true;status('Loading…');
@@ -55,16 +55,11 @@
       };
     }catch(e){if(epoch===generation)box.textContent='Could not load this problem. '+e.message;}
   }
-  el('registryNew').onclick=function(){var box=el('registryCreate');box.hidden=!box.hidden;};
-  el('registryCreate').onsubmit=async function(event){event.preventDefault();var form=event.currentTarget,button=form.querySelector('button'),epoch=generation;button.disabled=true;el('registryCreateStatus').textContent='Saving…';
-    try{var project=JSON.parse(form.elements.project.value),r=(await call({action:'create',project_id:project[0],project_board:project[1],title:form.elements.title.value,objective:form.elements.objective.value,task_kind:form.elements.task_kind.value,details:{owner:form.elements.owner.value}})).data;if(epoch!==generation)return;location.href='problems.html?problem='+encodeURIComponent(r.problem_id);}
-    catch(e){if(epoch===generation){el('registryCreateStatus').textContent='Not saved. '+e.message;button.disabled=false;}}
-  };
   el('registrySearch').oninput=render;el('registryStage').onchange=render;el('registryArchived').onchange=render;
   el('registryMore').onclick=function(){load(true);};el('registryRetry').onclick=function(){load(false);};
-  BOLD.onUser(async function(user){generation++;var epoch=generation;signedIn=!!user;busy=false;rows=[];cursor=null;projects=[];el('registryList').textContent='';el('registryDetail').hidden=true;el('registryDetail').textContent='';el('registryCreate').hidden=true;el('registryMore').hidden=true;el('registryRetry').hidden=true;el('registryNew').disabled=true;
+  BOLD.onUser(async function(user){generation++;var epoch=generation;signedIn=!!user;busy=false;rows=[];cursor=null;projects=[];el('registryList').textContent='';el('registryDetail').hidden=true;el('registryDetail').textContent='';el('registryMore').hidden=true;el('registryRetry').hidden=true;
     if(!user){status('Sign in to view the Problem Bank.');return;}
-    try{projects=(await call({action:'projects'})).data.items;if(epoch!==generation)return;el('registryCreate').elements.project.innerHTML=options();el('registryNew').disabled=!BOLD.can('projects','edit');}catch(e){if(epoch===generation)status('Could not load projects. '+e.message,true);}
+    try{projects=(await call({action:'projects'})).data.items;if(epoch!==generation)return;}catch(e){if(epoch===generation)status('Could not load projects. '+e.message,true);}
     if(epoch!==generation)return;load(false);var id=new URLSearchParams(location.search).get('problem');if(id)detail(id);
   });
 })();

@@ -52,8 +52,7 @@ function details(input={}) {
   return out;
 }
 function session(input,source) {
-  if(!input) return null;
-  if(!['full','lite'].includes(input.application)) throw new Error('Choose AutoKaggle or AutoKaggle Lite for the session.');
+  if(!input || input.application!=='lite') throw new Error('Register a problem through an AutoKaggle Lite session.');
   return {application:input.application,project_id:source.replace('autokaggle:','')};
 }
 module.exports = function({db,onCall,callerEmail,isFullWrite,access,HttpsError}){
@@ -84,15 +83,7 @@ module.exports = function({db,onCall,callerEmail,isFullWrite,access,HttpsError})
       return {items:items.sort((a,b)=>a.title.localeCompare(b.title))};
     }
     if(action==='create'){
-      let data;
-      try {data={title:text(d.title,180,'the title'),objective:text(d.objective,8000,'the objective'),task_kind:text(d.task_kind,80,'the task kind'),details:details(d.details)};}
-      catch(e){throw error('invalid-argument',e.message);}
-      const project=await projectRecord(d.project_id,d.project_board);
-      const id='ak-'+crypto.randomBytes(12).toString('hex'),at=Date.now();
-      const value={...data,project_id:project.id,project_board:project.board,project_title:project.title,stage:'open',session:null,archived:false,notes:'',createdBy:email,createdAt:at,updatedBy:email,updatedAt:at};
-      const ref=db.collection('problemBank').doc(id);
-      await db.runTransaction(async tx=>{const project=await tx.get(projectRef(d.project_id,d.project_board));if(!project.exists)throw error('failed-precondition','The project no longer exists.');tx.set(ref,value);tx.set(ref.collection('versions').doc(crypto.randomUUID()),{...value,changeNote:'Created open problem'});});
-      return {problem_id:id};
+      throw error('failed-precondition','Add problems through AutoKaggle Lite. Direct creation in the Problem Bank is disabled.');
     }
     if(action==='list'){
       const col='problemBank';

@@ -732,7 +732,7 @@ module.exports = function(ctx){
     { name: 'get_skill', description: 'One skill: its SKILL.md and files, to use or install it.', inputSchema: S({ name: str('The skill’s name.') }, ['name']), run: getSkill },
   ];
   const WRITE = [
-    { name: 'register_benchmark', description: 'Register an implemented evaluator in the Problem Bank, linked to an existing project. The server derives its stage from evidence. Human approval is separate. Retries reuse the same registration key. This saves lab records; it sends no messages or invitations.',
+    { name: 'register_benchmark', description: 'Register an implemented evaluator from AutoKaggle Lite in the Problem Bank, linked to an existing project and Lite session. The server derives its stage from evidence. Human approval is separate. Retries reuse the same registration key. This saves lab records; it sends no messages or invitations.',
       inputSchema: S({registration:{type:'object',description:'The bold.autokaggle.registration.v1 record from the validated release.'}},['registration']),
       run: (who,a) => act(who,'benchmarkRegistry',{action:'register',registration:a.registration}) },
     { name: 'edit_problem', description: 'Update a Problem Bank note or archive/restore its record, as on its page. Scientific definitions and benchmark evidence are immutable here; change them through AutoKaggle and register a new tested release.',

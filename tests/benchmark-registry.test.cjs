@@ -66,11 +66,27 @@ test('no credential or arbitrary session URL enters the record',()=>{
  assert.doesNotMatch(JSON.stringify(out),/SECRET|evil/);
  r.session.application='unknown';assert.throws(()=>factory.normalize(r),/session/);
 });
-test('open problems require a real project, retain history, and cannot claim an evaluator stage',async()=>{
+test('direct problem creation is disabled for members and administrators without writes',async()=>{
+ const h=harness(),before=[...h.data.entries()];
+ const input={action:'create',project_id:'diverging-runs',title:'An open question',objective:'What works?',task_kind:'custom',details:{owner:'A researcher'}};
+ for(const email of ['owner@example.invalid','admin@example.invalid'])await assert.rejects(h.call(input,email),e=>e.code==='failed-precondition'&&/AutoKaggle Lite/.test(e.message));
+ assert.deepEqual([...h.data.entries()],before);
+});
+test('registration requires a Lite session and rejects other origins without writes',async()=>{
+ const h=harness(),before=[...h.data.entries()];
+ for(const session of [undefined,null,{}, {application:'full'},{application:'unknown'}]){
+  const r=record();r.session=session;
+  await assert.rejects(h.call({action:'register',registration:r}),e=>e.code==='invalid-argument'&&/AutoKaggle Lite/.test(e.message));
+ }
+ assert.deepEqual([...h.data.entries()],before);
+ const r=await h.call({action:'register',registration:record()});
+ assert.equal((await h.call({action:'get',problem_id:r.problem_id})).problem.session.application,'lite');
+});
+test('existing open problems remain readable and editable with history',async()=>{
  const h=harness();
- const input={action:'create',project_id:'missing',title:'An open question',objective:'What works?',task_kind:'custom',details:{owner:'A researcher'},stage:'validated'};
- await assert.rejects(h.call(input),e=>e.code==='failed-precondition');
- input.project_id='diverging-runs';const r=await h.call(input);
+ const r={problem_id:'ak-'+ 'a'.repeat(24)},path='problemBank/'+r.problem_id;
+ const value={title:'An open question',objective:'What works?',task_kind:'custom',stage:'open',project_id:'diverging-runs',project_board:'',project_title:'Diverging runs',createdBy:'owner@example.invalid',updatedAt:1};
+ h.data.set(path,value);h.data.set(path+'/versions/legacy',{...value,changeNote:'Created open problem'});
  let view=await h.call({action:'get',problem_id:r.problem_id});assert.equal(view.problem.stage,'open');assert.equal(view.history.length,1);assert.equal(view.versions.length,0);
  await h.call({action:'update',problem_id:r.problem_id,project_id:'diverging-runs',details:{owner:'A researcher'},notes:'Next step',archived:false,definition:{title:'A revised question',objective:'Measure cost',task_kind:'optimization'}});
  view=await h.call({action:'get',problem_id:r.problem_id});assert.equal(view.problem.title,'A revised question');assert.equal(view.history.length,2);

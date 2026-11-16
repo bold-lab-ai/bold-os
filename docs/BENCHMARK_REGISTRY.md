@@ -6,7 +6,9 @@ The Research menu has one Problem Bank page. It holds open problems and their pi
 
 Every new problem and evaluator must name an existing BOLD OS project. The server checks the project in the same transaction as registration. Projects can be normal project records or publication-board cards. A free-text name is insufficient. Existing records without a link show a repair notice and require a project before an edit can be saved.
 
-An open problem can exist before an evaluator is built. Evaluator stages are derived from supplied evidence:
+Start new problems in AutoKaggle Lite. The Problem Bank has no creation form, and its direct `create` API rejects requests, including requests from administrators. Registration requires a Lite session and the evaluator evidence below. Existing open problems remain readable and editable; they have no evaluator stage until a release is registered.
+
+Evaluator stages are derived from supplied evidence:
 
 | Stage | Required evidence |
 | --- | --- |
@@ -30,9 +32,9 @@ Resume links open the full or Lite AutoKaggle session. **Manage handoff access**
 
 ## Registration interface
 
-After deployment, AutoKaggle sends `POST /boldApi/v1/register_benchmark` with `Authorization: Bearer <approved acting token>` and JSON `{ "registration": <record> }`. A read-only token cannot register records. No Firebase service-account key is needed.
+After deployment, AutoKaggle Lite sends `POST /boldApi/v1/register_benchmark` with `Authorization: Bearer <approved acting token>` and JSON `{ "registration": <record> }`. A read-only token cannot register records. No Firebase service-account key is needed.
 
-Schema `bold.autokaggle.registration.v1` requires `source_id`, `idempotency_key`, `project_id`, optional `project_board`, `destinations: ["problem_bank"]`, title, objective, task kind, pinned evaluator details, and validation states. Descriptive metadata, a full/Lite session reference, research evidence, and human approval are supported. Field checks are in `functions/benchmark-registry.js`.
+Schema `bold.autokaggle.registration.v1` requires `source_id`, `idempotency_key`, `project_id`, optional `project_board`, `destinations: ["problem_bank"]`, `session: {"application": "lite"}`, title, objective, task kind, pinned evaluator details, and validation states. Descriptive metadata, research evidence, and human approval are supported. A missing session or a Full session is rejected. Existing Full session links remain readable. Field checks are in `functions/benchmark-registry.js`.
 
 One Firestore transaction saves `problemBank`, pinned releases in `benchmarks`, their history, and a private receipt. The response contains `problem_id`, `benchmark_id`, `commit`, and `idempotency_key`. Retries return the same receipt. A reused key with different content fails. Changed evidence needs a new key. Previous releases remain accessible.
 
@@ -59,3 +61,9 @@ The Node suite, Eleventy build, and local Firebase HTTP integration were run. Br
 Lite's project question was tested with live DeepSeek V4 Pro and through its chat interface. The model recorded the project link without treating it as a paper source. These checks did not train a model or validate a real research dataset.
 
 No production records were created. Deployment and an approved AutoKaggle acting token remain activation steps. The connected token is read-only, so no BOLD OS Board card was created.
+
+## Verification: 16 November 2026 — Lite entry point
+
+Removed the direct creation button, form, and client handler. The API rejects direct creation for members and administrators. Registration requires a Lite session. Existing records, filters, details, and history remain available.
+
+All 206 Node tests and the Eleventy build passed. The local HTTP checks passed for rejected direct creation, rejected missing/Full sessions, successful Lite registration, retries, permissions, and Firestore rules. Browser checks confirmed that only the Lite onboarding link remains and Kaito's saved entry still loads. The local Functions workers needed a restart to load the changed receiver. No model workflow changed, so no new model call was required. This change remains on the PR branch for review.
