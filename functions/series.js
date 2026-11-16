@@ -58,6 +58,9 @@ module.exports = function series(deps){
     // anyone, even signed out (2026-11-02). Its invite and who must join it can't reach further.
     const visibleTo = VISIBILITY.indexOf(d.visibleTo) >= 0 ? d.visibleTo : 'internal';
     const out = { kind, title, description, visibleTo };
+    // Custom pages are attached during feature-specific migration, not through
+    // the general event-series creation or edit flow.
+    if (d.page) return { error: 'A custom event page cannot be set here.' };
     if (kind === 'editions') {
       const unit = d.cadence && d.cadence.unit === 'week' ? 'week' : 'month', every = Number(d.cadence && d.cadence.every);
       const max = unit === 'week' ? 4 : 24;
@@ -251,6 +254,7 @@ module.exports = function series(deps){
         if (!change) throw new HttpsError('permission-denied', 'Only its organisers, PIs and admins change it.');
         const n = normalizeSeries(d, null);
         if (n.error) throw new HttpsError('invalid-argument', n.error);
+        if (s.page === 'group-meetings.html' && (n.kind !== 'editions' || n.cadence.unit !== 'week' || n.cadence.every !== 1 || n.inviteGroup !== 'none')) throw new HttpsError('invalid-argument', 'Keep the rota weekly and without invitations.');
         if (!n.organisers.length) throw new HttpsError('invalid-argument', 'Keep at least one organiser.');
         if ((n.requiredFor || '') !== (s.requiredFor || '') && !full) throw new HttpsError('permission-denied', 'Only PIs and admins change who must join it.');
         // What the other kind had goes (the invite's Calendar series is cancelled by syncSeries).
@@ -266,10 +270,21 @@ module.exports = function series(deps){
       }
       case 'release': case 'hide':
         if (!change) throw new HttpsError('permission-denied', 'Only its organisers, PIs and admins release and hide it.');
+        if (d.action === 'hide' && s.page === 'group-meetings.html') {
+          // An edition is also a normal event. Hide it before the series so it
+          // cannot remain visible in Events or the Calendar on its own.
+          const editions = await db.collection('events').where('series', '==', id).get();
+          for (let i = 0; i < editions.docs.length; i += 400) {
+            const batch = db.batch();
+            editions.docs.slice(i, i + 400).forEach((edition) => batch.update(edition.ref, { hidden: true, updatedAt: Date.now(), updatedBy: email }));
+            await batch.commit();
+          }
+        }
         await ref.set(Object.assign({ hidden: d.action === 'hide' }, stamp), { merge: true });
         break;
       case 'nextEdition': {
         if (s.kind !== 'editions') throw new HttpsError('invalid-argument', 'One with a Google Calendar invite takes its dates from the invite.');
+        if (s.page === 'group-meetings.html') throw new HttpsError('failed-precondition', 'Add group meetings from the rota page.');
         if (!change) throw new HttpsError('permission-denied', 'Only its organisers, PIs and admins schedule its editions.');
         const start = String(d.startDate || ''), end = String(d.endDate || d.startDate || '');
         if (!isoDay.test(start) || !isoDay.test(end) || end < start) throw new HttpsError('invalid-argument', 'Give its first and last day, the last on or after the first.');
@@ -303,6 +318,7 @@ module.exports = function series(deps){
         break;
       case 'delete':
         if (!change) throw new HttpsError('permission-denied', 'Only its organisers, PIs and admins delete it.');
+        if (s.page === 'group-meetings.html') throw new HttpsError('failed-precondition', 'The rota series has meeting editions and assignments. Hide it instead.');
         await ref.set({ hidden: true }, { merge: true });
         { const after = await syncSeries(id); if (after && after.eventId) throw new HttpsError('unavailable', 'Couldn’t cancel it in Google Calendar: try again.'); }
         // Its editions stay, as events of their own.

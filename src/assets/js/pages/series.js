@@ -78,6 +78,7 @@
       return;
     }
     document.title = s.title + ' | BOLD Lab';
+    if (s.page === 'group-meetings.html' && !editMode) { location.replace(s.page); return; }
     if (isEditions(s)) {
       if (editMode) { if (!accessKnown) return; if (canChange()) { startEditing(); return; } }
       if (editions === null) return;

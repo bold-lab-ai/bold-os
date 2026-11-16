@@ -1,0 +1,30 @@
+/* Local copies of the same font families used by BOLD.OS. The preview loads
+   these after removing the production Google Fonts link, so it works offline. */
+@font-face {
+  font-family: 'EB Garamond';
+  font-style: normal;
+  font-weight: 400 800;
+  font-display: swap;
+  src: url('eb-garamond-normal.woff2') format('woff2');
+}
+@font-face {
+  font-family: 'EB Garamond';
+  font-style: italic;
+  font-weight: 400;
+  font-display: swap;
+  src: url('eb-garamond-italic.woff2') format('woff2');
+}
+@font-face {
+  font-family: 'Cabin';
+  font-style: normal;
+  font-weight: 400 700;
+  font-display: swap;
+  src: url('cabin-normal.woff2') format('woff2');
+}
+@font-face {
+  font-family: 'Cabin';
+  font-style: italic;
+  font-weight: 400;
+  font-display: swap;
+  src: url('cabin-italic.woff2') format('woff2');
+}
