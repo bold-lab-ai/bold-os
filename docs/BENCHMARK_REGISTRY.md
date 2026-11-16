@@ -42,7 +42,7 @@ One Firestore transaction saves `problemBank`, pinned releases in `benchmarks`, 
 
 **Whose token.** Each registration is recorded as the person whose acting token sent it, and that person owns the problem: only they, or a PI or admin, can edit it or register new versions. So AutoKaggle sends each researcher's own acting token, never one shared token, which would make its holder the owner of every problem.
 
-**Reads go through the callable.** The rules allow no direct reads of `problemBank`, `benchmarks` or their history: `benchmarkRegistry` (list, get, search) serves the page, site search and agents, without people's emails. AutoKaggle's two addresses, for the links to sessions, are in `settings/problemBank`, which PIs and admins set at the foot of the page.
+**Reads go through the callable.** The rules allow no direct reads of `problemBank`, `benchmarks` or their history: `benchmarkRegistry` (list, get, search) serves the page, site search and agents, without people's emails. AutoKaggle's two addresses, for the links to sessions, are in `settings/problemBank`, which PIs and admins set on Settings › Problem Bank.
 
 Evaluator releases are stored in `benchmarks`, and AutoKaggle and agents call `register_benchmark` and `list_benchmarks`; they all belong to the one Problem Bank page. The agent tools and site call the same permission-checked service. Registration sends no messages or invitations.
 

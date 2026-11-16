@@ -11,7 +11,7 @@
 
   // A stage is AutoKaggle's report; an open problem has no evaluator yet.
   var STAGES = { open: 'Open problem', implemented: 'Implemented', checked: 'Checked', validated: 'Validated' };
-  // AutoKaggle's addresses (settings/problemBank, set by PIs and admins at the foot of the list); these until one is saved.
+  // AutoKaggle's addresses (settings/problemBank, set on Settings › Problem Bank); these until they're saved.
   var urls = { autokaggleUrl: 'https://ecc962fa-2f4c-4a3f-96c4-179af273fb7a.k8s.civo.com/', autokaggleLiteUrl: 'https://lite.ecc962fa-2f4c-4a3f-96c4-179af273fb7a.k8s.civo.com/lite' };
 
   var rows = [], cursor = null, q = '', loaded = false, generation = 0;
@@ -106,27 +106,12 @@
 
   el('pbNew').addEventListener('click', function(e){ if (el('pbNew').getAttribute('aria-disabled') === 'true') e.preventDefault(); });
 
-  /* ---------- AutoKaggle's addresses: everyone reads them, PIs and admins change them ---------- */
+  // AutoKaggle's addresses (settings/problemBank, set on Settings): the Lite link.
   function loadUrls(){
     return firebase.firestore(BOLD.getApp()).collection('settings').doc('problemBank').get().then(function(x){
-      if (x.exists) ['autokaggleUrl', 'autokaggleLiteUrl'].forEach(function(k){ if (x.data()[k]) urls[k] = x.data()[k]; });
-    }).catch(function(){}).then(function(){
-      var form = el('pbUrls'), full = BOLD.isFullWrite(), why = full ? '' : 'Only a PI or admin changes them';
-      el('pbLite').href = urls.autokaggleLiteUrl;
-      ['autokaggleUrl', 'autokaggleLiteUrl'].forEach(function(k){ form.elements[k].value = urls[k]; form.elements[k].disabled = !full; });
-      var b = form.querySelector('[type=submit]'); b.disabled = !full; b.title = why;
-    });
+      if (x.exists && x.data().autokaggleLiteUrl) urls.autokaggleLiteUrl = x.data().autokaggleLiteUrl;
+    }).catch(function(){}).then(function(){ el('pbLite').href = urls.autokaggleLiteUrl; });
   }
-  el('pbUrls').addEventListener('submit', function(event){
-    event.preventDefault();
-    var form = event.currentTarget, user = BOLD.getAuth().currentUser;
-    var value = { autokaggleUrl: form.elements.autokaggleUrl.value.trim(), autokaggleLiteUrl: form.elements.autokaggleLiteUrl.value.trim(),
-      updatedAt: Date.now(), updatedBy: String((user && user.email) || '').toLowerCase() };
-    el('pbUrlsStatus').textContent = 'Saving…';
-    firebase.firestore(BOLD.getApp()).collection('settings').doc('problemBank').set(value)
-      .then(function(){ urls.autokaggleUrl = value.autokaggleUrl; urls.autokaggleLiteUrl = value.autokaggleLiteUrl; el('pbLite').href = urls.autokaggleLiteUrl; el('pbUrlsStatus').textContent = 'Saved.'; })
-      .catch(function(e){ el('pbUrlsStatus').textContent = 'Not saved. ' + e.message; });
-  });
 
   /* ---------- start ---------- */
   BOLD.onUser(function(user){

@@ -11,7 +11,7 @@
   if (!main || !BOLD.getAuth()) return;
   var db;
   try { db = firebase.firestore(BOLD.getApp()); } catch (e){ return; }
-  var me = null, staff = null, invite = null, form = null, groups = {}, webPush = {}, unsubs = [], editing = false;
+  var me = null, staff = null, invite = null, form = null, groups = {}, webPush = {}, problemBank = {}, unsubs = [], editing = false;
   // What saving is doing, shown beside its button and kept across redraws: busy ('Checking…',
   // 'Saving…') or when it last saved. One for the Slack, Join form and Notifications tabs, one for Features.
   var saving = { settings: { busy: '', at: 0 }, pilot: { busy: '', at: 0 } };
@@ -46,7 +46,10 @@
   // are one form, saved from either.
   // Notifications (#notifications): the Web Push key desktop notifications use (settings/webPush).
   // BOLD Agent (#bold-agent): who writes the lab's home letters (settings/homeLetter, functions/bold-llm.js), saved as it's chosen.
-  var TABS = [['slack', 'Slack'], ['join', 'Join form'], ['notifications', 'Notifications'], ['bold-agent', 'BOLD Agent'], ['features', 'Features']];
+  // Problem Bank (#problem-bank): AutoKaggle's addresses, for the links to its sessions (settings/problemBank, problems.html).
+  var TABS = [['slack', 'Slack'], ['join', 'Join form'], ['notifications', 'Notifications'], ['problem-bank', 'Problem Bank'], ['bold-agent', 'BOLD Agent'], ['features', 'Features']];
+  // Until they're saved, the Problem Bank's pages use these (pages/problems.js, pages/problem.js).
+  var AUTOKAGGLE = { autokaggleUrl: 'https://ecc962fa-2f4c-4a3f-96c4-179af273fb7a.k8s.civo.com/', autokaggleLiteUrl: 'https://lite.ecc962fa-2f4c-4a3f-96c4-179af273fb7a.k8s.civo.com/lite' };
   var letterLab = null, letterBusy = false, letterError = '';
   // Who writes the home letters: a ladder (settings/homeLetter.ladder; functions/home-letter.js ladderOf, as here): each
   // tried in turn until one writes it; the rule-based letter always does, so whatever is below it is never reached.
@@ -190,6 +193,11 @@
       '<section class="profile-panel" id="notifications"><div class="event-form join-form">' + group('Desktop notifications') +
       '<p class="proj-meta">The public key of the project’s Web Push certificate (Firebase console › Project settings › Cloud Messaging › Web Push certificates). Public: browsers hand it to their push service. Empty: Notifications doesn’t offer desktop notifications.</p>' +
       '<label>Web Push key<input type="text" class="jr-push-key" maxlength="200" spellcheck="false" autocomplete="off" value="' + esc((webPush || {}).publicKey || '') + '" placeholder="B…"></label></fieldset>' +
+      save + '</div></section>' +
+      '<section class="profile-panel" id="problem-bank"><div class="event-form join-form">' + group('AutoKaggle') +
+      '<p class="proj-meta">Where the Problem Bank’s links to AutoKaggle sessions go.</p>' +
+      '<label>AutoKaggle<input type="url" class="jr-ak-full" maxlength="300" spellcheck="false" value="' + esc(problemBank.autokaggleUrl || AUTOKAGGLE.autokaggleUrl) + '"></label>' +
+      '<label>AutoKaggle Lite<input type="url" class="jr-ak-lite" maxlength="300" spellcheck="false" value="' + esc(problemBank.autokaggleLiteUrl || AUTOKAGGLE.autokaggleLiteUrl) + '"></label></fieldset>' +
       save + '</div></section></div>' +
       '<section class="profile-panel" id="bold-agent">' + letterHtml() + '</section>' +
       '<section class="profile-panel" id="features">' + pilotHtml() + '</section>';
@@ -366,6 +374,8 @@
     var v = function(c){ return s.querySelector(c).value; };
     var url = v('.jr-invite').trim();
     if (url && !/^https:\/\/\S+$/.test(url)) return { error: 'The invite link starts with https://' };
+    var akFull = v('.jr-ak-full').trim(), akLite = v('.jr-ak-lite').trim();
+    if (![akFull, akLite].every(function(x){ return /^https:\/\/[^\s"<>]{1,292}$/.test(x); })) return { error: 'AutoKaggle’s addresses start with https://' };
     var box = function(kind){ return s.querySelector('.st-chips[data-kind="' + kind + '"]'); };
     var roles = chipsOf(box('role')), pillars = chipsOf(box('pillar'));
     if (!roles.length) return { error: 'Give at least one role.' };
@@ -382,7 +392,8 @@
       invite: { slackInviteUrl: url, slackInviteExpires: v('.jr-expires'), subject: v('.jr-subject').trim() || SUBJECT, body: v('.jr-body') || BODY },
       form: { roles: roles, pillars: pillars },
       groups: { channels: channels, roleChannels: roleChannels },
-      push: { publicKey: v('.jr-push-key').trim() }
+      push: { publicKey: v('.jr-push-key').trim() },
+      problems: { autokaggleUrl: akFull, autokaggleLiteUrl: akLite }
     };
   }
   // What the form showed when it was drawn: saving writes only what was changed since.
@@ -434,7 +445,7 @@
   // Each settings document is written only if something in it was changed, and then
   // only the fields (and, in a map, the entries) that were: the rest is kept as saved
   // now, so two people saving different settings at once both keep theirs.
-  var SETTINGS_DOCS = { invite: 'joinInvite', form: 'joinForm', groups: 'groups', push: 'webPush' };
+  var SETTINGS_DOCS = { invite: 'joinInvite', form: 'joinForm', groups: 'groups', push: 'webPush', problems: 'problemBank' };
   function writeSettings(btn, err, mine){
     var from = settingsFrom || mine;
     var same = function(a, b){ return JSON.stringify(a) === JSON.stringify(b); };
@@ -520,6 +531,7 @@
       watch('groups', function(x){ groups = x; });
       watch('pilot', function(x){ var was = pilot && (pilot.live || {})['channel-alignment']; pilot = x; if (align.status && was !== (x.live || {})['channel-alignment']) loadAlign(); });
       watch('webPush', function(x){ webPush = x; });
+      watch('problemBank', function(x){ problemBank = x; });
       watch('homeLetter', function(x){ letterLab = x; drawLetter(); });
       loadAlign();
     }).catch(function(err){ console.error('[BOLD Settings] checking access failed', err); staff = false; render(); });

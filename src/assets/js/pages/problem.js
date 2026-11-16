@@ -18,7 +18,7 @@
   var TEXT = [['collaborators', 'Collaborators'], ['submission_format', 'Submission format'], ['metrics', 'Metrics and score direction'],
     ['run_command', 'Run command'], ['dependencies', 'Dependencies'], ['seeds', 'Seeds'], ['compute', 'Compute requirements'],
     ['data_assets', 'Data and assets'], ['limitations', 'Known limitations'], ['open_issues', 'Open issues'], ['next_action', 'Next action']];
-  // AutoKaggle's addresses (settings/problemBank, set on the Problem Bank); these until one is saved.
+  // AutoKaggle's addresses (settings/problemBank, set on Settings › Problem Bank); these until they're saved.
   var urls = { autokaggleUrl: 'https://ecc962fa-2f4c-4a3f-96c4-179af273fb7a.k8s.civo.com/', autokaggleLiteUrl: 'https://lite.ecc962fa-2f4c-4a3f-96c4-179af273fb7a.k8s.civo.com/lite' };
 
   var p = null, releases = [], history = [], canApprove = false, projects = [], people = [], editing = false, busy = false;

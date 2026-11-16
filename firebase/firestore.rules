@@ -253,11 +253,10 @@ service cloud.firestore {
         && (!('refresh' in request.resource.data) || request.resource.data.refresh in ['daily', 'twice', 'working'])
         && request.resource.data.updatedBy == email();
     }
-    // AutoKaggle's addresses, for the Problem Bank's links: PIs and admins set them on its page.
+    // AutoKaggle's addresses, for the Problem Bank's links: PIs and admins set them on Settings (#problem-bank).
     match /settings/problemBank {
       allow read: if isSignedIn();
       allow write: if hasFullWrite() && request.resource.data.keys().hasOnly(['autokaggleUrl', 'autokaggleLiteUrl', 'updatedAt', 'updatedBy'])
-        && request.resource.data.updatedBy == email()
         && request.resource.data.autokaggleUrl is string && request.resource.data.autokaggleUrl.matches('https://[^\\s"<>]{1,300}')
         && request.resource.data.autokaggleLiteUrl is string && request.resource.data.autokaggleLiteUrl.matches('https://[^\\s"<>]{1,300}');
     }
