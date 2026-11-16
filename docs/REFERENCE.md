@@ -217,3 +217,11 @@ other query parameters. Hash navigation to a heading in another tab corrects a
 stale section selector. Back/Forward restore the selected tab. An old section-only
 selector follows a renamed tab if the persisted heading aliases identify exactly
 one current destination; a section split cannot choose arbitrarily.
+
+Same-guide section/heading **link clicks** are handled in place, including links
+from the sidebar outside `guideBody`. Only the section and fragment may differ;
+changing the guide identity, branch, other query parameters, origin or path uses
+normal navigation. Modified clicks, downloads and non-self targets keep their
+native browser behavior. Clicking the current section again adds no history
+entry. This does not intercept address-bar pastes: changing a query there is a
+browser-initiated document navigation, unlike a fragment-only navigation.

@@ -14,7 +14,7 @@ function harness(clipboard) {
   const body = { addEventListener: (name, fn) => handlers.push(fn) };
   const ctx = {
     window: { addEventListener() {} }, BoldGuideCopy: { html(hash, title, section) { return { hash, title, section }; }, mount() {} }, BOLD: { escapeHtml: s => String(s), TAG: /$^/, IMAGE: /$^/ },
-    document: {
+    document: { addEventListener() {},
       querySelector: () => null,
       createElement: () => ({ setAttribute() {}, remove() {}, set textContent(v) { messages.push(v); } }),
       body: { appendChild() {} }, getElementById: id => nodes.get(id),
@@ -27,8 +27,8 @@ function harness(clipboard) {
     x: {}, proposalsLoaded: true, form: null, comments: null, commentFor: () => '',
     sections: () => ['First', 'Second'], G: { slugify: s => s.toLowerCase() },
   };
-  const replacements = [];
-  ctx.history = { state: { retained: true }, replaceState(state, _, href) { replacements.push({ state, href }); ctx.location.href = new URL(href, ctx.location.href).href; } };
+  const replacements = [], pushes = [];
+  ctx.history = { state: { retained: true }, pushState(state, _, href) { pushes.push(href); ctx.location.href = new URL(href, ctx.location.href).href; }, replaceState(state, _, href) { replacements.push({ state, href }); ctx.location.href = new URL(href, ctx.location.href).href; } };
   vm.createContext(ctx);
   vm.runInContext(fs.readFileSync('src/assets/js/markdown.js', 'utf8'), ctx);
   ctx.md = ctx.window.BoldMarkdown.render;
@@ -44,8 +44,9 @@ function harness(clipboard) {
     between('  function tabFor(hash)', '  function tabsHtml()') +
     between('  function refresh(){', '  // Shows what #hash') +
     between('  function goTo(hash)', '  // What you type while') +
-    between('  function navigateFromUrl(){', '  BOLD.onUser'), ctx);
-  return { ctx, handlers, messages, scrolled, statuses, timers, replacements };
+    between('  function navigateFromUrl(){', '  BOLD.onUser') +
+    between('  function sameGuideUrl(href){', '  // Old sidebar fragments'), ctx);
+  return { ctx, handlers, messages, scrolled, statuses, timers, replacements, pushes };
 }
 test('cold load selects the owning tab, unfolds its section and scrolls to the exact duplicate heading', () => {
   const h = harness();
@@ -215,4 +216,56 @@ test('section-only URLs follow an unambiguous accepted tab rename and normalize 
   ctx.location.search = '?guide=test&section=second'; ctx.refresh();
   assert.equal(ctx.tab, 'Renamed'); assert.equal(ctx.location.search, '?guide=test&section=renamed');
   assert.equal(ctx.location.hash, '');
+});
+
+
+function follow(h, href, options = {}) {
+  let prevented = false;
+  const a = { href: new URL(href, h.ctx.location.href).href, target: options.target || '',
+    hasAttribute: name => name === 'download' && !!options.download,
+    classList: { contains: name => name === 'guide-tab' && !!options.tab },
+  };
+  h.ctx.BOLD.switchTab = (_, __, show) => show();
+  const { target, ...eventOptions } = options;
+  h.ctx.followGuideLink({ button: 0, target: { closest: () => a }, preventDefault() { prevented = true; }, ...eventOptions });
+  return prevented;
+}
+
+test('same-guide sidebar and content links switch sections in place, without a document navigation', () => {
+  const h = harness();
+  assert.equal(follow(h, '?guide=test&section=second'), true);
+  assert.equal(h.ctx.tab, 'Second'); assert.equal(h.pushes.length, 1);
+  assert.equal(h.ctx.location.search, '?guide=test&section=second');
+  assert.equal(follow(h, '?guide=test&section=first'), true);
+  assert.equal(h.ctx.tab, 'First'); assert.equal(h.pushes.length, 2);
+});
+
+test('clicking the current section again does not create a duplicate history entry', () => {
+  const h = harness();
+  h.ctx.location.search = '?guide=test&section=second'; h.ctx.tab = 'Second';
+  assert.equal(follow(h, '?guide=test&section=second'), true);
+  assert.equal(h.pushes.length, 0); assert.equal(h.ctx.tab, 'Second');
+});
+
+test('tab-bar links retain in-place switching and heading links still unfold and scroll', () => {
+  const h = harness();
+  assert.equal(follow(h, '?guide=test&section=second', { tab: true }), true);
+  assert.equal(h.ctx.tab, 'Second');
+  assert.equal(follow(h, '?guide=test&section=second#details-1'), true);
+  assert.equal(h.ctx.folded.two, false); assert.deepEqual(h.scrolled, ['p-two--details-2']);
+});
+
+test('different documents, guide identities and branch contexts use normal browser navigation', () => {
+  const h = harness();
+  for (const href of ['/other.html?section=second', '?guide=another&section=second', '?guide=test&branch=other&section=second', 'https://example.org/guide.html?guide=test']) {
+    assert.equal(follow(h, href), false);
+  }
+  assert.equal(h.pushes.length, 0);
+});
+
+test('modified clicks, downloads, other targets and handled events retain browser behavior', () => {
+  const h = harness(), href = '?guide=test&section=second';
+  for (const options of [{ ctrlKey: true }, { metaKey: true }, { shiftKey: true }, { altKey: true }, { button: 1 }, { target: '_blank' }, { download: true }, { defaultPrevented: true }]) {
+    assert.equal(follow(h, href, options), false);
+  }
 });

@@ -1003,16 +1003,42 @@
     if (e.target.classList.contains('gd-r-title')) v.title = e.target.value;
     else if (e.target.classList.contains('gd-r-body')) v.text = e.target.value;
   });
-  // A section tab switches in place, the tab bar staying where it is on screen.
-  body.addEventListener('click', function(e){
-    var a = e.target.closest('.guide-tab');
-    if (!a || a.tagName !== 'A' || !x || form || e.metaKey || e.ctrlKey || e.shiftKey) return;
-    var t = tabFromUrl(a.getAttribute('href'));
-    if (t === null) return;
+  // Handle every same-guide link, including the sidebar outside guideBody.
+  // Changing the guide, branch, or any other query parameter still loads a page.
+  function sameGuideUrl(href){
+    var url = new URL(href, location.href), current = new URL(location.href);
+    if (url.origin !== current.origin || url.pathname !== current.pathname) return null;
+    var from = new URLSearchParams(current.search), to = new URLSearchParams(url.search);
+    from.delete('section'); to.delete('section'); from.sort(); to.sort();
+    return from.toString() === to.toString() ? url : null;
+  }
+  function followGuideLink(e){
+    var a = e.target.closest && e.target.closest('a[href]');
+    if (!a || e.defaultPrevented || e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey || !x || form) return;
+    if (a.hasAttribute('download') || (a.target && a.target !== '_self')) return;
+    var url = sameGuideUrl(a.href);
+    if (!url) return;
+    var t = tabFromUrl(url.href);
+    if (t === null) {
+      if (url.hash || url.searchParams.has('section')) return;
+      t = sections()[0] || null;
+    }
     e.preventDefault();
-    try { history.pushState(null, '', a.getAttribute('href')); } catch (err){}
-    BOLD.switchTab('#gdTabs', body, function(){ tab = t; render(); });
-  });
+    if (url.href !== location.href) {
+      try { history.pushState(history.state, '', url.pathname + url.search + url.hash); } catch (err){ return; }
+    }
+    function show(){
+      tab = t; canonicalizeUrl(tab); render();
+      if (location.hash) goTo(location.hash);
+      else if (!a.classList.contains('guide-tab')) {
+        var tabs = document.getElementById('gdTabs');
+        if (tabs) tabs.scrollIntoView({ block: 'start' });
+      }
+    }
+    if (a.classList.contains('guide-tab')) BOLD.switchTab('#gdTabs', body, show);
+    else show();
+  }
+  document.addEventListener('click', followGuideLink);
   // Old sidebar fragments and new query-based tabs both support Back/Forward.
   function navigateFromUrl(){
     if (!x || form) return;
