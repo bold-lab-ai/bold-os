@@ -230,7 +230,9 @@ body:has(.gd-viewing){padding-bottom:72px;}
 .rp-activity .gd-proposals-open{padding:0;color:var(--ink);text-decoration:underline;text-underline-offset:2px;font:inherit;}
 
 /* Permalinks remain available on touch screens and when using a keyboard. */
-.gd-copy-link{display:inline-flex; vertical-align:middle; margin-left:8px; color:var(--muted); text-decoration:none;}
+.gd-copy-link{display:inline-flex; vertical-align:middle; width:1em; height:1em; margin-left:.35em; font:inherit; line-height:1; color:var(--muted); text-decoration:none;}
+/* Match the heading’s capital-letter height, with an em fallback. */
+.gd-copy-link svg{width:.75em; height:.75em; width:1cap; height:1cap;}
 .gd-copy-link:hover{color:var(--link);}
 .gd-copy-link:focus-visible{outline:2px solid var(--accent); outline-offset:2px;}
 .guide-text :is(h3,h4,h5,h6)[id], .gd-heading-alias{scroll-margin-top:24px;}
