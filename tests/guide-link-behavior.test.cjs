@@ -6,7 +6,7 @@ const vm = require('node:vm');
 const source = fs.readFileSync('src/assets/js/pages/guide.js', 'utf8');
 function between(start, end) { return source.slice(source.indexOf(start), source.indexOf(end, source.indexOf(start))); }
 function harness(clipboard) {
-  const nodes = new Map(), handlers = [], messages = [], scrolled = [];
+  const nodes = new Map(), handlers = [], messages = [], scrolled = [], placements = [], timers = [];
   const data = [
     { id: 'one', section: 'First', body: '# Overview' },
     { id: 'two', section: 'Second', body: '# Details\n# Details' },
@@ -22,7 +22,7 @@ function harness(clipboard) {
     PREFIX: 'p-', parts: () => data, visible: () => true,
     body, esc: s => String(s), navigator: { clipboard }, URL,
     location: { href: 'http://localhost:8137/guide.html?guide=test#old', hash: '' },
-    setTimeout: () => 1, clearTimeout() {},
+    setTimeout: fn => { timers.push(fn); return timers.length; }, clearTimeout() {},
     folded: { two: true }, saveFolded() {}, tab: 'First', jumped: false,
     x: {}, proposalsLoaded: true, form: null, comments: null, commentFor: () => '',
     sections: () => ['First', 'Second'], G: { slugify: s => s.toLowerCase() },
@@ -42,7 +42,7 @@ function harness(clipboard) {
     between('  function tabFor(hash)', '  function tabsHtml()') +
     between('  function refresh(){', '  // Shows what #hash') +
     between('  function goTo(hash)', '  // What you type while'), ctx);
-  return { ctx, handlers, messages, scrolled };
+  return { ctx, handlers, messages, scrolled, placements, timers };
 }
 test('cold load selects the owning tab, unfolds its section and scrolls to the exact duplicate heading', () => {
   const h = harness();
@@ -60,7 +60,7 @@ test('malformed and unknown fragments do not throw or select a section', () => {
 });
 function click(h, extra = {}) {
   let prevented = false;
-  const a = { getAttribute: () => '#p-two--details' };
+  const a = { getAttribute: () => '#p-two--details', insertAdjacentElement: (position, status) => h.placements.push({ position, status }) };
   h.handlers[0]({ target: { closest: () => a }, preventDefault: () => { prevented = true; }, ...extra });
   return prevented;
 }
@@ -70,16 +70,23 @@ test('clipboard receives an absolute URL preserving the guide query', async () =
   assert.equal(click(h), true);
   await Promise.resolve();
   assert.deepEqual(copied, ['http://localhost:8137/guide.html?guide=test#p-two--details']);
-  assert.deepEqual(h.messages, ['Link copied.']);
+  assert.deepEqual(h.messages, ['Link copied']);
   assert.equal(h.ctx.location.hash, '');
+  assert.equal(h.placements.length, 1);
+  assert.equal(h.placements[0].position, 'afterend');
+  assert.equal(h.placements[0].status.className, 'gd-copy-status');
+  let removed = false;
+  h.placements[0].status.remove = () => { removed = true; };
+  h.timers[0]();
+  assert.equal(removed, true);
 });
-test('missing, denied and throwing clipboard APIs offer the URL fallback', async () => {
+test('missing, denied and throwing clipboard APIs report failure without changing the URL', async () => {
   for (const clipboard of [undefined, { writeText: () => Promise.reject(new Error('denied')) }, { writeText: () => { throw new Error('denied'); } }]) {
     const h = harness(clipboard);
     click(h);
     await Promise.resolve();
-    assert.equal(h.ctx.location.hash, '#p-two--details');
-    assert.deepEqual(h.messages, ['Copy the link from the address bar.']);
+    assert.equal(h.ctx.location.hash, '');
+    assert.deepEqual(h.messages, ['Couldn’t copy. Right-click the icon to copy the link.']);
   }
 });
 test('modified clicks retain native link behavior', () => {

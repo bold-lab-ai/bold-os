@@ -126,7 +126,7 @@
     });
   }
   var copyFeedbackTimer;
-  // Links retain a normal href for right-click copying and a clipboard fallback.
+  // Links retain a normal href for right-click copying; a plain click only copies.
   body.addEventListener('click', function(e){
     var a = e.target.closest('.gd-copy-link');
     if (!a || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
@@ -134,17 +134,20 @@
     var url = new URL(a.getAttribute('href'), location.href).href;
     function feedback(message){
       var status = document.querySelector('.gd-copy-status');
-      if (!status) { status = document.createElement('span'); status.className = 'gd-copy-status'; status.setAttribute('role', 'status'); document.body.appendChild(status); }
+      if (status) status.remove();
+      status = document.createElement('span');
+      status.className = 'gd-copy-status';
+      status.setAttribute('role', 'status');
+      a.insertAdjacentElement('afterend', status);
       status.textContent = message;
       clearTimeout(copyFeedbackTimer);
       copyFeedbackTimer = setTimeout(function(){ status.remove(); }, 5000);
     }
     function fallback(){
-      feedback('Copy the link from the address bar.');
-      location.hash = a.getAttribute('href');
+      feedback('Couldn’t copy. Right-click the icon to copy the link.');
     }
     if (!navigator.clipboard || !navigator.clipboard.writeText) { fallback(); return; }
-    try { navigator.clipboard.writeText(url).then(function(){ feedback('Link copied.'); }, fallback); }
+    try { navigator.clipboard.writeText(url).then(function(){ feedback('Link copied'); }, fallback); }
     catch (err) { fallback(); }
   });
   function hasSections(){ return parts().some(function(p){ return p.section; }); }
