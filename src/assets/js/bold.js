@@ -1628,7 +1628,7 @@
         var out = [];
         ((snap.exists && snap.data().parts) || []).forEach(function(p){
           if (p.section && !out.some(function(e){ return e.title === p.section; }))
-            out.push({ title: p.section, href: 'boldiquette.html#' + BOLD.slugify(p.section) });
+            out.push({ title: p.section, href: 'boldiquette.html?section=' + encodeURIComponent(BOLD.slugify(p.section)) });
         });
         return out;
       });

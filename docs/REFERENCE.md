@@ -169,3 +169,59 @@ If the process moved relative to BOLDiquette, update `docs/DIFF.md` (and `docs/p
 ## Problem Bank
 
 See [BENCHMARK_REGISTRY.md](BENCHMARK_REGISTRY.md) for the page, project requirement, authenticated registration API, Firestore collections, validation gates, and activation steps.
+
+## Readable guide heading links
+
+`guide-anchors.js` (source: `functions/guide-anchors.js`, copied to `assets/js/` by Eleventy)
+allocates heading slugs for BOLDiquette, how-to guides and Get started. Copy buttons use
+`?section=<tab-slug>#<heading-slug>`, preserving other query parameters. Part titles and
+nested Markdown headings share a namespace within a tab. Slugs use the plain heading
+text, lowercased, with spaces replaced by hyphens and punctuation removed; Unicode
+letters remain. Collisions get `-1`, `-2`, etc.
+
+The document's server-owned `headingAnchors` registry reserves each published slug and
+its section for a stable target. `appliedProposal` updates it with each accepted content
+change, including commits within a batch; the browser's proposal preview runs the same
+pure model. A rename gets a new current slug and retains the previous one as an alias.
+Moves retain old section/slug pairs, removals reserve their names rather than reassigning
+them, and restores retain the registry. No browser writes aliases on a page visit. Before
+a document has a registry, rendering derives one; its first accepted change initializes
+it from the previous content, preserving the links already offered to readers.
+
+Nested headings are matched by unchanged text first, including reordered headings.
+Replacements between unchanged neighbours retain identity when their counts match;
+a single remaining replacement can also move. Unequal ambiguous replacements are
+new/deleted targets, rather than guessing redirects to unrelated content. Keeping
+heading edits distinct from simultaneous deletions/additions avoids ambiguity.
+
+Existing opaque part fragments, scoped nested-heading fragments, hash-only tab links,
+and conference-cycle phase fragments still resolve. Internal DOM IDs stay compatible
+with comments, folding and history; `pages/guide.js` resolves the readable fragment to
+its owning part/tab, expands that part and scrolls to the current DOM target. Old
+section selectors follow moved targets. Copying never navigates.
+
+Deploy the updated **`decideProposal` and `decideBranch` Cloud Functions before or with
+the frontend release** so future accepted renames persist aliases. No Firestore rule
+change or client migration is needed: guides/handbook content remains server-only.
+Existing links whose target was removed cannot navigate to deleted content. Reviewers
+can run `node --test tests/guide-readable-anchors.test.cjs tests/guide-link-behavior.test.cjs`
+for URL allocation, alias persistence, preview/server parity and navigation regressions.
+
+
+Guide navigation uses one URL convention: the bare page is the default view,
+`?section=<tab-slug>` selects a tab, and `?section=<tab-slug>#<heading-slug>`
+selects content within it. Tabs and the BOLDiquette sidebar generate query-based
+links. Old hash-only tab links and opaque heading bookmarks are resolved, then
+normalized with `history.replaceState`, preserving the current history state and
+other query parameters. Hash navigation to a heading in another tab corrects a
+stale section selector. Back/Forward restore the selected tab. An old section-only
+selector follows a renamed tab if the persisted heading aliases identify exactly
+one current destination; a section split cannot choose arbitrarily.
+
+Same-guide section/heading **link clicks** are handled in place, including links
+from the sidebar outside `guideBody`. Only the section and fragment may differ;
+changing the guide identity, branch, other query parameters, origin or path uses
+normal navigation. Modified clicks, downloads and non-self targets keep their
+native browser behavior. Clicking the current section again adds no history
+entry. This does not intercept address-bar pastes: changing a query there is a
+browser-initiated document navigation, unlike a fragment-only navigation.
