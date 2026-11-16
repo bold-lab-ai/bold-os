@@ -11,7 +11,7 @@
 // other write) or declines it. PIs/admins add and delete guides
 // (guide.html?new is the form for a new one).
 // Parts may carry a `section`: then the page has one tab per section, showing
-// that section's parts (#<section-slug> or a part's #id opens its tab). The same page serves other documents edited this way (BOLDiquette:
+// that section's parts (?section=<slug>, with #<heading> for a heading). The same page serves other documents edited this way (BOLDiquette:
 // boldiquette.html), set by #guideBody's data attributes: data-collection,
 // data-slug, data-eyebrow, data-back (a link, or "" for none), data-anchor-prefix,
 // data-deletable and data-read-point ("true": what changed since the reader
@@ -114,8 +114,8 @@
     }
     return cachedAnchors;
   }
-  function readableTarget(id){
-    var registry = anchorRegistry(), query = new URLSearchParams(location.search);
+  function readableTarget(id, href){
+    var registry = anchorRegistry(), query = new URL(href || location.href, location.href).searchParams;
     var section = query.has('section') ? query.get('section') : null;
     var entry = BoldGuideAnchors.resolve(registry, id, section);
     if (entry) return entry;
@@ -123,15 +123,9 @@
     entry = BoldGuideAnchors.resolveLegacy(registry, legacy);
     return entry && entry.active ? entry : null;
   }
-  function headingPart(id){
-    var entry = readableTarget(id);
-    if (entry) return part(entry.partId);
-
-    return parts().filter(visible).filter(function(p){
-      var headings = [];
-      md(p.body, { headingPrefix: anchor(p), headings: headings });
-      return headings.some(function(h){ return h.id === id || h.legacy === id; });
-    })[0];
+  function headingPart(id, href){
+    var entry = readableTarget(id, href);
+    return entry ? part(entry.partId) : null;
   }
   function hashId(hash){
     try { return decodeURIComponent(String(hash || '').replace(/^#/, '')); }
@@ -177,7 +171,7 @@
   // A comment a #hash names (#c=<id>, as Slack sends), or ''.
   function commentFor(hash){ var m = /^#?c=(.+)$/.exec(String(hash || '')); return m ? decodeURIComponent(m[1]) : ''; }
   // The section a #hash names: a section's slug, one of its parts' id, or a comment's part.
-  function tabFor(hash){
+  function tabFor(hash, href){
     var h = hashId(hash);
     if (!h) return null;
     if (commentFor(hash)) {
@@ -186,18 +180,17 @@
     }
     // Hash-only section links predate readable heading fragments.
     var oldSection = sections().filter(function(v){ return G.slugify(v) === h; })[0];
-    if (!new URLSearchParams(location.search).has('section') && oldSection !== undefined) return oldSection;
-    var readable = readableTarget(h);
-    if (readable) { var owner = part(readable.partId); return owner ? (owner.section || '') : null; }
+    if (!new URL(href || location.href, location.href).searchParams.has('section') && oldSection !== undefined) return oldSection;
+    var owner = headingPart(h, href);
+    if (owner) return owner.section || '';
     var byName = sections().filter(function(v){ return G.slugify(v) === h; })[0];
     if (byName !== undefined) return byName;
-    var p = parts().filter(function(q){ return anchor(q) === h; })[0] || headingPart(h);
-    return p ? (p.section || '') : null;
+    return null;
   }
   // Explicit section selection and the heading fragment are independent. A
   // resolvable old fragment still wins if a stale query names a different tab.
   function tabFromUrl(href){
-    var url = new URL(href || location.href, location.href), target = tabFor(url.hash);
+    var url = new URL(href || location.href, location.href), target = tabFor(url.hash, url.href);
     if (target !== null) return target;
     if (!url.searchParams.has('section')) return null;
     var name = url.searchParams.get('section');
@@ -990,7 +983,7 @@
     // A link to a proposed change (#proposal-<id>, from before branches): its branch's page (they share the id).
     var pm = /^proposal-(.+)$/.exec(id);
     if (pm) { location.replace(BOLD.branchPage(pm[1])); return; }
-    var fp = parts().filter(function(q){ return anchor(q) === id; })[0] || headingPart(id);
+    var fp = headingPart(id);
     if (fp && folded[fp.id]) { folded[fp.id] = false; saveFolded(); render(); }
     var target = document.getElementById(id);
     if (!target && tabFor(hash) !== null) target = document.getElementById('gdTabs');

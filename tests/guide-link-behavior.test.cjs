@@ -4,25 +4,25 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const vm = require('node:vm');
 const source = fs.readFileSync('src/assets/js/pages/guide.js', 'utf8');
-function between(start, end) { return source.slice(source.indexOf(start), source.indexOf(end, source.indexOf(start))); }
-function harness(clipboard) {
-  const nodes = new Map(), handlers = [], messages = [], scrolled = [], statuses = [], timers = [];
+function between(start, end) {
+  const from = source.indexOf(start), to = source.indexOf(end, from);
+  assert.ok(from >= 0 && to > from, `Missing source boundaries: ${start} … ${end}`);
+  return source.slice(from, to);
+}
+function harness() {
+  const nodes = new Map(), scrolled = [];
   const data = [
     { id: 'one', title: 'First Part', section: 'First', body: '# Details' },
     { id: 'two', title: 'Second Part', section: 'Second', body: '# Details\n# Details' },
   ];
-  const body = { addEventListener: (name, fn) => handlers.push(fn) };
   const ctx = {
     window: { addEventListener() {} }, BoldGuideCopy: { html(hash, title, section) { return { hash, title, section }; }, mount() {} }, BOLD: { escapeHtml: s => String(s), TAG: /$^/, IMAGE: /$^/ },
     document: { addEventListener() {},
-      querySelector: () => null,
-      createElement: () => ({ setAttribute() {}, remove() {}, set textContent(v) { messages.push(v); } }),
-      body: { appendChild() {} }, getElementById: id => nodes.get(id),
+      getElementById: id => nodes.get(id),
     },
     PREFIX: 'p-', parts: () => data, hasSections: () => true, part: id => data.find(p => p.id === id), doc: () => ({ parts: data }), BoldGuideAnchors: require('../functions/guide-anchors.js'), visible: () => true,
-    body, esc: s => String(s), navigator: { clipboard }, URL, URLSearchParams,
+    body: {}, esc: s => String(s), URL, URLSearchParams,
     location: new URL('http://localhost:8137/guide.html?guide=test'),
-    setTimeout: fn => { timers.push(fn); return timers.length; }, clearTimeout: id => { if (id) timers[id - 1] = null; },
     folded: { two: true }, saveFolded() {}, tab: 'First', jumped: false,
     x: {}, proposalsLoaded: true, form: null, comments: null, commentFor: () => '',
     sections: () => ['First', 'Second'], G: { slugify: s => s.toLowerCase() },
@@ -41,12 +41,12 @@ function harness(clipboard) {
     }
   };
   vm.runInContext(between('  function anchor(p)', '  function hasSections()') +
-    between('  function tabFor(hash)', '  function tabsHtml()') +
+    between('  function tabFor(', '  function tabsHtml()') +
     between('  function refresh(){', '  // Shows what #hash') +
     between('  function goTo(hash)', '  // What you type while') +
     between('  function navigateFromUrl(){', '  BOLD.onUser') +
     between('  function sameGuideUrl(href){', '  // Old sidebar fragments'), ctx);
-  return { ctx, handlers, messages, scrolled, statuses, timers, replacements, pushes };
+  return { ctx, scrolled, replacements, pushes };
 }
 test('cold load selects the owning tab, unfolds its section and scrolls to the exact duplicate heading', () => {
   const h = harness();
@@ -253,6 +253,16 @@ test('tab-bar links retain in-place switching and heading links still unfold and
   assert.equal(h.ctx.tab, 'Second');
   assert.equal(follow(h, '?guide=test&section=second#details-1'), true);
   assert.equal(h.ctx.folded.two, false); assert.deepEqual(h.scrolled, ['p-two--details-2']);
+});
+
+test('a duplicate heading link resolves in its destination section, not the current section', () => {
+  const h = harness();
+  h.ctx.location.search = '?guide=test&section=first';
+  assert.equal(follow(h, '?guide=test&section=second#details'), true);
+  assert.equal(h.ctx.tab, 'Second');
+  assert.equal(h.ctx.location.search, '?guide=test&section=second');
+  assert.equal(h.ctx.folded.two, false);
+  assert.deepEqual(h.scrolled, ['p-two--details']);
 });
 
 test('different documents, guide identities and branch contexts use normal browser navigation', () => {
