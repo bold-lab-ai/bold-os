@@ -11,15 +11,11 @@ permalink: "problems-register.html"
 <div class="hero">
   <a class="back-link" href="problems.html">&larr; Problem Bank</a>
   <h1>Add a problem</h1>
-  <p class="hero-note">A research question for one of the lab's projects, before anyone has built an evaluator for it.</p>
+  <p class="hero-note">An open research question, before anyone has built an evaluator for it.</p>
 </div>
 
 <main>
   <form id="problemForm" novalidate>
-    <div class="field">
-      <label for="prProject">Project</label>
-      <select id="prProject"><option value="">Loading projects&hellip;</option></select>
-    </div>
     <div class="field">
       <label for="prTitle">Problem</label>
       <input type="text" id="prTitle" maxlength="180" autocomplete="off">
@@ -31,6 +27,11 @@ permalink: "problems-register.html"
     <div class="field">
       <label for="prTask">Task type</label>
       <input type="text" id="prTask" maxlength="80" autocomplete="off" placeholder="Forecasting, generation, optimisation…">
+    </div>
+    <div class="field">
+      <label for="prProject">Project</label>
+      <select id="prProject"><option value="">Loading projects&hellip;</option></select>
+      <div class="field-hint">The project it belongs to. Every problem in the bank has one.</div>
     </div>
     <div class="field">
       <label for="prOwner">Research owner</label>
