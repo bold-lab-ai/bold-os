@@ -180,3 +180,27 @@ test('a rejected clipboard promise after scroll does not reopen recovery either'
   assert.equal(h.field(0, '.gd-copy-recovery').hidden, true);
   assert.equal(h.buttons[0].getAttribute('data-copy-state'), 'error');
 });
+
+
+test('copied links include their explicit section and preserve guide and branch parameters', async () => {
+  const values = [], h = harness({ writeText: value => { values.push(value); return Promise.resolve(); } });
+  h.ctx.location.href = 'http://localhost:8137/guide.html?guide=test&branch=example&section=first#old';
+  h.buttons[0].setAttribute('data-copy-section', 'people');
+  h.fire(h.buttons[0], 'click'); await flush();
+  assert.equal(values[0], 'http://localhost:8137/guide.html?guide=test&branch=example&section=people#p-first--details');
+  assert.equal(h.ctx.location.href.endsWith('section=first#old'), true, 'copy must not navigate');
+});
+
+test('a sectionless page removes a stale section selector from copied links', async () => {
+  const values = [], h = harness({ writeText: value => { values.push(value); return Promise.resolve(); } });
+  h.ctx.location.href = 'http://localhost:8137/guide.html?guide=test&section=old#old';
+  h.fire(h.buttons[0], 'click'); await flush();
+  assert.equal(values[0], 'http://localhost:8137/guide.html?guide=test#p-first--details');
+});
+
+test('manual recovery offers exactly the same section-aware URL as copying', async () => {
+  const h = harness(null);
+  h.buttons[0].setAttribute('data-copy-section', 'people');
+  h.fire(h.buttons[0], 'click'); await flush();
+  assert.equal(h.field(0, 'input').value, 'http://localhost:8137/guide.html?guide=test&section=people#p-first--details');
+});

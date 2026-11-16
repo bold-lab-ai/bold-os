@@ -3,12 +3,19 @@
 window.BoldGuideCopy = (function(){
   var icons = {"copy":"<svg aria-hidden=\"true\" focusable=\"false\" fill=\"currentColor\" width=\"16\" height=\"16\" viewBox=\"0 0 16 16\"><path d=\"M0 6.75C0 5.784.784 5 1.75 5h1.5a.75.75 0 0 1 0 1.5h-1.5a.25.25 0 0 0-.25.25v7.5c0 .138.112.25.25.25h7.5a.25.25 0 0 0 .25-.25v-1.5a.75.75 0 0 1 1.5 0v1.5A1.75 1.75 0 0 1 9.25 16h-7.5A1.75 1.75 0 0 1 0 14.25Z\"/><path d=\"M5 1.75C5 .784 5.784 0 6.75 0h7.5C15.216 0 16 .784 16 1.75v7.5A1.75 1.75 0 0 1 14.25 11h-7.5A1.75 1.75 0 0 1 5 9.25Zm1.75-.25a.25.25 0 0 0-.25.25v7.5c0 .138.112.25.25.25h7.5a.25.25 0 0 0 .25-.25v-7.5a.25.25 0 0 0-.25-.25Z\"/></svg>","check":"<svg aria-hidden=\"true\" focusable=\"false\" fill=\"currentColor\" width=\"16\" height=\"16\" viewBox=\"0 0 16 16\"><path d=\"M13.78 4.22a.75.75 0 0 1 0 1.06l-7.25 7.25a.75.75 0 0 1-1.06 0L2.22 9.28a.751.751 0 0 1 .018-1.042.751.751 0 0 1 1.042-.018L6 10.94l6.72-6.72a.75.75 0 0 1 1.06 0Z\"/></svg>","alert":"<svg aria-hidden=\"true\" focusable=\"false\" fill=\"currentColor\" width=\"16\" height=\"16\" viewBox=\"0 0 16 16\"><path d=\"M6.457 1.047c.659-1.234 2.427-1.234 3.086 0l6.082 11.378A1.75 1.75 0 0 1 14.082 15H1.918a1.75 1.75 0 0 1-1.543-2.575Zm1.763.707a.25.25 0 0 0-.44 0L1.698 13.132a.25.25 0 0 0 .22.368h12.164a.25.25 0 0 0 .22-.368Zm.53 3.996v2.5a.75.75 0 0 1-1.5 0v-2.5a.75.75 0 0 1 1.5 0ZM9 11a1 1 0 1 1-2 0 1 1 0 0 1 2 0Z\"/></svg>"};
   var esc = BOLD.escapeHtml;
-  function html(hash, title){
+  function html(hash, title, section){
     var label = 'Copy link to “' + title + '”';
-    return '<span class="gd-permalink"><button type="button" class="icon-btn gd-copy-button" data-copy-hash="' + esc(hash) + '" aria-label="' + esc(label) + '">' + icons.copy + '</button>' +
+    return '<span class="gd-permalink"><button type="button" class="icon-btn gd-copy-button" data-copy-hash="' + esc(hash) + '"' + (section == null ? '' : ' data-copy-section="' + esc(section) + '"') + ' aria-label="' + esc(label) + '">' + icons.copy + '</button>' +
       '<span class="gd-copy-tooltip" role="tooltip" aria-hidden="true" hidden>' + esc(label) + '</span>' +
       '<span class="gd-copy-announcement" role="status" aria-live="polite" aria-atomic="true"></span>' +
       '<span class="gd-copy-recovery" hidden><span>Couldn’t copy. Select this link and copy it manually.</span><input class="gd-copy-value" readonly aria-label="' + esc('Link to “' + title + '” — copy manually') + '"></span></span>';
+  }
+  function urlFor(button){
+    var url = new URL(location.href), section = button.getAttribute('data-copy-section');
+    if (section === null) url.searchParams.delete('section');
+    else url.searchParams.set('section', section);
+    url.hash = '#' + encodeURIComponent(button.getAttribute('data-copy-hash'));
+    return url.href;
   }
   function mount(root){
     var states = new WeakMap(), active = null, recovery = null, keyboard = true, pending = new Set();
@@ -73,7 +80,7 @@ window.BoldGuideCopy = (function(){
       show(s);
       if (kind === 'success') s.timer = setTimeout(function(){ reset(s); }, 2000);
       else {
-        s.value.value = new URL('#' + encodeURIComponent(s.button.getAttribute('data-copy-hash')), location.href).href;
+        s.value.value = s.url;
         if (!s.dismissed) {
           if (recovery && recovery !== s) recovery.recovery.hidden = true;
           recovery = s; s.recovery.hidden = false; position(s);
@@ -88,7 +95,7 @@ window.BoldGuideCopy = (function(){
       clearTimeout(s.timer); s.recovery.hidden = true; s.dismissed = false;
       if (recovery === s) recovery = null;
       reset(s);
-      var url = new URL('#' + encodeURIComponent(button.getAttribute('data-copy-hash')), location.href).href;
+      var url = s.url = urlFor(button);
       function done(kind){
         if (request !== s.request) return;
         pending.delete(s);

@@ -116,7 +116,7 @@
     try { return decodeURIComponent(String(hash || '').replace(/^#/, '')); }
     catch (e) { return ''; }
   }
-  function linkHtml(id, title){ return BoldGuideCopy.html(id, title || id); }
+  function linkHtml(id, title, p){ return BoldGuideCopy.html(id, title || id, p && hasSections() ? G.slugify(p.section || '') : null); }
   function copyPath(p, title){
     return (p ? [p.section, p.title, title] : [title]).filter(Boolean).filter(function(v, i, list){ return list.indexOf(v) === i; }).join(' › ');
   }
@@ -124,7 +124,7 @@
     Array.prototype.forEach.call(body.querySelectorAll('.guide-text h3[id], .guide-text h4[id], .guide-text h5[id], .guide-text h6[id]'), function(h){
       var owner = h.closest('.guide-part');
       var p = owner && part(owner.getAttribute('data-pid'));
-      h.insertAdjacentHTML('beforeend', linkHtml(h.id, copyPath(p, h.textContent)));
+      h.insertAdjacentHTML('beforeend', linkHtml(h.id, copyPath(p, h.textContent), p));
     });
   }
   BoldGuideCopy.mount(body);
@@ -164,6 +164,21 @@
     var p = parts().filter(function(q){ return anchor(q) === h; })[0] || headingPart(h);
     return p ? (p.section || '') : null;
   }
+  // Explicit section selection and the heading fragment are independent. A
+  // resolvable old fragment still wins if a stale query names a different tab.
+  function tabFromUrl(href){
+    var url = new URL(href || location.href, location.href), target = tabFor(url.hash);
+    if (target !== null) return target;
+    if (!url.searchParams.has('section')) return null;
+    var name = url.searchParams.get('section');
+    var match = sections().filter(function(v){ return G.slugify(v) === name; })[0];
+    return match === undefined ? null : match;
+  }
+  function sectionHref(section){
+    var url = new URL(location.href);
+    url.searchParams.set('section', G.slugify(section)); url.hash = '';
+    return url.pathname + url.search;
+  }
   function tabsHtml(){
     var t = currentTab();
     if (t === null) return '';
@@ -176,7 +191,7 @@
       var cur = v === t && !newTab;
       // Dragged onto another tab, it moves there (committed).
       var drag = viewing || form ? '' : ' draggable="true" data-sec="' + esc(v) + '" title="Drag to move this tab"';
-      return '<a class="guide-tab' + (cur ? ' is-current' : '') + '" href="#' + esc(G.slugify(v)) + '"' + (cur ? ' aria-current="page"' : '') + drag + '>' +
+      return '<a class="guide-tab' + (cur ? ' is-current' : '') + '" href="' + esc(sectionHref(v)) + '"' + (cur ? ' aria-current="page"' : '') + drag + '>' +
         esc(v || 'Other') + '</a>' + (cur ? arrows : '');
     }).join('') +
       (viewing ? '' : '<button type="button" class="guide-tab gd-tab-add' + (newTab ? ' is-current' : '') + '" aria-label="Suggest a new tab" title="Suggest a new tab">+</button>') + foldAllButton() + '</nav>';
@@ -208,7 +223,7 @@
       (q ? '' : '<div class="guide-part-controls">' + (form ? '' : grip) + icon('gd-edit', 'Suggest a change', BOLD.ICON_PENCIL) +
         icon('gd-up', 'Suggest moving it up', BOLD.ICON_UP, at === 0) + icon('gd-down', 'Suggest moving it down', BOLD.ICON_DOWN, at === all.length - 1) + '</div>') +
       '<h2><button type="button" class="gd-fold" data-id="' + esc(p.id) + '" aria-expanded="' + !fold + '" title="' + (fold ? 'Show' : 'Fold') + ' this part">' +
-        '<span class="guide-num">' + (i + 1) + '</span>' + esc(p.title) + '</button>' + linkHtml(anchor(p), copyPath(p)) + '</h2></div>' +
+        '<span class="guide-num">' + (i + 1) + '</span>' + esc(p.title) + '</button>' + linkHtml(anchor(p), copyPath(p), p) + '</h2></div>' +
       (fold ? '' : '<div class="guide-text">' + md(p.body, { headingPrefix: anchor(p) }) + '</div>') + '</section>';
   }
 
@@ -894,12 +909,12 @@
   // Don't redraw over a form being filled in. The page is drawn after it
   // loads, so a link to one of its parts (#…) is followed once it's there.
   // A link to the proposed changes (#proposals, as Slack sends PIs) waits for them too.
-  var jumped = !location.hash, proposalsLoaded = false;
+  var jumped = !location.hash && !new URLSearchParams(location.search).has('section'), proposalsLoaded = false;
   function refresh(){
     if (form) return;
     var ready = !jumped && x && (proposalsLoaded || !/^#proposal/.test(location.hash)) &&
       (!commentFor(location.hash) || (comments && comments.ready() && proposalsLoaded));
-    if (ready) tab = tabFor(location.hash);
+    if (ready) tab = tabFromUrl();
     render();
     if (ready) { jumped = true; goTo(location.hash); }
   }
@@ -938,22 +953,24 @@
   body.addEventListener('click', function(e){
     var a = e.target.closest('.guide-tab');
     if (!a || !x || form || e.metaKey || e.ctrlKey || e.shiftKey) return;
-    var t = tabFor(a.getAttribute('href'));
+    var t = tabFromUrl(a.getAttribute('href'));
     if (t === null) return;
     e.preventDefault();
     try { history.pushState(null, '', a.getAttribute('href')); } catch (err){}
     BOLD.switchTab('#gdTabs', body, function(){ tab = t; render(); });
   });
-  // The sidebar's section links (and Back) change the #hash.
-  window.addEventListener('hashchange', function(){
+  // Old sidebar fragments and new query-based tabs both support Back/Forward.
+  function navigateFromUrl(){
     if (!x || form) return;
     if (/^#proposal-/.test(location.hash)) { goTo(location.hash); return; }
-    var t = tabFor(location.hash);
-    if (t === null) return;
+    var t = tabFromUrl();
+    if (t === null) t = sections()[0] || null;
     tab = t;
     render();
     goTo(location.hash);
-  });
+  }
+  window.addEventListener('hashchange', navigateFromUrl);
+  window.addEventListener('popstate', navigateFromUrl);
   BOLD.onUser(function(user){
     var mine = ++signIns;
     unsubs.forEach(function(u){ u(); }); unsubs = [];

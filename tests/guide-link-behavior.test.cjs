@@ -13,15 +13,15 @@ function harness(clipboard) {
   ];
   const body = { addEventListener: (name, fn) => handlers.push(fn) };
   const ctx = {
-    window: {}, BoldGuideCopy: { html() {}, mount() {} }, BOLD: { escapeHtml: s => String(s), TAG: /$^/, IMAGE: /$^/ },
+    window: { addEventListener() {} }, BoldGuideCopy: { html(hash, title, section) { return { hash, title, section }; }, mount() {} }, BOLD: { escapeHtml: s => String(s), TAG: /$^/, IMAGE: /$^/ },
     document: {
       querySelector: () => null,
       createElement: () => ({ setAttribute() {}, remove() {}, set textContent(v) { messages.push(v); } }),
       body: { appendChild() {} }, getElementById: id => nodes.get(id),
     },
     PREFIX: 'p-', parts: () => data, visible: () => true,
-    body, esc: s => String(s), navigator: { clipboard }, URL,
-    location: { href: 'http://localhost:8137/guide.html?guide=test#old', hash: '' },
+    body, esc: s => String(s), navigator: { clipboard }, URL, URLSearchParams,
+    location: new URL('http://localhost:8137/guide.html?guide=test'),
     setTimeout: fn => { timers.push(fn); return timers.length; }, clearTimeout: id => { if (id) timers[id - 1] = null; },
     folded: { two: true }, saveFolded() {}, tab: 'First', jumped: false,
     x: {}, proposalsLoaded: true, form: null, comments: null, commentFor: () => '',
@@ -41,7 +41,8 @@ function harness(clipboard) {
   vm.runInContext(between('  function anchor(p)', '  function hasSections()') +
     between('  function tabFor(hash)', '  function tabsHtml()') +
     between('  function refresh(){', '  // Shows what #hash') +
-    between('  function goTo(hash)', '  // What you type while'), ctx);
+    between('  function goTo(hash)', '  // What you type while') +
+    between('  function navigateFromUrl(){', '  BOLD.onUser'), ctx);
   return { ctx, handlers, messages, scrolled, statuses, timers };
 }
 test('cold load selects the owning tab, unfolds its section and scrolls to the exact duplicate heading', () => {
@@ -71,4 +72,61 @@ test('copy labels name the section, part and nested heading without duplicating 
   assert.equal(ctx.copyPath({ section: 'People', title: 'Who is BOLD' }, 'BOLD-staff'), 'People › Who is BOLD › BOLD-staff');
   assert.equal(ctx.copyPath({ section: 'People', title: 'Who is BOLD' }), 'People › Who is BOLD');
   assert.equal(ctx.copyPath({ section: 'People', title: 'Who is BOLD' }, 'Who is BOLD'), 'People › Who is BOLD');
+});
+
+
+test('section query without a fragment selects the requested section on cold load', () => {
+  const { ctx } = harness();
+  ctx.location.search = '?guide=test&section=second';
+  ctx.refresh();
+  assert.equal(ctx.tab, 'Second');
+});
+
+test('explicit section and scoped heading select the tab, expand the parent and scroll', () => {
+  const { ctx, scrolled } = harness();
+  ctx.location.search = '?guide=test&section=second';
+  ctx.location.hash = '#p-two--details-2';
+  ctx.refresh();
+  assert.equal(ctx.tab, 'Second');
+  assert.equal(ctx.folded.two, false);
+  assert.deepEqual(scrolled, ['p-two--details-2']);
+});
+
+test('tab links preserve other query parameters and replace the old fragment', () => {
+  const { ctx } = harness();
+  ctx.location.search = '?guide=test&branch=example&section=first';
+  ctx.location.hash = '#p-one--details';
+  const href = ctx.sectionHref('Second');
+  assert.equal(href, '/guide.html?guide=test&branch=example&section=second');
+  assert.equal(ctx.tabFromUrl(href), 'Second');
+});
+
+test('history navigation restores query-only tabs and the default section', () => {
+  const { ctx } = harness();
+  ctx.location.search = '?guide=test&section=second';
+  ctx.navigateFromUrl(); assert.equal(ctx.tab, 'Second');
+  ctx.location.search = '?guide=test&section=first';
+  ctx.navigateFromUrl(); assert.equal(ctx.tab, 'First');
+  ctx.location.search = '?guide=test&section=second';
+  ctx.navigateFromUrl(); assert.equal(ctx.tab, 'Second');
+  ctx.location.search = '?guide=test';
+  ctx.navigateFromUrl(); assert.equal(ctx.tab, 'First');
+});
+
+test('unknown sections fall back safely and old heading links override a stale query', () => {
+  const { ctx } = harness();
+  ctx.location.search = '?guide=test&section=missing';
+  assert.equal(ctx.tabFromUrl(), null);
+  ctx.location.search = '?guide=test&section=first';
+  ctx.location.hash = '#p-two--details';
+  assert.equal(ctx.tabFromUrl(), 'Second');
+});
+
+
+test('rendered copy controls receive the owning section slug', () => {
+  const { ctx } = harness();
+  ctx.hasSections = () => true;
+  assert.equal(ctx.linkHtml('p-two--details', 'Details', { section: 'Second' }).section, 'second');
+  ctx.hasSections = () => false;
+  assert.equal(ctx.linkHtml('p-two--details', 'Details', { section: 'Second' }).section, null);
 });
