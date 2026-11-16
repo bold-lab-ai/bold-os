@@ -116,6 +116,15 @@ module.exports = function({ db, onCall, callerEmail, isFullWrite, access, HttpsE
     if (!p.exists) throw error('failed-precondition', 'The linked BOLD OS project does not exist.');
     return { id: p.id, title: p.data().title || p.id, board: boardId(board) };
   }
+  // The research owner, chosen from the lab's people (the Slack roster) by Slack ID: the
+  // name is the roster's, never what the page sends. None: null.
+  async function ownerOf(id){
+    if (id == null || id === '') return null;
+    if (typeof id !== 'string' || !/^[A-Z0-9]{5,20}$/.test(id)) throw error('invalid-argument', 'Choose the research owner from the lab’s people.');
+    const person = await db.collection('people').doc(id).get();   // people/{Slack ID}
+    if (!person.exists) throw error('invalid-argument', 'Choose the research owner from the lab’s people.');
+    return { owner_id: id, owner: person.data().name || 'A lab member' };
+  }
   async function nameOf(email){
     const m = await db.collection('members').doc(email).get();
     return (m.exists && m.data().name) || 'A PI or admin';
@@ -148,6 +157,9 @@ module.exports = function({ db, onCall, callerEmail, isFullWrite, access, HttpsE
       let data;
       try { data = { title: text(d.title, 180, 'the title'), objective: text(d.objective, 8000, 'the objective'), task_kind: text(d.task_kind, 80, 'the task kind'), details: details(d.details) }; }
       catch (e) { throw error('invalid-argument', e.message); }
+      const owner = await ownerOf(d.owner_id);
+      if (!owner) throw error('invalid-argument', 'Choose the research owner.');
+      data.details.owner = owner.owner; data.owner_id = owner.owner_id;
       const project = await projectRecord(d.project_id, d.project_board);
       const id = 'ak-' + crypto.randomBytes(12).toString('hex'), at = Date.now();
       const value = Object.assign({}, data, { project_id: project.id, project_board: project.board, project_title: project.title, stage: 'open', session: null,
@@ -255,14 +267,20 @@ module.exports = function({ db, onCall, callerEmail, isFullWrite, access, HttpsE
       const project = await projectRecord(d.project_id, d.project_board);
       let metadata;
       try { metadata = details(d.details); } catch (e) { throw error('invalid-argument', e.message); }
+      const owner = await ownerOf(d.owner_id);
       const ref = db.collection('problemBank').doc(d.problem_id);
       await db.runTransaction(async (tx) => {
         const [doc, linked] = await Promise.all([tx.get(ref), tx.get(projectRef(d.project_id, d.project_board))]);
         if (!linked.exists) throw error('failed-precondition', 'The linked project no longer exists.');
         if (!doc.exists) throw error('not-found', 'This problem is not registered.');
         if (doc.data().createdBy !== email && !full) throw error('permission-denied', 'Only its registering account or a PI/admin can edit this problem.');
+        // The owner: chosen from the roster (owner_id), or else kept as it was.
+        const was = doc.data();
+        if (owner) metadata.owner = owner.owner;
+        else if ((was.details || {}).owner) metadata.owner = was.details.owner;
+        else delete metadata.owner;
         const update = { notes: d.notes.trim(), archived: d.archived, project_id: project.id, project_board: project.board, project_title: project.title,
-          details: metadata, updatedBy: email, updatedAt: Date.now() };
+          details: metadata, owner_id: owner ? owner.owner_id : (was.owner_id || null), updatedBy: email, updatedAt: Date.now() };
         if (d.definition) {
           if (doc.data().stage !== 'open') throw error('failed-precondition', 'Change an evaluator contract through AutoKaggle.');
           try { for (const [key, limit] of [['title', 180], ['objective', 8000], ['task_kind', 80]]) update[key] = text(d.definition[key], limit, key); }

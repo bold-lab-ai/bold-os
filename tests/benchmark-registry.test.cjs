@@ -73,7 +73,8 @@ test('no credential or arbitrary session URL enters the record',()=>{
 });
 test('open problems require a real project, retain history, and cannot claim an evaluator stage',async()=>{
  const h=harness();
- const input={action:'create',project_id:'missing',title:'An open question',objective:'What works?',task_kind:'custom',details:{owner:'A researcher'},stage:'validated'};
+ h.data.set('people/UOWNER1',{name:'Rae Researcher',slackId:'UOWNER1'});
+ const input={action:'create',project_id:'missing',title:'An open question',objective:'What works?',task_kind:'custom',owner_id:'UOWNER1',stage:'validated'};
  await assert.rejects(h.call(input),e=>e.code==='failed-precondition');
  input.project_id='diverging-runs';const r=await h.call(input);
  let view=await h.call({action:'get',problem_id:r.problem_id});assert.equal(view.problem.stage,'open');assert.equal(view.history.length,1);assert.equal(view.versions.length,0);
@@ -111,4 +112,19 @@ test('search leaves out archived problems and their releases; null details are n
  let s=(await h.call({action:'search'})).items;assert.deepEqual(s.map(x=>x.kind).sort(),['benchmarks','problems']);
  await h.call({action:'update',problem_id:out.problem_id,project_id:'diverging-runs',details:null,notes:'',archived:true});
  s=(await h.call({action:'search'})).items;assert.equal(s.length,0);
+});
+
+test('the research owner is one of the lab\'s people, by Slack ID, named as the roster names them',async()=>{
+ const h=harness();h.data.set('people/UOWNER1',{name:'Rae Researcher',slackId:'UOWNER1'});h.data.set('people/UOWNER2',{name:'Sam Second',slackId:'UOWNER2'});
+ const base={action:'create',project_id:'diverging-runs',title:'Q',objective:'O',task_kind:'k'};
+ await assert.rejects(h.call(base),e=>e.code==='invalid-argument');
+ await assert.rejects(h.call({...base,owner_id:'UNOBODY'}),e=>e.code==='invalid-argument');
+ await assert.rejects(h.call({...base,owner_id:'<script>'}),e=>e.code==='invalid-argument');
+ const r=await h.call({...base,owner_id:'UOWNER1',details:{owner:'Someone typed'}});
+ let p=(await h.call({action:'get',problem_id:r.problem_id})).problem;
+ assert.equal(p.details.owner,'Rae Researcher');assert.equal(p.owner_id,'UOWNER1');
+ await h.call({action:'update',problem_id:r.problem_id,project_id:'diverging-runs',notes:'',archived:false});
+ p=(await h.call({action:'get',problem_id:r.problem_id})).problem;assert.equal(p.details.owner,'Rae Researcher');assert.equal(p.owner_id,'UOWNER1');
+ await h.call({action:'update',problem_id:r.problem_id,project_id:'diverging-runs',owner_id:'UOWNER2',notes:'',archived:false});
+ p=(await h.call({action:'get',problem_id:r.problem_id})).problem;assert.equal(p.details.owner,'Sam Second');assert.equal(p.owner_id,'UOWNER2');
 });

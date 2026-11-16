@@ -2,10 +2,10 @@
 area: "projects"
 title: "Add a Project Problem | BOLD Lab"
 description: "Add an open research problem to the Problem Bank, linked to its project."
-sdk: ["functions"]
+sdk: ["firestore", "functions"]
 css: "projects-register"
 nav: "problems.html"
-scripts: ["pages/problems-register.js"]
+scripts: ["people-select.js", "pages/problems-register.js"]
 permalink: "problems-register.html"
 ---
 <div class="hero">
@@ -17,7 +17,7 @@ permalink: "problems-register.html"
 <main>
   <form id="problemForm" novalidate>
     <div class="field">
-      <label for="prTitle">Problem</label>
+      <label for="prTitle">Title</label>
       <input type="text" id="prTitle" maxlength="180" autocomplete="off">
     </div>
     <div class="field">
@@ -35,7 +35,7 @@ permalink: "problems-register.html"
     </div>
     <div class="field">
       <label for="prOwner">Research owner</label>
-      <input type="text" id="prOwner" maxlength="180" autocomplete="off">
+      <select id="prOwner"><option value="">Loading the lab&rsquo;s people&hellip;</option></select>
       <div class="field-hint">Who leads the work on it. More details go on its page once it's added.</div>
     </div>
     <div class="field-error" id="problemError" hidden></div>

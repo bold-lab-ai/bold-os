@@ -175,7 +175,8 @@
           field('Research question', '<textarea name="objective" class="no-tags" required maxlength="8000"' + off + '>' + esc(p.objective) + '</textarea>') +
           field('Task type', '<input name="task_kind" required maxlength="80" value="' + esc(p.task_kind) + '"' + off + '>')
         : '') +
-      Object.keys(FIELDS).map(function(k){ return field(FIELDS[k], '<textarea name="' + k + '" class="no-tags" maxlength="8000"' + off + '>' + esc((p.details || {})[k] || '') + '</textarea>'); }).join('') +
+      field(FIELDS.owner, '<select name="owner_id" id="pbOwner"' + off + '><option value="">' + esc((p.details || {}).owner || 'Loading the lab’s people…') + '</option></select>') +
+      Object.keys(FIELDS).filter(function(k){ return k !== 'owner'; }).map(function(k){ return field(FIELDS[k], '<textarea name="' + k + '" class="no-tags" maxlength="8000"' + off + '>' + esc((p.details || {})[k] || '') + '</textarea>'); }).join('') +
       field('Notes', '<textarea name="notes" class="no-tags" maxlength="8000"' + off + '>' + esc(p.notes || '') + '</textarea>') +
       '<label class="pb-check"><input name="archived" type="checkbox"' + (p.archived ? ' checked' : '') + off + '> Archive this problem</label>' +
       '<div class="pb-form-actions"><button class="btn btn-primary" type="submit"' + (p.can_edit ? '' : ' disabled title="Only whoever registered it, or a PI or admin, edits it"') + '>Save</button>' +
@@ -195,7 +196,12 @@
       '<div class="detail-head"><h2>' + esc(p.title) + '</h2>' + (badges(p) ? '<div class="detail-badges">' + badges(p) + '</div>' : '') + '</div>' +
       '<p class="detail-venue">Project: ' + project + (p.stage !== 'open' ? ' · Stage reported by AutoKaggle' : '') + '</p>' +
       session +
-      grid([['Research question', p.objective], ['Task type', p.task_kind]].concat(Object.keys(FIELDS).map(function(k){ return [FIELDS[k], (p.details || {})[k]]; })).concat(p.notes ? [['Notes', p.notes]] : [])) +
+      grid([['Research question', p.objective], ['Task type', p.task_kind]].concat(Object.keys(FIELDS).map(function(k){
+        var v = (p.details || {})[k];
+        // The owner, when chosen from the lab's people: their page.
+        if (k === 'owner' && v && p.owner_id) return [FIELDS[k], '<a href="person.html?id=' + encodeURIComponent(p.owner_id) + '">' + esc(v) + '</a>', true];
+        return [FIELDS[k], v];
+      })).concat(p.notes ? [['Notes', p.notes]] : [])) +
       '<h3 class="pb-section">Evaluator releases</h3>' +
       (data.versions.length ? '<ul class="pb-releases">' + data.versions.map(function(r){ return release(r, data.can_approve); }).join('') + '</ul>' : '<p class="detail-muted">No evaluator yet.</p>') +
       '<details class="pb-section-details"><summary>Edit</summary>' + editForm(p) + '</details>' +
@@ -205,6 +211,10 @@
       }).join('') + '</ul></details>';
     el('pbDetailMsg').hidden = true; el('pbBody').hidden = false;
 
+    BoldPeopleSelect.load().then(function(people){
+      var known = people.some(function(x){ return x.id === p.owner_id; });
+      el('pbOwner').innerHTML = BoldPeopleSelect.options(people, p.owner_id, known ? 'Choose the research owner' : ((p.details || {}).owner ? (p.details.owner + ' (keep)') : 'Choose the research owner'));
+    }).catch(function(){});
     Array.prototype.forEach.call(el('pbBody').querySelectorAll('[data-approve]'), function(b){
       b.addEventListener('click', function(){
         if (!data.can_approve) return;
@@ -216,8 +226,9 @@
       event.preventDefault();
       if (!p.can_edit) return;
       var form = event.currentTarget, button = form.querySelector('[type=submit]'), project = JSON.parse(form.elements.project.value), details = {};
-      Object.keys(FIELDS).forEach(function(k){ var v = form.elements[k].value.trim(); if (v) details[k] = v; });
-      var data = { action: 'update', problem_id: p.id, project_id: project[0], project_board: project[1], details: details, notes: form.elements.notes.value, archived: form.elements.archived.checked };
+      Object.keys(FIELDS).forEach(function(k){ if (k === 'owner') return; var v = form.elements[k].value.trim(); if (v) details[k] = v; });
+      var data = { action: 'update', problem_id: p.id, project_id: project[0], project_board: project[1], details: details, owner_id: form.elements.owner_id.value,
+        notes: form.elements.notes.value, archived: form.elements.archived.checked };
       if (p.stage === 'open') data.definition = { title: form.elements.title.value, objective: form.elements.objective.value, task_kind: form.elements.task_kind.value };
       button.disabled = true; el('pbEditStatus').textContent = 'Saving…';
       call(data).then(loadDetail).catch(function(e){ el('pbEditStatus').textContent = 'Not saved. ' + e.message; button.disabled = false; });
