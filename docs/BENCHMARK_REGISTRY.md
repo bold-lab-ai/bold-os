@@ -4,7 +4,7 @@ The Research menu has one Problem Bank page. It holds open problems and their pi
 
 ## Project and evidence requirements
 
-Every new problem and evaluator must name an existing BOLD OS project. The server checks the project in the same transaction as registration. Projects can be normal project records or publication-board cards. A free-text name is insufficient. Existing records without a link show a repair notice and require a project before an edit can be saved.
+Every new problem and evaluator must name an existing BOLD OS project. The server checks the project in the same transaction as registration. Projects can be normal project records or publication-board cards. A free-text name is insufficient.
 
 An open problem can exist before an evaluator is built. Evaluator stages are derived from supplied evidence:
 
@@ -44,7 +44,7 @@ One Firestore transaction saves `problemBank`, pinned releases in `benchmarks`, 
 
 **Reads go through the callable.** The rules allow no direct reads of `problemBank`, `benchmarks` or their history: `benchmarkRegistry` (list, get, search) serves the page, site search and agents, without people's emails. AutoKaggle's two addresses, for the links to sessions, are in `settings/problemBank`, which PIs and admins set at the foot of the page.
 
-The names `benchmarks`, `list_benchmarks`, and `register_benchmark` remain internal API/storage names for compatibility. They do not add a second page. The agent tools and site call the same permission-checked service. Registration sends no messages or invitations.
+Evaluator releases are stored in `benchmarks`, and AutoKaggle and agents call `register_benchmark` and `list_benchmarks`; they all belong to the one Problem Bank page. The agent tools and site call the same permission-checked service. Registration sends no messages or invitations.
 
 ## Local checks and activation
 
@@ -59,11 +59,3 @@ All integration fixtures are synthetic. Never copy them to production. Tests cov
 After PR review, an authorized Firebase operator must deploy `benchmarkRegistry`, the updated `boldApi`, and Firestore rules with the reviewed site. Deploy only those functions and rules. Do not run a bare Firebase deploy or enable Firebase Hosting. GitHub Pages remains the site host.
 
 Configure AutoKaggle's private `AUTOKAGGLE_BOLD_REGISTRY_URL` as `https://europe-west2-bold-d7ff2.cloudfunctions.net/boldApi/v1/register_benchmark`, and have it send each researcher's own approved acting token. Pending eligible releases can then retry. Do not extend a read-only token's permissions in code.
-
-## Verification: 13 November 2026
-
-The Node suite, Eleventy build, and local Firebase HTTP integration were run. Browser checks covered creating an open problem, mandatory project selection, editing and moving it, filters, empty results, archive/restore, history, and member access. The local AutoKaggle sender also registered a checked fixture, retried without duplication, and updated its evidence through the real HTTP receiver.
-
-Lite's project question was tested with live DeepSeek V4 Pro and through its chat interface. The model recorded the project link without treating it as a paper source. These checks did not train a model or validate a real research dataset.
-
-No production records were created. Deployment and an approved AutoKaggle acting token remain activation steps. The connected token is read-only, so no BOLD OS Board card was created.

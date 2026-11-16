@@ -4,7 +4,6 @@
 #registry{max-width:var(--content-max);margin:0 auto;padding:8px var(--gutter) 24px;font-family:var(--sans);font-size:16px;line-height:1.55}
 #registry button{font-family:inherit}
 .registry-nav{display:flex;flex-wrap:wrap;gap:1.4rem;padding:0 0 1rem;border-bottom:1px solid var(--line);font-family:var(--sans)}
-.registry-nav [aria-current]{font-weight:700;text-decoration-thickness:2px}
 .registry-note{max-width:74ch;color:var(--muted)}
 .registry-filters{display:flex;align-items:end;gap:1.5rem;flex-wrap:wrap;margin:1.5rem 0;font-family:var(--sans)}
 .registry-filters label{display:grid;gap:.4rem}.registry-filters input[type=search]{min-width:min(360px,75vw);padding:.65rem;border:1px solid var(--line);border-radius:var(--radius);background:var(--surface);color:var(--ink)}

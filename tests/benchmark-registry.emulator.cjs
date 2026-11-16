@@ -23,7 +23,7 @@ async function rules(path,method='GET',token,body){return fetch('http://127.0.0.
   const receipt=await concurrent[0].json();assert.deepEqual(await concurrent[1].json(),receipt);
   assert.equal((await db.collection('benchmarks').where('problem_id','==',receipt.problem_id).get()).size,1);
   const conflict={...registration,title:'Different content'};assert.equal((await api('register_benchmark',{registration:conflict})).status,409);
-  const list=await api('list_benchmarks?kind=benchmarks',null,readToken);assert.equal(list.status,200);assert.doesNotMatch(await list.text(),/internal@example\.com/);
+  const list=await api('list_benchmarks',null,readToken);assert.equal(list.status,200);assert.doesNotMatch(await list.text(),/internal@example\.com/);
   assert.equal((await rules('problemBank/'+receipt.problem_id)).status,403);
   assert.equal((await rules('problemBank/'+receipt.problem_id,'GET',jwt(false))).status,403);
   // Only through benchmarkRegistry, which keeps people's emails out: no direct reads.

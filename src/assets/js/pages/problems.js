@@ -13,7 +13,7 @@
   function external(href,label){return '<a target="_blank" rel="noopener" href="'+esc(href)+'">'+esc(label)+' ↗</a>';}
   function facts(values){return '<dl class="registry-facts">'+values.map(function(x){return '<dt>'+esc(x[0])+'</dt><dd>'+BOLDRegistryLinks.formatText(x[1]==null?'Not recorded':String(x[1]))+'</dd>';}).join('')+'</dl>';}
   function stage(r){return stages[r.stage]||'Stage not recorded';}
-  function projectLink(p){return p.project_id?'<a href="project.html#id='+encodeURIComponent(p.project_id)+(p.project_board?'&amp;board='+encodeURIComponent(p.project_board):'')+'">'+esc(p.project_title||p.project_id)+'</a>':'Project link missing — update this record';}
+  function projectLink(p){return p.project_id?'<a href="project.html#id='+encodeURIComponent(p.project_id)+(p.project_board?'&amp;board='+encodeURIComponent(p.project_board):'')+'">'+esc(p.project_title||p.project_id)+'</a>':'';}
   function sessionURL(p,handoff){
     if(!p.session)return '';
     var base=p.session.application==='lite'?urls.autokaggleLiteUrl:urls.autokaggleUrl;

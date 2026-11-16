@@ -766,9 +766,9 @@ module.exports = function(ctx){
   const READ = [
     { name: 'list_group_rota', description: 'Published group meeting dates and slots, including presenter, topic, slides, outcome, project link and stable slot revision. A date narrows the result.',
       inputSchema: S({ date: str('Optional YYYY-MM-DD meeting date.') }, []), run: listGroupRota },
-    { name: 'list_benchmarks', description: 'Read the Problem Bank, including open problems and evaluator stages. These use Projects access. Returns no private account identifiers.',
-      inputSchema: S({kind: ACTIONS(['problems','benchmarks']), cursor: str('Next page cursor, if returned.')}, []),
-      run: (who,a) => act(who,'benchmarkRegistry',{action:'list',kind:a.kind,cursor:a.cursor}) },
+    { name: 'list_benchmarks', description: 'Read the Problem Bank: its problems, with their stage and latest evaluator release. These use Projects access. Returns no private account identifiers.',
+      inputSchema: S({cursor: str('Next page cursor, if returned.')}, []),
+      run: (who,a) => act(who,'benchmarkRegistry',{action:'list',cursor:a.cursor}) },
 
     { name: 'read_page', description: 'The BOLDiquette or a how-to guide in full, with each part’s id (for commenting and proposing changes) and the open proposed changes.',
       inputSchema: S({ page: str('"boldiquette", or a guide’s slug (in its url: guide.html?guide=<slug>).') }, ['page']), run: readPage },
