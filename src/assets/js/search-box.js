@@ -11,6 +11,7 @@ window.BoldSearch = (function(){
     { key: 'guides', label: 'How to', pages: /^guides?\.html$/ },
     { key: 'skills', label: 'Agent skills', pages: /^skills?\.html$/ },
     { key: 'events', label: 'Events', pages: /^(events?|session|talk|calendar|event-.*)\.html$/ },
+    { key: 'rota', label: 'Group meetings', pages: /^group-meetings\.html$/ },
     { key: 'projects', label: 'Projects', pages: /^(projects?|project-meetings|projects-register)\.html$/ },
     { key: 'problems', label: 'Problem Bank', pages: /^problems\.html$/ },
     { key: 'benchmarks', label: 'Evaluator releases', pages: /^benchmarks\.html$/ },

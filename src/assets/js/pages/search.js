@@ -74,10 +74,23 @@
         db.collection('collabWeekSessions').get(),
         db.collection('collabWeekTalks').get(),
       ]).then(function(r){
-        return r[0].docs.map(function(d){ var x = d.data(); return item(x.title, 'Event' + (x.place ? ' · ' + x.place : ''), [x.description, x.place].join(' '), x.page || 'event.html?event=' + encodeURIComponent(d.id)); })
+        return r[0].docs.filter(function(d){ return d.data().page !== 'group-meetings.html'; }).map(function(d){ var x = d.data(); return item(x.title, 'Event' + (x.place ? ' · ' + x.place : ''), [x.description, x.place].join(' '), x.page || 'event.html?event=' + encodeURIComponent(d.id)); })
           .concat(r[1].docs.map(function(d){ var x = d.data(); return item(x.title, 'Session', talk(x), 'session.html?session=' + encodeURIComponent(d.id)); }))
           .concat(r[2].docs.map(function(d){ var x = d.data(); return item(x.title, 'Talk' + (x.speaker ? ' · ' + x.speaker : ''), talk(x), 'talk.html?talk=' + encodeURIComponent(d.id)); }));
       });
+    },
+    rota: function(){
+      return Promise.all([firebase.app().functions('europe-west2').httpsCallable('groupRotaSnapshot')({}),
+        db.collection('people').get().catch(function(){ return { docs: [] }; })]).then(function(r){
+        var snapshot = r[0].data, names = {}, dates = new Set((snapshot.meetings || []).map(function(m){ return m.date; }));
+        r[1].docs.forEach(function(d){ names[d.id] = d.data().name || ''; });
+        if (!dates.size) return [];
+        return [item('Group meetings', 'Rota', (snapshot.seasons || []).map(function(s){ return s.label || ''; }).join(' '), 'group-meetings.html')]
+          .concat((snapshot.slots || []).filter(function(s){ return dates.has(s.meetingId); }).map(function(s){ var person = names[s.presenterSlackId] || s.legacyName || 'Open slot';
+            return item(s.topic || person, 'Group meeting · ' + (s.date || s.meetingId) + ' · Slot ' + s.slotNumber,
+              [person, s.topic, s.format].join(' '), 'group-meetings.html?date=' + encodeURIComponent(s.date || s.meetingId) + '&slot=' + encodeURIComponent(s.slotNumber));
+          }));
+      }).catch(function(){ return []; });
     },
     projects: function(){
       return firebase.app().functions('europe-west2').httpsCallable('getAllProjects')({}).then(function(r){

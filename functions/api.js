@@ -247,6 +247,12 @@ module.exports = function(deps){
     events: () => cached('events', async () => docs(await db.collection('events').get())),
     sessions: () => cached('sessions', async () => docs(await db.collection('collabWeekSessions').get())),
     talks: () => cached('talks', async () => docs(await db.collection('collabWeekTalks').get())),
+    rotaSeasons: () => cached('rotaSeasons', async () => docs(await db.collection('groupMeetingSeasons').get())),
+    rotaMeetings: () => cached('rotaMeetings', async () => {
+      const series = await db.collection('eventSeries').where('page', '==', 'group-meetings.html').limit(1).get();
+      return series.empty ? [] : docs(await db.collection('events').where('series', '==', series.docs[0].id).get());
+    }),
+    rotaSlots: () => cached('rotaSlots', async () => docs(await db.collection('groupRotaSlots').get())),
     studies: () => cached('studies', async () => docs(await db.collection('studies').get())),
     series: () => cached('series', async () => docs(await db.collection('eventSeries').get())),
     // Only the events and series `email` sees (their visibleTo; access.seesEvent), for everything that lists them.
@@ -395,8 +401,8 @@ module.exports = function(deps){
   // ---------- the tools ----------
   // The tools the lab adds, from the Tools pages (agentTools), run in mcpSandbox (functions/api-tools.js).
   const added = require('./api-tools')({ db, httpError, builtins: () => TOOLS, idTokenFor: (e) => actions.idTokenFor(e), fetchImpl: deps.fetchImpl, sandboxUrl: deps.sandboxUrl, SITE_URL });
-  const actions = require('./api-actions')({ db, admin, logger, httpError, act, resolve, cardOf, lab, words, fold, matches, url, isFullWrite, SITE_URL, fetchImpl: deps.fetchImpl, checkTool: (n, d) => added.check(n, d) });
-  const SCOPES = ['boldiquette', 'guides', 'skills', 'events', 'projects', 'problems', 'benchmarks', 'people', 'board', 'conversations', 'comments'];
+  const actions = require('./api-actions')({ db, admin, logger, httpError, act, resolve, cardOf, lab, words, fold, matches, url, isFullWrite, seesEvent: access.seesIt, SITE_URL, fetchImpl: deps.fetchImpl, checkTool: (n, d) => added.check(n, d) });
+  const SCOPES = ['boldiquette', 'guides', 'skills', 'events', 'rota', 'projects', 'problems', 'benchmarks', 'people', 'board', 'conversations', 'comments'];
   const TOOLS = [
     {
       name: 'search',
@@ -476,7 +482,7 @@ module.exports = function(deps){
   // Who can see what (functions/access.js): each reading tool reads one page, and answers
   // only if its person may view that page. Acting goes through the rules and callables,
   // which check it themselves.
-  const TOOL_PAGE = { list_benchmarks: 'projects', register_benchmark: 'projects', edit_problem: 'projects', search: 'search', list_projects: 'projects', get_project: 'projects', find_people: 'people', get_person: 'people',
+  const TOOL_PAGE = { list_benchmarks: 'projects', register_benchmark: 'projects', edit_problem: 'projects', search: 'search', list_group_rota: 'events', list_projects: 'projects', get_project: 'projects', find_people: 'people', get_person: 'people',
     calendar: 'calendar', my_items: 'profile', list_introduction_offers: 'service-desk', list_tools: 'tools', list_skills: 'skills', get_skill: 'skills' };
   const pageOfTool = (name, args) => { const p = String((args || {}).page || '').trim().toLowerCase();
     return name === 'read_page' ? (p === 'boldiquette' ? 'boldiquette' : require('./access').guideArea(p)) : TOOL_PAGE[name]; };
@@ -543,9 +549,26 @@ module.exports = function(deps){
     if (want('skills')) jobs.push(lab.skills().then((l) => l.forEach((x) => item('skills', x.title || x.name || x._id, 'Skill', [x.name, x.description, x.body].join(' '), 'skill.html?skill=' + encodeURIComponent(x._id)))));
     if (want('events')) jobs.push(Promise.all([lab.eventsFor(who.email), lab.sessions(), lab.talks()]).then(([evs, ss, ts]) => {
       const talk = (x) => [x.abstract, x.speaker, x.affiliation, x.description, x.summary].filter(Boolean).join(' ');
-      evs.filter((x) => !isHidden(x, full)).forEach((x) => item('events', x.title, 'Event' + (x.place ? ' · ' + x.place : ''), [x.description, x.place].join(' '), x.page || 'event.html?event=' + encodeURIComponent(x._id)));
+      evs.filter((x) => x.page !== 'group-meetings.html' && !isHidden(x, full)).forEach((x) => item('events', x.title, 'Event' + (x.place ? ' · ' + x.place : ''), [x.description, x.place].join(' '), x.page || 'event.html?event=' + encodeURIComponent(x._id)));
       ss.forEach((x) => item('events', x.title, 'Session', talk(x), 'session.html?session=' + encodeURIComponent(x._id)));
       ts.forEach((x) => item('events', x.title, 'Talk' + (x.speaker ? ' · ' + x.speaker : ''), talk(x), 'talk.html?talk=' + encodeURIComponent(x._id)));
+    }));
+    if (want('rota') && await access.can(who.email, 'events', 'view')) jobs.push(Promise.all([lab.series(), lab.rotaSeasons(), lab.rotaMeetings(), lab.rotaSlots(), lab.people()]).then(async ([seriesList, seasons, meetings, slots, people]) => {
+      const series = seriesList.find((s) => s.page === 'group-meetings.html');
+      if (!series) return;
+      const manager = full || (series.organisers || []).includes(who.email);
+      if (!manager && (series.hidden || !(await access.seesIt(who.email, series)))) return;
+      const published = new Set(seasons.filter((s) => s.publicationState === 'published').map((s) => s._id));
+      const visible = [];
+      for (const m of meetings) if (published.has(m.seasonId) && (manager || !m.hidden && await access.seesIt(who.email, m))) visible.push(m);
+      const dates = new Set(visible.map((m) => m.date));
+      const names = Object.fromEntries(people.map((p) => [p.slackId || p._id, p.name || '']));
+      item('rota', series.title || 'Group meetings', 'Rota', seasons.filter((s) => published.has(s._id)).map((s) => s.label).join(' '), 'group-meetings.html');
+      slots.filter((s) => dates.has(s.meetingId)).forEach((s) => {
+        const person = names[s.presenterSlackId] || s.legacyName || 'Open slot';
+        item('rota', s.topic || person, 'Group meeting · ' + (s.date || s.meetingId) + ' · Slot ' + s.slotNumber,
+          [person, s.topic, s.format].join(' '), 'group-meetings.html?date=' + encodeURIComponent(s.date || s.meetingId) + '&slot=' + encodeURIComponent(s.slotNumber));
+      });
     }));
     if (want('projects')) jobs.push(allProjects().then((g) => [].concat(g.proposed || [], g.ongoing, g.submission, g.planned, g.completed).forEach((p) =>
       item('projects', p.title, 'Project' + (p.owner ? ' · ' + p.owner : ''), [p.abstract, (p.keywords || []).join(' '), p.owner, (p.authors || []).map((x) => x.name).filter((n) => n !== p.owner).join(' ')].join(' '), projectHref(p.projectId || p.cardId, p.boardId)))));
@@ -759,19 +782,53 @@ module.exports = function(deps){
     since = Number(since) > 0 && since < now ? Number(since) : now - 24 * 3600000;
     const today = HL.londonNow(now).date, in7 = new Date(now + 7 * 86400000).toISOString().slice(0, 10), in30 = new Date(now + 30 * 86400000).toISOString().slice(0, 10);
     const when = async (page, fn, empty) => ((await access.can(who.email, page, 'view')) ? fn() : empty);
-    const [mine, cal, evs, waiting, notes, convs, changes, full] = await Promise.all([
+    const [mine, cal, evs, waiting, notes, convs, changes, full, directory] = await Promise.all([
       myItems(who),
       when('calendar', () => calendar(who, { from: today, to: in7, kind: 'meetings' }), {}),
       when('calendar', () => calendar(who, { from: today, to: in30, kind: 'events' }).then((c) => c.events || []), []),
       act(who, 'myRequests', {}).then((r) => r.forYou || []).catch((err) => { logger.warn('letterInputs: what waits on them failed', { error: String((err && err.message) || err) }); return []; }),
       db.collection('notifications').where('to', '==', who.email).where('read', '==', false).limit(100).get().then((x) => x.docs.map((d) => d.data())),
       when('conversations', () => db.collection('conversations').where('private', '==', false).get().then((x) => x.docs.map((d) => Object.assign({ id: d.id }, d.data()))
-        .filter((c) => (c.lastAt || c.at || 0) > weekAgo).map((c) => Object.assign(c, { yours: String(c.createdBy || '').toLowerCase() === who.email, url: url('conversations.html#post=' + encodeURIComponent(c.id)) }))), []),
+        .filter((c) => (c.lastAt || c.at || 0) > Math.min(weekAgo, since)).map((c) => Object.assign(c, { yours: String(c.createdBy || '').toLowerCase() === who.email, url: url('conversations.html#post=' + encodeURIComponent(c.id)) }))), []),
       when('changelog', () => db.collection('changelog').where('at', '>', since).get().then((x) => x.docs.map((d) => d.data())), []),
       isFullWrite(who.email),
+      letterDirectory(who).catch((err) => { logger.warn('letterInputs: the lab directory failed', { error: String((err && err.message) || err) }); return null; }),
     ]);
+    const dir = directory;
     return HL.inputsOf({ now, since, person: { first_name: String((mine.you || {}).name || who.name || '').split(' ')[0], group: (mine.you || {}).group || '', pi_or_admin: !!full },
-      waiting, calendar: cal, events: evs, mine, notes, conversations: convs, changes });
+      you: dir && dir.you, waiting, calendar: cal, events: evs, mine, notes, conversations: convs, changes,
+      directory: dir && { projects: dir.projects, people: dir.people, max: 25000 } });
+  }
+  // The lab as the home letter sees it (who they could help, who could help them), as the person: the projects they may
+  // see (as list_projects) but completed ones, with their work boards' open cards; the people (as find_people) but them;
+  // and their own interests. Trimmed in home-letter.js (directoryOf).
+  async function letterDirectory(who){
+    const [seeProjects, seePeople] = await Promise.all([access.can(who.email, pageOfTool('list_projects'), 'view'), access.can(who.email, pageOfTool('find_people'), 'view')]);
+    const [g, name, workspaces, ms, profile] = await Promise.all([seeProjects ? allProjects() : {}, nameOf(), seeProjects ? lab.workspaces() : [], seePeople ? lab.members() : [], profileUrlOf()]);
+    const ws = {};
+    workspaces.forEach((w) => { ws[w._id] = w; });
+    const projects = [], titlesOf = {};
+    let rank = 0;
+    for (const group of ['ongoing', 'submission', 'planned', 'proposed']) {
+      (g[group] || []).forEach((p) => {
+        const id = p.pid || p.projectId || p.cardId, w = ws[id] || {}, team = (w.members || []).map((e) => String(e).toLowerCase());
+        team.forEach((e) => { (titlesOf[e] = titlesOf[e] || []).push(p.title); });
+        projects.push({ id, title: p.title, stage: group, venue: p.boardLabel || '', keywords: p.keywords || [], abstract: p.abstract || '',
+          members: team.map(name), you_are_in_it: team.indexOf(who.email) >= 0, url: url(projectHref(p.projectId || p.cardId, p.boardId)), updated: -(rank++), work: !!(w.work && w.work.on) });
+      });
+    }
+    // updated: the list's order (most recently updated first within each group, ongoing first): what's dropped first is last.
+    await Promise.all(projects.filter((p) => p.work).map((p) => db.collection('projectWorkspaces').doc(p.id).collection('work').get().then((s) => {
+      const open = s.docs.map((d) => d.data()).filter((c) => c.column !== 'done').sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
+      p.open_cards = { count: open.length, titles: open.map((c) => c.title || '') };
+    }).catch(() => {})));
+    const me = ms.find((m) => String(m.email || m._id).toLowerCase() === who.email);
+    const people = ms.filter((m) => String(m.email || m._id).toLowerCase() !== who.email).map((m) => {
+      const r = personRow(m, profile), e = String(m.email || m._id).toLowerCase();
+      return { name: r.name, pronouns: r.pronouns, role: r.role, group: r.group, interests: [r.interests, (r.pillars || []).join(', ')].filter(Boolean).join('; '), projects: titlesOf[e] || [], profile: r.profile };
+    });
+    return { projects, people, you: me ? { interests: [me.interests || '', (me.pillars || []).join(', ')].filter(Boolean).join('; '), role: me.role || '',
+      projects: titlesOf[who.email] || [] } : undefined };
   }
   // The reading tools Talking to BOLD may use, as the person (each checks its page, as for their agent).
   const CHAT_TOOLS = ['search', 'list_projects', 'get_project', 'find_people', 'get_person', 'calendar', 'my_items', 'read_page', 'list_skills', 'get_skill'];

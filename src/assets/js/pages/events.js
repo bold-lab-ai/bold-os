@@ -37,7 +37,7 @@
   function seriesRow(x){
     var meta = x.kind === 'editions' ? cadenceText(x.cadence) : meetingText(x.meeting) + ' · London time';
     if (x.kind === 'editions') {
-      var eds = events.filter(function(e){ return e.series === x.id; }).sort(function(a, b){ return a.startDate < b.startDate ? -1 : 1; });
+      var eds = events.filter(function(e){ return e.series === x.id && (x.page !== 'group-meetings.html' || e.status !== 'skipped'); }).sort(function(a, b){ return a.startDate < b.startDate ? -1 : 1; });
       var next = eds.filter(function(e){ return !E.isPast(e); })[0], last = eds[eds.length - 1];
       if (next) meta += ' · next: ' + E.when(next.startDate, next.endDate) + (next.place ? ', ' + next.place : '');
       else if (last) meta += ' · last: ' + E.when(last.startDate, last.endDate);
@@ -50,7 +50,6 @@
   function group(label, rows){
     return rows.length ? '<div class="proj-group"><h3>' + esc(label) + '<span class="proj-count">' + rows.length + '</span></h3><ul class="proj-list">' + rows.join('') + '</ul></div>' : '';
   }
-
   function render(){
     var can = canAdd(), why = can ? '' : BOLD.cannotReason('events', 'edit');
     seriesAdds.forEach(function(a){ a.classList.toggle('is-off', !can); a.title = why; a.setAttribute('aria-disabled', String(!can)); });

@@ -124,6 +124,49 @@ service cloud.firestore {
       allow write: if false;
     }
 
+    // Published group meeting records are server-written. A callable checks
+    // the actor, eligibility and revisions in the same transaction as edits.
+    match /groupMeetingSeasons/{id} {
+      allow read: if hasFullWrite();
+      allow write: if false;
+    }
+    match /groupRotaSlots/{id} {
+      // The snapshot callable filters slots through their event edition's
+      // release and visibility. Direct collection queries cannot do that.
+      allow read: if hasFullWrite();
+      allow write: if false;
+      match /versions/{version} {
+        allow read: if hasFullWrite();
+        allow write: if false;
+      }
+    }
+    match /groupRotaMembers/{slackId} {
+      allow read: if hasFullWrite();
+      allow write: if false;
+    }
+    match /groupRotaEligibility/{slackId} {
+      allow read, write: if false;
+    }
+    // One swap or decline at a time: PIs and admins, or its own people with Events' View.
+    match /groupRotaSwaps/{id} {
+      allow get: if hasFullWrite() || (may('events', 'view') && (
+        get(/databases/$(database)/documents/people/$(resource.data.requesterSlackId)).data.email.lower() == email().lower() ||
+        get(/databases/$(database)/documents/people/$(resource.data.recipientSlackId)).data.email.lower() == email().lower()));
+      allow list, write: if false;
+    }
+    match /groupRotaDeclines/{id} {
+      allow get: if hasFullWrite() || (may('events', 'view') && resource.data.byEmail.lower() == email().lower());
+      allow list, write: if false;
+    }
+    match /groupRotaOffers/{id} {
+      allow read, write: if false;
+    }
+    match /groupRotaNotifications/{id} {
+      allow read, write: if false;
+    }
+    match /groupRotaConfig/{id} {
+      allow read, write: if false;
+    }
     // Joining BOLD (functions/index.js "Joining BOLD"): requests come in through
     // requestToJoin and are decided through decideJoinRequest, so clients write
     // neither; PIs and admins read them (join-requests.html).
@@ -921,13 +964,22 @@ service cloud.firestore {
       allow read: if isSignedIn() && email().lower() == owner;
       allow write: if false;
     }
-    // The days someone has been on BOLD.OS (bold.js; London dates), for the order of the morning's letters
-    // (functions/bold-llm.js writeHomeLetters, which keeps the last 28). Theirs to add to, read by no one but the server.
+    // When someone has been on BOLD.OS (bold.js): the days (London dates), for the order of the morning's letters
+    // (functions/bold-llm.js writeHomeLetters, which keeps the last 28), and seenAt, the latest moment, for what their
+    // letter covers (since their last visit; lastVisitEnd, the server's, onVisit). Theirs to add to, read by no one but
+    // the server; seenAt is always the time it's written.
+    function visitOk(d){
+      return (!('days' in d) || (d.days is list && d.days.size() <= 40))
+        && (!('seenAt' in d) || d.seenAt == request.time);
+    }
     match /visits/{owner} {
       allow read: if false;
-      allow create, update: if isSignedIn() && email().lower() == owner
-        && request.resource.data.keys().hasOnly(['days'])
-        && request.resource.data.days is list && request.resource.data.days.size() <= 40;
+      allow create: if isSignedIn() && email().lower() == owner
+        && request.resource.data.keys().hasOnly(['days', 'seenAt']) && visitOk(request.resource.data);
+      allow update: if isSignedIn() && email().lower() == owner
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['days', 'seenAt'])
+        && (!request.resource.data.diff(resource.data).affectedKeys().hasAny(['seenAt']) || request.resource.data.seenAt == request.time)
+        && (!('days' in request.resource.data) || (request.resource.data.days is list && request.resource.data.days.size() <= 40));
     }
     // A letter asked for, written in the background (functions/bold-llm.js onLetterJob): how it's going, for its person.
     match /letterJobs/{owner} {
