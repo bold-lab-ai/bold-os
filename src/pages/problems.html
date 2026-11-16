@@ -22,18 +22,9 @@ nav: "problems.html"
     </div>
     <div class="pb-actions">
       <a class="btn" id="pbLite" href="#" target="_blank" rel="noopener">Onboard in AutoKaggle Lite ↗</a>
-      <button type="button" class="btn btn-primary" id="pbNew" disabled>+ Add open problem</button>
+      <a class="btn btn-primary" id="pbNew" href="problems-register.html">+ Add an open problem</a>
     </div>
   </div>
-
-  <form id="pbCreate" class="pb-form" hidden>
-    <div class="field"><label for="pbCreateProject">Project</label><select id="pbCreateProject" name="project" required></select></div>
-    <div class="field"><label for="pbCreateTitle">Problem</label><input id="pbCreateTitle" name="title" required maxlength="180"></div>
-    <div class="field"><label for="pbCreateObjective">Research question</label><textarea id="pbCreateObjective" name="objective" class="no-tags" required maxlength="8000"></textarea></div>
-    <div class="field"><label for="pbCreateTask">Task type</label><input id="pbCreateTask" name="task_kind" required maxlength="80" placeholder="Forecasting, generation, optimisation…"></div>
-    <div class="field"><label for="pbCreateOwner">Research owner</label><input id="pbCreateOwner" name="owner" required maxlength="180"></div>
-    <div class="pb-form-actions"><button class="btn btn-primary" type="submit">Save open problem</button><button class="btn-text" type="button" id="pbCreateCancel">Cancel</button><span class="pb-status" id="pbCreateStatus" role="status"></span></div>
-  </form>
 
   <div class="filters" role="search">
     <input type="search" id="pbSearch" placeholder="Search problems" aria-label="Search problems" autocomplete="off">

@@ -1,0 +1,45 @@
+---
+area: "projects"
+title: "Add an Open Problem | BOLD Lab"
+description: "Add an open research problem to the Problem Bank, linked to its project."
+sdk: ["functions"]
+css: "projects-register"
+nav: "problems.html"
+scripts: ["pages/problems-register.js"]
+permalink: "problems-register.html"
+---
+<div class="hero">
+  <a class="back-link" href="problems.html">&larr; Problem Bank</a>
+  <h1>Add an open problem</h1>
+  <p class="hero-note">A research question for one of the lab's projects, before anyone has built an evaluator for it.</p>
+</div>
+
+<main>
+  <form id="problemForm" novalidate>
+    <div class="field">
+      <label for="prProject">Project</label>
+      <select id="prProject"><option value="">Loading projects&hellip;</option></select>
+    </div>
+    <div class="field">
+      <label for="prTitle">Problem</label>
+      <input type="text" id="prTitle" maxlength="180" autocomplete="off">
+    </div>
+    <div class="field">
+      <label for="prObjective">Research question</label>
+      <textarea id="prObjective" class="no-tags" maxlength="8000"></textarea>
+    </div>
+    <div class="field">
+      <label for="prTask">Task type</label>
+      <input type="text" id="prTask" maxlength="80" autocomplete="off" placeholder="Forecasting, generation, optimisation…">
+    </div>
+    <div class="field">
+      <label for="prOwner">Research owner</label>
+      <input type="text" id="prOwner" maxlength="180" autocomplete="off">
+      <div class="field-hint">Who leads the work on it. More details go on its page once it's added.</div>
+    </div>
+    <div class="field-error" id="problemError" hidden></div>
+    <div class="form-actions">
+      <button class="btn btn-primary" type="submit" id="submitBtn" disabled>Add</button>
+    </div>
+  </form>
+</main>

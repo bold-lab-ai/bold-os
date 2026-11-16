@@ -117,18 +117,7 @@
   el('pbClear').addEventListener('click', function(){ q = ''; el('pbSearch').value = ''; renderList(); });
   el('pbMore').addEventListener('click', function(){ loadList(true); });
 
-  /* ---------- adding an open problem ---------- */
-  el('pbNew').addEventListener('click', function(){ el('pbCreate').hidden = !el('pbCreate').hidden; if (!el('pbCreate').hidden) el('pbCreateTitle').focus(); });
-  el('pbCreateCancel').addEventListener('click', function(){ el('pbCreate').hidden = true; });
-  el('pbCreate').addEventListener('submit', function(event){
-    event.preventDefault();
-    var form = event.currentTarget, button = form.querySelector('[type=submit]'), project = JSON.parse(form.elements.project.value);
-    button.disabled = true; el('pbCreateStatus').textContent = 'Saving…';
-    call({ action: 'create', project_id: project[0], project_board: project[1], title: form.elements.title.value, objective: form.elements.objective.value,
-      task_kind: form.elements.task_kind.value, details: { owner: form.elements.owner.value } })
-      .then(function(r){ location.href = 'problems.html?problem=' + encodeURIComponent(r.problem_id); })
-      .catch(function(e){ el('pbCreateStatus').textContent = 'Not saved. ' + e.message; button.disabled = false; });
-  });
+  el('pbNew').addEventListener('click', function(e){ if (el('pbNew').getAttribute('aria-disabled') === 'true') e.preventDefault(); });
 
   /* ---------- AutoKaggle's addresses: everyone reads them, PIs and admins change them ---------- */
   function loadUrls(){
@@ -246,12 +235,13 @@
     generation++;
     if (!user) { el('pbMsg').textContent = 'Sign in to see the Problem Bank.'; return; }
     BOLD.onAccess(function(){
-      var can = BOLD.can('projects', 'edit');
-      el('pbNew').disabled = !can; el('pbNew').title = can ? '' : BOLD.cannotReason('projects', 'edit');
+      // Adding one is for Projects' Edit, as proposing a project: greyed out, with the reason.
+      var can = BOLD.can('projects', 'edit'), add = el('pbNew');
+      add.classList.toggle('is-off', !can); add.setAttribute('aria-disabled', String(!can)); add.title = can ? '' : BOLD.cannotReason('projects', 'edit');
       loadUrls();
     });
     // The project picker: one row per project, as Projects lists them.
-    var picker = call({ action: 'projects' }).then(function(r){ projects = r.items; el('pbCreateProject').innerHTML = projectOptions(); }).catch(function(){});
-    if (problemId) Promise.all([picker, loadUrls()]).then(loadDetail); else loadList(false);
+    if (problemId) Promise.all([call({ action: 'projects' }).then(function(r){ projects = r.items; }).catch(function(){}), loadUrls()]).then(loadDetail);
+    else loadList(false);
   });
 })();
