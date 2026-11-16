@@ -709,7 +709,7 @@
   var CREATE = [
     { head: 'New' },
     { label: 'Project', href: 'projects-register.html', can: may('projects', 'edit') },
-    { label: 'Problem', href: 'problems-register.html', can: may('projects', 'edit') },
+    { label: 'Project problem', href: 'problems-register.html', can: may('projects', 'edit') },
     { label: 'Event series', href: 'series.html?new', can: may('events', 'edit') },
     { label: 'Guide', href: 'guide.html?new', can: pi },
     // Skills and tools are both for agents (MCP): side by side, named so.
