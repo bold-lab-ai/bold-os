@@ -118,36 +118,38 @@
   }
   var LINK_ICON = '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M10 13a5 5 0 0 0 7 0l3-3a5 5 0 0 0-7-7l-2 2M14 11a5 5 0 0 0-7 0l-3 3a5 5 0 0 0 7 7l2-2"/></svg>';
   function linkHtml(id){
-    return '<a class="icon-btn gd-copy-link" href="#' + encodeURIComponent(id) + '" aria-label="Copy link to this heading" title="Copy link to this heading">' + LINK_ICON + '</a>';
+    return '<span class="gd-permalink"><a class="icon-btn gd-copy-link" href="#' + encodeURIComponent(id) + '" aria-label="Copy link to this heading" title="Copy link to this heading">' + LINK_ICON + '</a><span class="gd-copy-status" role="status" aria-live="polite" aria-atomic="true"></span></span>';
   }
   function linkHeadings(){
     Array.prototype.forEach.call(body.querySelectorAll('.guide-text h3[id], .guide-text h4[id], .guide-text h5[id], .guide-text h6[id]'), function(h){
       h.insertAdjacentHTML('beforeend', linkHtml(h.id));
     });
   }
-  var copyFeedbackTimer;
-  // Links retain a normal href for right-click copying; a plain click only copies.
+  var copyFeedbackTimer, copyStatus = null, copyRequest = 0;
+  // Keep feedback next to its control. The empty live region is rendered before
+  // its text changes, so assistive technology can announce repeated copies too.
+  // Links retain a normal href for their context menu; a plain click only copies.
   body.addEventListener('click', function(e){
     var a = e.target.closest('.gd-copy-link');
     if (!a || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
     e.preventDefault();
+    var request = ++copyRequest;
+    clearTimeout(copyFeedbackTimer);
+    if (copyStatus) copyStatus.textContent = '';
+    copyStatus = a.parentElement.querySelector('.gd-copy-status');
+    var status = copyStatus;
     var url = new URL(a.getAttribute('href'), location.href).href;
-    function feedback(message){
-      var status = document.querySelector('.gd-copy-status');
-      if (status) status.remove();
-      status = document.createElement('span');
-      status.className = 'gd-copy-status';
-      status.setAttribute('role', 'status');
-      a.insertAdjacentElement('afterend', status);
+    function feedback(message, temporary){
+      // An earlier clipboard request mustn't replace the latest one's feedback.
+      if (request !== copyRequest || !a.isConnected) return;
       status.textContent = message;
-      clearTimeout(copyFeedbackTimer);
-      copyFeedbackTimer = setTimeout(function(){ status.remove(); }, 4000);
+      if (temporary) copyFeedbackTimer = setTimeout(function(){ status.textContent = ''; }, 4000);
     }
     function fallback(){
-      feedback('Couldn’t copy. Right-click the icon to copy the link.');
+      feedback('Couldn’t copy. Use the link’s menu to copy its address.', false);
     }
     if (!navigator.clipboard || !navigator.clipboard.writeText) { fallback(); return; }
-    try { navigator.clipboard.writeText(url).then(function(){ feedback('Link copied'); }, fallback); }
+    try { navigator.clipboard.writeText(url).then(function(){ feedback('Link copied', true); }, fallback); }
     catch (err) { fallback(); }
   });
   function hasSections(){ return parts().some(function(p){ return p.section; }); }
