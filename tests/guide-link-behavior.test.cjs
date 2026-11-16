@@ -8,7 +8,7 @@ function between(start, end) { return source.slice(source.indexOf(start), source
 function harness(clipboard) {
   const nodes = new Map(), handlers = [], messages = [], scrolled = [], statuses = [], timers = [];
   const data = [
-    { id: 'one', section: 'First', body: '# Overview' },
+    { id: 'one', section: 'First', body: '# Details' },
     { id: 'two', section: 'Second', body: '# Details\n# Details' },
   ];
   const body = { addEventListener: (name, fn) => handlers.push(fn) };
@@ -57,4 +57,18 @@ test('malformed and unknown fragments do not throw or select a section', () => {
   assert.equal(ctx.tabFor('#%ZZ'), null);
   assert.equal(ctx.tabFor('#missing'), null);
   assert.doesNotThrow(() => ctx.goTo('#%ZZ'));
+});
+
+
+test('identical headings retain their parent identity and open the owning tab', () => {
+  const { ctx } = harness();
+  assert.equal(ctx.tabFor('#p-one--details'), 'First');
+  assert.equal(ctx.tabFor('#p-two--details'), 'Second');
+});
+
+test('copy labels name the section, part and nested heading without duplicating names', () => {
+  const { ctx } = harness();
+  assert.equal(ctx.copyPath({ section: 'People', title: 'Who is BOLD' }, 'BOLD-staff'), 'People › Who is BOLD › BOLD-staff');
+  assert.equal(ctx.copyPath({ section: 'People', title: 'Who is BOLD' }), 'People › Who is BOLD');
+  assert.equal(ctx.copyPath({ section: 'People', title: 'Who is BOLD' }, 'Who is BOLD'), 'People › Who is BOLD');
 });

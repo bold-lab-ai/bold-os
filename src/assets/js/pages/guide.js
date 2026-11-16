@@ -117,9 +117,14 @@
     catch (e) { return ''; }
   }
   function linkHtml(id, title){ return BoldGuideCopy.html(id, title || id); }
+  function copyPath(p, title){
+    return (p ? [p.section, p.title, title] : [title]).filter(Boolean).filter(function(v, i, list){ return list.indexOf(v) === i; }).join(' › ');
+  }
   function linkHeadings(){
     Array.prototype.forEach.call(body.querySelectorAll('.guide-text h3[id], .guide-text h4[id], .guide-text h5[id], .guide-text h6[id]'), function(h){
-      h.insertAdjacentHTML('beforeend', linkHtml(h.id, h.textContent));
+      var owner = h.closest('.guide-part');
+      var p = owner && part(owner.getAttribute('data-pid'));
+      h.insertAdjacentHTML('beforeend', linkHtml(h.id, copyPath(p, h.textContent)));
     });
   }
   BoldGuideCopy.mount(body);
@@ -203,7 +208,7 @@
       (q ? '' : '<div class="guide-part-controls">' + (form ? '' : grip) + icon('gd-edit', 'Suggest a change', BOLD.ICON_PENCIL) +
         icon('gd-up', 'Suggest moving it up', BOLD.ICON_UP, at === 0) + icon('gd-down', 'Suggest moving it down', BOLD.ICON_DOWN, at === all.length - 1) + '</div>') +
       '<h2><button type="button" class="gd-fold" data-id="' + esc(p.id) + '" aria-expanded="' + !fold + '" title="' + (fold ? 'Show' : 'Fold') + ' this part">' +
-        '<span class="guide-num">' + (i + 1) + '</span>' + esc(p.title) + '</button>' + linkHtml(anchor(p), p.title) + '</h2></div>' +
+        '<span class="guide-num">' + (i + 1) + '</span>' + esc(p.title) + '</button>' + linkHtml(anchor(p), copyPath(p)) + '</h2></div>' +
       (fold ? '' : '<div class="guide-text">' + md(p.body, { headingPrefix: anchor(p) }) + '</div>') + '</section>';
   }
 
