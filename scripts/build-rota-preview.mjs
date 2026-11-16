@@ -67,7 +67,7 @@ docs.events = docs.groupMeetings.map(([date, meeting]) => ['preview-group-meetin
 }]);
 
 const inlineJson = JSON.stringify(docs).replace(/</g, '\\u003c');
-const photoFiles = await readdir('src/assets/img/rota-profiles').catch(() => []);
+const photoFiles = await readdir('_site/assets/img/rota-profiles').catch(() => []);
 const localPhotos = photoFiles.filter(file => /^[a-z0-9-]+\.webp$/.test(file)).map(file => file.slice(0, -5));
 const mock = `const data = ${inlineJson};\nconst localPhotos = new Set(${JSON.stringify(localPhotos)});\n` + String.raw`
 window.ROTA_LOCAL_PREVIEW = true;

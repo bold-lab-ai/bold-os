@@ -64,6 +64,14 @@
       ]
     },
     {
+      "collectionGroup": "groupRotaOffers",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "status", "order": "ASCENDING" },
+        { "fieldPath": "expiresAt", "order": "ASCENDING" }
+      ]
+    },
+    {
       "collectionGroup": "changelog",
       "queryScope": "COLLECTION",
       "fields": [

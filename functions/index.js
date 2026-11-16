@@ -1578,31 +1578,37 @@ async function pilotSlack(token, key, label, m){
   const d = (await ref.get()).data() || {};
   if (!(d.known || {})[key]) await ref.set({ known: { [key]: label } }, { merge: true });
   const st = pilotStateOf(Object.assign({}, d, { known: Object.assign({ [key]: label }, d.known || {}) }), key);
+  // requireDelivery: a refusal throws. Slack answered, so nothing was posted (`definite`):
+  // safe to send again, unlike a network error, after which it may have gone.
+  const refused = (message) => Object.assign(Error(message), { definite: true });
   const send = async (channel, text, blocks) => {
     const res = await slackFetch(token, 'chat.postMessage', Object.assign({ channel, text, unfurl_links: false }, blocks ? { blocks } : {}));
-    if (!res.ok) { logger.warn('Slack message failed', { feature: key, error: res.error }); if (m.requireDelivery) throw Error(res.error || 'Slack message failed'); }
+    if (!res.ok) { logger.warn('Slack message failed', { feature: key, error: res.error }); if (m.requireDelivery) throw refused(res.error || 'Slack message failed'); }
   };
   const dm = async (email, text, blocks) => {
     const id = await slackIdForEmail(email);
-    if (!id) { if (m.requireDelivery) throw Error('Slack recipient not found'); return; }
+    if (!id) { if (m.requireDelivery) throw refused('Slack recipient not found'); return; }
     const open = await slackFetch(token, 'conversations.open', { users: id });
     if (open.ok) await send(open.channel.id, text, blocks);
-    else if (m.requireDelivery) throw Error(open.error || 'Cannot open Slack DM');
+    else if (m.requireDelivery) throw refused(open.error || 'Cannot open Slack DM');
   };
   // Their Inbox first, except when a pilot's action must remain with testers
-  // until the feature is live. Whoever's on pings gets a ping instead.
+  // until the feature is live. Whoever's on pings gets a ping instead, unless the
+  // message has buttons they must answer (actionsRequired): then the message itself.
+  // Whoever turned the feature off gets neither; with requireDelivery, that's a refusal.
   const emails = [];
   for (const e of Array.from(new Set((m.emails || []).map((x) => String(x).toLowerCase())))) {
     if (st.live || !m.suppressPilotInbox) await noteFor([e], { text: m.text, feature: key, source: 'slack' });
     const way = await slackWayFor(e, key);
-    if (m.actionsRequired || way === 'all') emails.push(e);
+    if (way === 'all' || (m.actionsRequired && way === 'pings')) emails.push(e);
     else if (way === 'pings') await queuePing(e);
+    else if (st.live && m.requireDelivery) throw refused('They have these Slack messages turned off');
   }
   m = Object.assign({}, m, { emails });
   if (!emails.length && !m.channel) return { pilot: !st.live, pinged: true };
   if (st.live) {
     for (const e of emails) await dm(e, m.text, m.blocks);
-    if (m.channel) { const channel = String(m.channel).replace(/^#/, ''); const id = /^[CG][A-Z0-9-]+$/.test(channel) ? channel : await slackChannelId(token, channel); if (id) await send(id, m.text, m.blocks); else if (m.requireDelivery) throw Error('Slack channel not found'); }
+    if (m.channel) { const channel = String(m.channel).replace(/^#/, ''); const id = /^[CG][A-Z0-9-]+$/.test(channel) ? channel : await slackChannelId(token, channel); if (id) await send(id, m.text, m.blocks); else if (m.requireDelivery) throw refused('Slack channel not found'); }
     return { pilot: false };
   }
   const forWhom = [m.channel ? '#' + String(m.channel).replace(/^#/, '') : ''].concat(await Promise.all((m.emails || []).map(nameForEmail))).filter(Boolean).join(', ');
@@ -7126,6 +7132,12 @@ function recordVersions(collection){
       collection, docId: event.params.id, title: String(src.title || src.name || event.params.id),
     };
     if (collection === 'groupRotaSlots') {
+      // The changelog is read more widely than the rota: nothing from a hidden series
+      // or meeting, and a declined slot ('Slot opened') says not who declined it.
+      const [series, edition] = await Promise.all([db.collection('eventSeries').doc(String(src.seriesId || '_')).get(),
+        db.collection('events').doc(String(src.seriesId || '_') + '-' + String(src.meetingId || '_')).get()]);
+      if (!series.exists || series.data().hidden || !edition.exists || edition.data().hidden) return;
+      if (version.note === 'Slot opened') entry.by = null;
       entry.date = src.meetingId;
       entry.slotNumber = src.slotNumber;
       entry.title = 'Group meeting ' + src.meetingId + ', slot ' + src.slotNumber;

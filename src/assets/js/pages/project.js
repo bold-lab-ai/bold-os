@@ -1074,12 +1074,16 @@ function escapeHtml(s){ return BOLD.escapeHtml(s); }
     }, function(err){ console.error('[BOLD Lab] loading the presentations failed', err); });
     var groupProject = key;
     groupUnsub = function(){};
-    firebase.app().functions('europe-west2').httpsCallable('groupRotaSnapshot')({}).then(function(result){
+    firebase.app().functions('europe-west2').httpsCallable('groupRotaSnapshot')({ projectId: groupProject }).then(function(result){
       if (key !== groupProject) return;
       groupTalks = (result.data.slots || []).filter(function(slot){ return slot.projectId === groupProject; })
         .sort(function(a,b){ return (b.date || '').localeCompare(a.date || ''); });
       if (card && !editing) render();
-    }).catch(function(err){ console.error('[BOLD Lab] loading group meeting talks failed', err); });
+    }).catch(function(err){
+      // No rota yet (its series not attached), or not visible to them: no group meeting talks to show.
+      if (err && (err.code === 'functions/failed-precondition' || err.code === 'functions/permission-denied')) return;
+      console.error('[BOLD Lab] loading group meeting talks failed', err);
+    });
   }
 
   function wireAbstract(){

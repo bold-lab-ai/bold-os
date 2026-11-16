@@ -83,6 +83,7 @@
     var outcome = assigned && !future(m) ? (s.outcome === 'presented' ? 'Presented' : s.outcome === 'did-not-present' ? 'Did not present' : 'Unconfirmed') : '';
     var menuControls = (!own && admin && assigned ? '<button type="button" class="btn-text" data-action="edit" data-id="' + esc(s.id) + '"' + disabled(adminEdit, why) + '>' + (s.slidesUrl ? 'Edit talk' : 'Add slides URL / edit talk') + '</button>' : '') +
       (!assigned && future(m) && s.format === 'short' && admin ? '<button type="button" class="btn-text" data-action="offer" data-id="' + esc(s.id) + '"' + disabled(!s.pendingActionId, 'An offer is already pending') + '>Offer short slot</button>' : '') +
+      (!assigned && s.pendingActionId && admin ? '<button type="button" class="btn-text" data-action="cancelOffer" data-pending="' + esc(s.pendingActionId) + '">Withdraw offer</button>' : '') +
       (!own && !future(m) && admin ? '<button type="button" class="btn-text" data-action="outcome" data-id="' + esc(s.id) + '">Set outcome</button>' : '') +
       (s.origin === 'site' && s.revision === 0 && !assigned && admin ? '<button type="button" class="btn-text" data-action="deleteSlot" data-id="' + esc(s.id) + '">Remove slot</button>' : '');
     var slotActions = (own ? declineHtml(s, can, why) : menuControls ? actionsHtml('rota-actions-' + s.id, 'Actions for ' + slotLabel(s), menuControls) : '') + (s.format === 'short' && !own && s.presenterSlackId ? swapHtml(s, swapReady, swapReason) : '');
@@ -289,6 +290,7 @@
     if (action === 'moreChangelog') { loadChangelog(true); return; }
     if (action === 'close') { panel = null; render(); return; }
     if (action === 'cancelSwap') { act('CancelSwap', { id: button.dataset.id }); return; }
+    if (action === 'cancelOffer') { act('CancelOffer', { id: button.dataset.pending }); return; }
     if (action === 'retrySwap') { act('RetrySwap', { id: button.dataset.id }); return; }
     if (action === 'claim') { act('Claim', { slotId: s.id }); return; }
     if (action === 'deleteSlot') { act('DeleteSlot', { slotId: s.id }); return; }

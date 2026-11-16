@@ -718,7 +718,7 @@ module.exports = function(ctx){
       request_swap: ['RequestSwap', ['slotId', 'otherSlotId']],
       cancel_swap: ['CancelSwap', ['id']], retry_swap: ['RetrySwap', ['id']],
       outcome: ['Outcome', ['slotId', 'revision', 'outcome']],
-      offer_short: ['OfferShort', ['slotId', 'recipientSlackId']],
+      offer_short: ['OfferShort', ['slotId', 'recipientSlackId']], cancel_offer: ['CancelOffer', ['id']],
       save_season: ['SaveSeason', ['id', 'label', 'regularTime', 'location', 'rotationDescription', 'publicationState']],
       save_meeting: ['SaveMeeting', ['date', 'seasonId', 'format', 'startTime', 'durationMinutes', 'location']],
       set_meeting_visibility: ['SetMeetingVisibility', ['date', 'hidden']],
@@ -757,7 +757,7 @@ module.exports = function(ctx){
       meetings: visible.map((m) => ({ date: m.date, format: m.format, start_time: m.startTime, location: m.location, status: m.status, skip_reason: m.skipReason || '', url: url('group-meetings.html?date=' + m.date) })),
       slots: slots.filter((s) => s.seriesId === series._id && dates.has(s.meetingId)).map((s) => ({ id: s._id, date: s.date, slot: s.slotNumber, format: s.format,
         presenter: names[s.presenterSlackId] || s.legacyName || 'Open slot', unresolved: !!(s.presenterSlackId && !names[s.presenterSlackId]) || !!(s.legacyName && !s.presenterSlackId),
-        topic: s.topic || '', project_id: s.projectId || '', slides: s.slidesUrl || '', outcome: s.outcome || 'unconfirmed', revision: s.revision || 0,
+        topic: s.topic || '', project_id: s.projectId || '', slides: s.slidesUrl || '', outcome: s.outcome || 'unconfirmed', revision: s.revision || 0, pending_action_id: s.pendingActionId || '',
         url: url('group-meetings.html?date=' + encodeURIComponent(s.date) + '&slot=' + encodeURIComponent(s.slotNumber)) })) };
   }
 
@@ -773,9 +773,9 @@ module.exports = function(ctx){
   ];
   const WRITE = [
     { name: 'group_rota', run: groupRota,
-      description: 'The group meeting rota: BOLD-internal members and above are included automatically; register resumes participation after leaving. Presenters can edit their assigned talk, claim an open short or long slot, decline a slot with a private reason, or request a confirmed short-slot swap. Series organisers, PIs and admins can set outcomes, offer short slots, and manage seasons and meetings. Swap and offer actions send a Slack message. All actions use the same callable and permissions as the rota page.',
-      inputSchema: S({ action: ACTIONS(['register', 'leave', 'edit', 'claim', 'recuse', 'request_swap', 'cancel_swap', 'retry_swap', 'outcome', 'offer_short', 'save_season', 'save_meeting', 'set_meeting_visibility', 'create_slot', 'delete_slot', 'delete_meeting']),
-        slotId: str('Stable slot id, from the rota.'), otherSlotId: str('Swap target slot id.'), id: str('Swap id or season id, depending on action.'),
+      description: 'The group meeting rota: BOLD-internal members and above are included automatically; register resumes participation after leaving. Presenters can edit their assigned talk, claim an open short or long slot, decline a slot with a private reason, or request a confirmed short-slot swap. Series organisers, PIs and admins can set outcomes, offer short slots (and withdraw an offer), and manage seasons and meetings. Swap and offer actions send a Slack message. All actions use the same callable and permissions as the rota page.',
+      inputSchema: S({ action: ACTIONS(['register', 'leave', 'edit', 'claim', 'recuse', 'request_swap', 'cancel_swap', 'retry_swap', 'outcome', 'offer_short', 'cancel_offer', 'save_season', 'save_meeting', 'set_meeting_visibility', 'create_slot', 'delete_slot', 'delete_meeting']),
+        slotId: str('Stable slot id, from the rota.'), otherSlotId: str('Swap target slot id.'), id: str('Swap id, offer id (the slot’s pending action) or season id, depending on action.'),
         revision: { type: 'integer', description: 'The slot revision shown by the rota; stale edits fail.' },
         topic: str('Talk topic, up to 140 characters.'), projectId: str('Optional linked project id.'), slidesUrl: str('Optional HTTPS slides link.'), auditNote: str('Administrator correction note.'),
         reason: str('Private recusal reason.'),
