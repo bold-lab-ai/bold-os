@@ -42,7 +42,7 @@
 
 1. **Review** the rota as a PI or organiser on `group-meetings.html`. A manager sees hidden meetings.
 2. **Link the four unresolved presenters:** set `presenterSlackId` on their slots once their Slack accounts are confirmed.
-3. **Release the series** from its page, then **release the meetings**, one at a time from the rota page.
+3. **Release the series** from **Rota actions → Release event series** on the rota page, then **release the meetings**, one at a time from each meeting's actions menu. Releasing the series leaves its meetings hidden.
 4. **Hand over from the old rota:**
    - Changes made in the old rota after the freeze aren't imported; re-check them, or re-run the comparison against a fresh export.
    - Retire the old rota and redirect its URL.
