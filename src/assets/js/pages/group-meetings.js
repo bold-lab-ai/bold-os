@@ -132,7 +132,7 @@
       '<button type="button" class="btn-text" data-action="register"' + disabled(access && access.eligible && !access.registered, access && access.registered ? 'You are already in the presenter pool' : 'Only BOLD-internal members and above can present') + '>Resume rota participation</button>' +
       '<button type="button" class="btn-text" data-action="leave"' + disabled(access && access.registered, 'Join the rota before leaving future registration') + '>Leave future registration</button>' +
       '<button type="button" class="btn-text" data-action="editSeries"' + disabled(access && access.admin && access.seriesId, 'Only a series organiser, PI or admin can edit the series') + '>Edit event series</button>' +
-      '<button type="button" class="btn-text" data-action="seriesVisibility"' + disabled(access && access.admin && access.seriesId, 'Only a series organiser, PI or admin can change visibility') + '>' + (access && access.seriesHidden ? 'Release event series' : 'Hide event series') + '</button>' +
+      '<button type="button" class="btn-text" data-action="seriesVisibility"' + disabled(access && access.admin && access.seriesId, 'Only a series organiser, PI or admin can change visibility') + '>' + (access && access.seriesHidden === false ? 'Hide event series' : 'Release event series') + '</button>' +
       '<button type="button" class="btn-text" data-action="season"' + disabled(access && access.admin, 'Only a rota administrator can edit a season') + '>Edit season</button>' +
       '<button type="button" class="btn-text" data-action="meeting"' + disabled(access && access.admin, 'Only a rota administrator can edit a meeting') + '>Add or edit meeting</button></div></details>';
   }
@@ -309,8 +309,9 @@
     if (action === 'seriesVisibility') {
       var release = access.seriesHidden;
       BOLD.confirmAction({ title: release ? 'Release the group meeting series?' : 'Hide the group meeting series?', go: release ? 'Release series' : 'Hide series',
-        effects: release ? ['Show the series in Events to everyone with Events access; its meetings stay hidden until released separately']
-          : ['Hide the series and all its meetings from Events, Calendar and the rota'], always: true
+        effects: release ? ['Show the series in Events to everyone with Events access', 'Open the rota page to members; it stays empty until you release its meetings, one at a time']
+          : ['Hide the series and every meeting from Events, the Calendar and the rota', 'Releasing the series again won’t release its meetings: each has to be released again'],
+        warn: release ? '' : 'Hiding can’t be undone in one step.', always: true
       }).then(function(ok){ if (ok) actSeries(release ? 'release' : 'hide'); });
       return;
     }
