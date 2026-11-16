@@ -229,19 +229,19 @@ body:has(.gd-viewing){padding-bottom:72px;}
 .gd-on-show{margin:0 0 24px;}
 .rp-activity .gd-proposals-open{padding:0;color:var(--ink);text-decoration:underline;text-underline-offset:2px;font:inherit;}
 
-/* Permalinks remain available on touch screens and when using a keyboard. */
-/* An empty inline box rests on the text baseline. Its height follows the
-   heading’s capitals; the absolute control adds padding without moving it. */
-.gd-permalink{display:inline-block; position:relative; vertical-align:baseline; width:.75em; height:.75em; width:1cap; height:1cap; margin-left:.35em;}
-.gd-copy-link{position:absolute; top:-.15em; left:-.15em; display:inline-flex; box-sizing:content-box; width:100%; height:100%; margin:0; padding:.15em; font:inherit; line-height:1; color:var(--muted); text-decoration:none;}
-.gd-copy-link svg{display:block; width:100%; height:100%;}
-.gd-copy-link:hover{color:var(--link);}
-.gd-copy-link:focus-visible{outline:2px solid var(--accent); outline-offset:2px;}
+/* Primer copy controls: native 16px Octicons inside an always-visible 32px
+   target. The icon sits on the baseline; the target extends above and below. */
+.gd-permalink{display:inline-block; position:relative; vertical-align:baseline; width:32px; height:16px; margin-left:4px;}
+.gd-copy-button{position:absolute; top:-8px; left:0; width:32px; height:32px; padding:0; color:var(--muted);}
+.gd-copy-button svg{display:block; flex:none; width:16px; height:16px;}
+.gd-copy-button[data-copy-state="success"], .gd-copy-button[data-copy-state="success"]:hover{color:var(--success-text);}
+.gd-copy-button[data-copy-state="error"], .gd-copy-button[data-copy-state="error"]:hover{color:var(--danger-text);}
+.gd-copy-button:focus-visible{outline:2px solid var(--accent); outline-offset:2px;}
 .guide-text :is(h3,h4,h5,h6)[id], .gd-heading-alias{scroll-margin-top:24px;}
-/* Feedback overlays beside the icon instead of reflowing the heading. */
-.gd-copy-status{position:absolute; left:100%; top:50%; transform:translateY(-50%); z-index:2; width:max-content; max-width:240px; color:var(--ink-soft); font-family:var(--sans); font-size:13px; font-weight:400; line-height:1.4; letter-spacing:normal; text-transform:none;}
-.gd-copy-status:not(:empty){margin-left:4px; padding:4px 8px; background:var(--surface); border-radius:var(--radius);}
-@media (max-width:820px){
-  .gd-copy-status{left:auto; right:0; top:100%; transform:none; max-width:min(240px, 75vw);}
-  .gd-copy-status:not(:empty){margin:4px 0 0;}
-}
+.gd-copy-tooltip{position:fixed; z-index:300; box-sizing:border-box; width:max-content; max-width:calc(100vw - 16px); padding:6px 8px; border-radius:var(--radius); color:var(--paper); background:var(--ink); font-family:var(--sans); font-size:12px; font-weight:400; line-height:1.5; letter-spacing:normal; text-transform:none; overflow-wrap:anywhere;}
+.gd-copy-tooltip[hidden], .gd-copy-recovery[hidden]{display:none;}
+/* Separate from the visible tooltip so every result is announced once. */
+.gd-copy-announcement{position:absolute; width:1px; height:1px; padding:0; margin:-1px; overflow:hidden; clip-path:inset(50%); white-space:nowrap; border:0;}
+.gd-copy-recovery{position:fixed; z-index:200; box-sizing:border-box; width:240px; max-width:calc(100vw - 16px); padding:10px; color:var(--ink); background:var(--surface); border:1px solid var(--danger-line); border-radius:var(--radius); font-family:var(--sans); font-size:13px; font-weight:400; line-height:1.5; letter-spacing:normal; text-transform:none;}
+.gd-copy-value{display:block; box-sizing:border-box; width:100%; margin-top:6px; padding:6px; border:1px solid var(--line); border-radius:var(--radius); color:var(--ink); background:var(--paper); font:inherit;}
+.gd-copy-value:focus-visible{outline:2px solid var(--accent); outline-offset:2px;}

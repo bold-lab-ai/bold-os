@@ -116,43 +116,13 @@
     try { return decodeURIComponent(String(hash || '').replace(/^#/, '')); }
     catch (e) { return ''; }
   }
-  // Primer Octicons link-16 (MIT, GitHub Inc.). License: assets/licenses/octicons-LICENSE.txt
-  var LINK_ICON = '<svg aria-hidden="true" fill="currentColor" width="16" height="16" viewBox="0 0 16 16"><path d="m7.775 3.275 1.25-1.25a3.5 3.5 0 1 1 4.95 4.95l-2.5 2.5a3.5 3.5 0 0 1-4.95 0 .751.751 0 0 1 .018-1.042.751.751 0 0 1 1.042-.018 1.998 1.998 0 0 0 2.83 0l2.5-2.5a2.002 2.002 0 0 0-2.83-2.83l-1.25 1.25a.751.751 0 0 1-1.042-.018.751.751 0 0 1-.018-1.042Zm-4.69 9.64a1.998 1.998 0 0 0 2.83 0l1.25-1.25a.751.751 0 0 1 1.042.018.751.751 0 0 1 .018 1.042l-1.25 1.25a3.5 3.5 0 1 1-4.95-4.95l2.5-2.5a3.5 3.5 0 0 1 4.95 0 .751.751 0 0 1-.018 1.042.751.751 0 0 1-1.042.018 1.998 1.998 0 0 0-2.83 0l-2.5 2.5a1.998 1.998 0 0 0 0 2.83Z"/></svg>';
-  function linkHtml(id){
-    return '<span class="gd-permalink"><a class="icon-btn gd-copy-link" href="#' + encodeURIComponent(id) + '" aria-label="Copy link to this heading" title="Copy link to this heading">' + LINK_ICON + '</a><span class="gd-copy-status" role="status" aria-live="polite" aria-atomic="true"></span></span>';
-  }
+  function linkHtml(id, title){ return BoldGuideCopy.html(id, title || id); }
   function linkHeadings(){
     Array.prototype.forEach.call(body.querySelectorAll('.guide-text h3[id], .guide-text h4[id], .guide-text h5[id], .guide-text h6[id]'), function(h){
-      h.insertAdjacentHTML('beforeend', linkHtml(h.id));
+      h.insertAdjacentHTML('beforeend', linkHtml(h.id, h.textContent));
     });
   }
-  var copyFeedbackTimer, copyStatus = null, copyRequest = 0;
-  // Keep feedback next to its control. The empty live region is rendered before
-  // its text changes, so assistive technology can announce repeated copies too.
-  // Links retain a normal href for their context menu; a plain click only copies.
-  body.addEventListener('click', function(e){
-    var a = e.target.closest('.gd-copy-link');
-    if (!a || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
-    e.preventDefault();
-    var request = ++copyRequest;
-    clearTimeout(copyFeedbackTimer);
-    if (copyStatus) copyStatus.textContent = '';
-    copyStatus = a.parentElement.querySelector('.gd-copy-status');
-    var status = copyStatus;
-    var url = new URL(a.getAttribute('href'), location.href).href;
-    function feedback(message, temporary){
-      // An earlier clipboard request mustn't replace the latest one's feedback.
-      if (request !== copyRequest || !a.isConnected) return;
-      status.textContent = message;
-      if (temporary) copyFeedbackTimer = setTimeout(function(){ status.textContent = ''; }, 4000);
-    }
-    function fallback(){
-      feedback('Couldn’t copy. Use the link’s menu to copy its address.', false);
-    }
-    if (!navigator.clipboard || !navigator.clipboard.writeText) { fallback(); return; }
-    try { navigator.clipboard.writeText(url).then(function(){ feedback('Link copied', true); }, fallback); }
-    catch (err) { fallback(); }
-  });
+  BoldGuideCopy.mount(body);
   function hasSections(){ return parts().some(function(p){ return p.section; }); }
 
   // ---------- tabs (one per section) ----------
@@ -233,7 +203,7 @@
       (q ? '' : '<div class="guide-part-controls">' + (form ? '' : grip) + icon('gd-edit', 'Suggest a change', BOLD.ICON_PENCIL) +
         icon('gd-up', 'Suggest moving it up', BOLD.ICON_UP, at === 0) + icon('gd-down', 'Suggest moving it down', BOLD.ICON_DOWN, at === all.length - 1) + '</div>') +
       '<h2><button type="button" class="gd-fold" data-id="' + esc(p.id) + '" aria-expanded="' + !fold + '" title="' + (fold ? 'Show' : 'Fold') + ' this part">' +
-        '<span class="guide-num">' + (i + 1) + '</span>' + esc(p.title) + '</button>' + linkHtml(anchor(p)) + '</h2></div>' +
+        '<span class="guide-num">' + (i + 1) + '</span>' + esc(p.title) + '</button>' + linkHtml(anchor(p), p.title) + '</h2></div>' +
       (fold ? '' : '<div class="guide-text">' + md(p.body, { headingPrefix: anchor(p) }) + '</div>') + '</section>';
   }
 
