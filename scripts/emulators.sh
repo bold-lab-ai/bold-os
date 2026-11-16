@@ -12,4 +12,4 @@ if [ ! -f functions/.secret.local ]; then
   printf 'SLACK_BOT_TOKEN=outbox\nSLACK_SIGNING_SECRET=outbox\nGOOGLE_OAUTH={}\nGITHUB_APP={}\nANTHROPIC_API_KEY=none\n' > functions/.secret.local
 fi
 (cd functions && npm install --silent)
-exec npx firebase emulators:start --only firestore,functions --project demo-bold-os
+exec npx --yes --package firebase-tools firebase emulators:start --only firestore,functions --project demo-bold-os

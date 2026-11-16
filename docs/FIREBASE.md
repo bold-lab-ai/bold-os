@@ -408,3 +408,7 @@ The meeting rota uses the shared portrait for verified presenter Slack IDs.
 Missing, removed or unavailable portraits show initials. The old rota-specific
 portrait collection and Storage path have no client access. The offline preview
 uses bundled local portraits as fixtures and makes no shared-photo request.
+
+## Problem Bank
+
+See [BENCHMARK_REGISTRY.md](BENCHMARK_REGISTRY.md) for the page, project requirement, authenticated registration API, Firestore collections, validation gates, and activation steps.

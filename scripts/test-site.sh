@@ -20,7 +20,7 @@ if [ ! -f functions/.secret.local ]; then
   printf 'SLACK_BOT_TOKEN=outbox\nSLACK_SIGNING_SECRET=outbox\nGOOGLE_OAUTH={}\nGITHUB_APP={}\nANTHROPIC_API_KEY=none\n' > functions/.secret.local
 fi
 (cd functions && npm install --silent)
-npx firebase emulators:start --only auth,firestore,functions --project demo-bold-os &
+npx --yes --package firebase-tools firebase emulators:start --only auth,firestore,functions --project demo-bold-os &
 EMU=$!
 trap 'kill $EMU 2>/dev/null' EXIT INT TERM
 until curl -s http://127.0.0.1:8080 >/dev/null 2>&1 && curl -s http://127.0.0.1:9099 >/dev/null 2>&1; do sleep 1; done

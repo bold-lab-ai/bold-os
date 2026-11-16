@@ -49,8 +49,7 @@ export default {
     // below Projects' View and Edit asks to join one, 2026-11-02); Internal review has its own area.
     { label: 'Research', href: 'projects.html', area: 'projects', areaWhat: 'titles', links: [
       // To come: `soon: true` shows the name with a Soon tag, not a link (no page yet).
-      { label: 'Problems bank', soon: true },
-      { label: 'Benchmarks', soon: true },
+      { label: 'Problem Bank', href: 'problems.html', area: 'projects' },
       { label: 'Projects', href: 'projects.html', area: 'projects', areaWhat: 'titles' },
       { label: 'Internal review', href: 'audit-board.html', area: 'ml-cycle' },
     ] },

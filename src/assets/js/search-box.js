@@ -13,6 +13,8 @@ window.BoldSearch = (function(){
     { key: 'events', label: 'Events', pages: /^(events?|session|talk|calendar|event-.*)\.html$/ },
     { key: 'rota', label: 'Group meetings', pages: /^group-meetings\.html$/ },
     { key: 'projects', label: 'Projects', pages: /^(projects?|project-meetings|projects-register)\.html$/ },
+    { key: 'problems', label: 'Problem Bank', pages: /^problems\.html$/ },
+    { key: 'benchmarks', label: 'Evaluator releases', pages: /^problems\.html$/ },
     { key: 'people', label: 'People', pages: /^(people|join-requests)\.html$/ },
     { key: 'board', label: 'Internal Review', pages: /^(audit-board|how-to-submit-a-paper)\.html$/ },
     { key: 'conversations', label: 'Conversations', pages: /^conversations\.html$/ },

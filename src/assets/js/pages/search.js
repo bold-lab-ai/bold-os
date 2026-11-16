@@ -54,6 +54,13 @@
     return cards;
   }
   function cardHref(c){ return 'audit-board.html#board=' + encodeURIComponent(c.board) + '&card=' + encodeURIComponent(c.id); }
+  var bank = null;
+  function problemBank(kind){
+    bank = bank || firebase.app().functions('europe-west2').httpsCallable('benchmarkRegistry')({ action: 'search' }).then(function(r){ return r.data.items; });
+    return bank.then(function(rows){
+      return rows.filter(function(x){ return x.kind === kind; }).map(function(x){ return item(x.title, x.label, x.text, 'problem.html?problem=' + encodeURIComponent(x.problem_id)); });
+    });
+  }
   var LOAD = {
     boldiquette: function(){
       return parts('handbook', function(id){ return id === 'boldiquette' ? 'boldiquette.html' : 'index.html'; }, '', 'BOLDiquette');
@@ -101,6 +108,10 @@
         });
       });
     },
+    // The Problem Bank: through its callable, which keeps people's emails out and leaves
+    // archived problems (and their releases) out of search. One call serves both sections.
+    problems: function(){ return problemBank('problems'); },
+    benchmarks: function(){ return problemBank('benchmarks'); },
     people: function(){
       // Each member's own page, by their Slack id (people/{id}).
       return Promise.all([db.collection('members').get(), db.collection('people').get().catch(function(){ return { docs: [] }; })]).then(function(r){

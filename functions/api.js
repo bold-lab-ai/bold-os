@@ -223,7 +223,8 @@ module.exports = function(deps){
     const now = Date.now();
     return db.collection('apiLog').add({
       email: who.email, token: who.prefix, tool, args: JSON.stringify(args || {}).slice(0, 300), at: now,
-      expireAt: admin.firestore.Timestamp.fromMillis(now + LOG_DAYS * 86400000),
+      // A Date is stored as a Timestamp; the Functions emulator's firebase-admin has no admin.firestore.Timestamp.
+      expireAt: new Date(now + LOG_DAYS * 86400000),
     }).catch((err) => logger.warn('apiLog failed', { error: String(err.message) }));
   }
 
@@ -402,7 +403,7 @@ module.exports = function(deps){
   // The tools the lab adds, from the Tools pages (agentTools), run in mcpSandbox (functions/api-tools.js).
   const added = require('./api-tools')({ db, httpError, builtins: () => TOOLS, idTokenFor: (e) => actions.idTokenFor(e), fetchImpl: deps.fetchImpl, sandboxUrl: deps.sandboxUrl, SITE_URL });
   const actions = require('./api-actions')({ db, admin, logger, httpError, act, resolve, cardOf, lab, words, fold, matches, url, isFullWrite, seesEvent: access.seesIt, SITE_URL, fetchImpl: deps.fetchImpl, checkTool: (n, d) => added.check(n, d) });
-  const SCOPES = ['boldiquette', 'guides', 'skills', 'events', 'rota', 'projects', 'people', 'board', 'conversations', 'comments'];
+  const SCOPES = ['boldiquette', 'guides', 'skills', 'events', 'rota', 'projects', 'problems', 'benchmarks', 'people', 'board', 'conversations', 'comments'];
   const TOOLS = [
     {
       name: 'search',
@@ -482,7 +483,7 @@ module.exports = function(deps){
   // Who can see what (functions/access.js): each reading tool reads one page, and answers
   // only if its person may view that page. Acting goes through the rules and callables,
   // which check it themselves.
-  const TOOL_PAGE = { search: 'search', list_group_rota: 'events', list_projects: 'projects', get_project: 'projects', find_people: 'people', get_person: 'people',
+  const TOOL_PAGE = { list_benchmarks: 'projects', register_benchmark: 'projects', edit_problem: 'projects', search: 'search', list_group_rota: 'events', list_projects: 'projects', get_project: 'projects', find_people: 'people', get_person: 'people',
     calendar: 'calendar', my_items: 'profile', list_introduction_offers: 'service-desk', list_tools: 'tools', list_skills: 'skills', get_skill: 'skills' };
   const pageOfTool = (name, args) => { const p = String((args || {}).page || '').trim().toLowerCase();
     return name === 'read_page' ? (p === 'boldiquette' ? 'boldiquette' : require('./access').guideArea(p)) : TOOL_PAGE[name]; };
@@ -572,6 +573,14 @@ module.exports = function(deps){
     }));
     if (want('projects')) jobs.push(allProjects().then((g) => [].concat(g.proposed || [], g.ongoing, g.submission, g.planned, g.completed).forEach((p) =>
       item('projects', p.title, 'Project' + (p.owner ? ' · ' + p.owner : ''), [p.abstract, (p.keywords || []).join(' '), p.owner, (p.authors || []).map((x) => x.name).filter((n) => n !== p.owner).join(' ')].join(' '), projectHref(p.projectId || p.cardId, p.boardId)))));
+    // The Problem Bank: problems not archived, and their evaluator releases.
+    if ((want('problems') || want('benchmarks')) && await access.can(who.email, 'projects', 'view')) jobs.push(Promise.all([db.collection('problemBank').get(), db.collection('benchmarks').get()]).then(([problems, releases]) => {
+      const live = new Set(problems.docs.filter((d) => !d.data().archived).map((d) => d.id));
+      if (want('problems')) problems.docs.filter((d) => live.has(d.id)).forEach((d) => { const x = d.data();
+        item('problems', x.title, 'Problem Bank', [x.objective, x.task_kind, x.notes].filter(Boolean).join(' '), 'problem.html?problem=' + encodeURIComponent(d.id)); });
+      if (want('benchmarks')) releases.docs.filter((d) => live.has(d.data().problem_id)).forEach((d) => { const x = d.data();
+        item('benchmarks', x.title, 'Evaluator version ' + x.evaluator.version, [x.task_kind, x.evaluator.commit, (x.research || {}).expected_basis].filter(Boolean).join(' '), 'problem.html?problem=' + encodeURIComponent(x.problem_id)); });
+    }));
     if (want('people')) jobs.push(Promise.all([lab.members(), profileUrlOf()]).then(([ms, profile]) => ms.forEach((x) => {
       const p = profile(x.email || x._id);
       item('people', x.name || 'A member', [x.role, x.institution].filter(Boolean).join(' · ') || 'Member', [x.interests, x.basedIn, x.pronouns].join(' '), p ? p.slice(SITE_URL.length) : 'people.html');
