@@ -525,6 +525,23 @@
         .then(function(){ try { localStorage.setItem(key, day); } catch (e){} }, function(){});
     } catch (e){}
   });
+  // When they were last here (seenAt), for what their next letter covers (since their last visit: functions/
+  // home-letter.js sinceFor); at most every 5 minutes, and again when they come back to the tab.
+  (function(){
+    var email = null;
+    function stamp(){
+      if (!email || document.visibilityState === 'hidden') return;
+      var key = 'boldSeen:' + email, now = Date.now();
+      try { if (now - Number(localStorage.getItem(key) || 0) < 5 * 60000) return; localStorage.setItem(key, String(now)); } catch (e){}
+      try {
+        firebase.firestore(BOLD.getApp()).collection('visits').doc(email)
+          .set({ seenAt: firebase.firestore.FieldValue.serverTimestamp() }, { merge: true }).catch(function(){});
+      } catch (e){}
+    }
+    BOLD.onUser(function(u){ email = u && u.email ? u.email.toLowerCase() : null; stamp(); });
+    document.addEventListener('visibilitychange', stamp);
+    setInterval(stamp, 5 * 60000 + 1000);
+  })();
 
   // The last visit's { n: displayName, e: email }, or null — for painting before auth resolves.
   BOLD.authHint = function(){ return hint; };

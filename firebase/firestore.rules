@@ -240,7 +240,12 @@ service cloud.firestore {
       allow read: if isSignedIn();
       // refresh: how often BOLD LLM writes them (functions/home-letter.js REFRESH).
       // ladder: who writes them, in order (functions/home-letter.js ladderOf); writer and model kept with it for older pages.
-      allow write: if hasFullWrite() && request.resource.data.keys().hasOnly(['writer', 'refresh', 'model', 'ladder', 'updatedAt', 'updatedBy'])
+      // sofyaMode, sofyaThinking, sofyaEffort: how Sofya is asked for a letter and whether it thinks first (functions/
+      // bold-llm.js), set by hand for now; kept through Settings' saves (merge).
+      allow write: if hasFullWrite() && request.resource.data.keys().hasOnly(['writer', 'refresh', 'model', 'ladder', 'updatedAt', 'updatedBy', 'sofyaMode', 'sofyaThinking', 'sofyaEffort'])
+        && (!('sofyaMode' in request.resource.data) || request.resource.data.sofyaMode in ['schema', 'json', 'steps'])
+        && (!('sofyaThinking' in request.resource.data) || request.resource.data.sofyaThinking is bool)
+        && (!('sofyaEffort' in request.resource.data) || request.resource.data.sofyaEffort in ['low', 'medium', 'high'])
         && (!('ladder' in request.resource.data) || (request.resource.data.ladder is list && request.resource.data.ladder.size() <= 3
           && request.resource.data.ladder.hasOnly(['sofya', 'claude', 'rules'])))
         && (!('writer' in request.resource.data) || request.resource.data.writer in ['rules', 'claude'])
@@ -945,13 +950,22 @@ service cloud.firestore {
       allow read: if isSignedIn() && email().lower() == owner;
       allow write: if false;
     }
-    // The days someone has been on BOLD.OS (bold.js; London dates), for the order of the morning's letters
-    // (functions/bold-llm.js writeHomeLetters, which keeps the last 28). Theirs to add to, read by no one but the server.
+    // When someone has been on BOLD.OS (bold.js): the days (London dates), for the order of the morning's letters
+    // (functions/bold-llm.js writeHomeLetters, which keeps the last 28), and seenAt, the latest moment, for what their
+    // letter covers (since their last visit; lastVisitEnd, the server's, onVisit). Theirs to add to, read by no one but
+    // the server; seenAt is always the time it's written.
+    function visitOk(d){
+      return (!('days' in d) || (d.days is list && d.days.size() <= 40))
+        && (!('seenAt' in d) || d.seenAt == request.time);
+    }
     match /visits/{owner} {
       allow read: if false;
-      allow create, update: if isSignedIn() && email().lower() == owner
-        && request.resource.data.keys().hasOnly(['days'])
-        && request.resource.data.days is list && request.resource.data.days.size() <= 40;
+      allow create: if isSignedIn() && email().lower() == owner
+        && request.resource.data.keys().hasOnly(['days', 'seenAt']) && visitOk(request.resource.data);
+      allow update: if isSignedIn() && email().lower() == owner
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['days', 'seenAt'])
+        && (!request.resource.data.diff(resource.data).affectedKeys().hasAny(['seenAt']) || request.resource.data.seenAt == request.time)
+        && (!('days' in request.resource.data) || (request.resource.data.days is list && request.resource.data.days.size() <= 40));
     }
     // A letter asked for, written in the background (functions/bold-llm.js onLetterJob): how it's going, for its person.
     match /letterJobs/{owner} {

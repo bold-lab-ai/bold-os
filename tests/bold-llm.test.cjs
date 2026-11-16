@@ -16,22 +16,22 @@ test('a letter needs both lengths, within their limits', () => {
   assert.match(HL.checkLetter(null).error, /short/);
 });
 
-test('a letter is current once written since the letters were last due (05:00 London), not just in the last day', () => {
-  // 2026-11-12, 10:00 London (GMT): yesterday afternoon's isn't this morning's; one from 05:00 on is.
+test('a letter is current once written since the letters were last due (04:00 London), not just in the last day', () => {
+  // 2026-11-12, 10:00 London (GMT): yesterday afternoon's isn't this morning's; one from 04:00 on is.
   const now = Date.parse('2026-11-12T10:00:00Z');
-  assert.strictEqual(new Date(HL.lastDue('daily', now)).toISOString(), '2026-11-12T05:00:00.000Z');
+  assert.strictEqual(new Date(HL.lastDue('daily', now)).toISOString(), '2026-11-12T04:00:00.000Z');
   assert.ok(!HL.isFresh({ at: Date.parse('2026-11-11T15:00:00Z') }, 'daily', now));
-  assert.ok(HL.isFresh({ at: Date.parse('2026-11-12T05:03:00Z') }, 'daily', now));
+  assert.ok(HL.isFresh({ at: Date.parse('2026-11-12T04:03:00Z') }, 'daily', now));
   assert.ok(!HL.isFresh(null, 'daily', now));
-  // Before 05:00: yesterday's 05:00 one is still current.
-  const early = Date.parse('2026-11-12T04:30:00Z');
-  assert.strictEqual(new Date(HL.lastDue('daily', early)).toISOString(), '2026-11-11T05:00:00.000Z');
-  // Twice a day: after 13:00, the 13:00 one; through the working day before 05:00, yesterday's 18:00.
+  // Before 04:00: yesterday's 04:00 one is still current.
+  const early = Date.parse('2026-11-12T03:30:00Z');
+  assert.strictEqual(new Date(HL.lastDue('daily', early)).toISOString(), '2026-11-11T04:00:00.000Z');
+  // Twice a day: after 13:00, the 13:00 one; through the working day before 04:00, yesterday's 18:00.
   assert.strictEqual(new Date(HL.lastDue('twice', Date.parse('2026-11-12T14:10:20Z'))).toISOString(), '2026-11-12T13:00:00.000Z');
   assert.strictEqual(new Date(HL.lastDue('working', early)).toISOString(), '2026-11-11T18:00:00.000Z');
-  // Summer time (BST): 05:00 London is 04:00 UTC.
-  assert.strictEqual(new Date(HL.lastDue('daily', Date.parse('2026-07-01T09:00:00Z'))).toISOString(), '2026-07-01T04:00:00.000Z');
-  assert.ok(HL.writesAt('daily', 5) && !HL.writesAt('daily', 6));
+  // Summer time (BST): 04:00 London is 03:00 UTC.
+  assert.strictEqual(new Date(HL.lastDue('daily', Date.parse('2026-07-01T09:00:00Z'))).toISOString(), '2026-07-01T03:00:00.000Z');
+  assert.ok(HL.writesAt('daily', 4) && !HL.writesAt('daily', 5));
 });
 
 test('the inputs: their week is the meetings they’re in, not paused; dates as ISO; London time', () => {
@@ -70,17 +70,58 @@ test('a tool’s result is JSON, cut when long', () => {
 });
 
 test('how often: the hours BOLD LLM writes at, once a day by default', () => {
-  assert.ok(HL.writesAt('daily', 5) && !HL.writesAt('daily', 13));
+  assert.ok(HL.writesAt('daily', 4) && !HL.writesAt('daily', 13));
   assert.ok(HL.writesAt('twice', 13) && !HL.writesAt('twice', 9));
-  assert.deepStrictEqual(HL.REFRESH.working.filter((h) => HL.writesAt('working', h)), [5, 9, 12, 15, 18]);
-  assert.ok(HL.writesAt(undefined, 5) && !HL.writesAt('nonsense', 7));
+  assert.deepStrictEqual(HL.REFRESH.working.filter((h) => HL.writesAt('working', h)), [4, 9, 12, 15, 18]);
+  assert.ok(HL.writesAt(undefined, 4) && !HL.writesAt('nonsense', 7));
 });
 
-test('a letter covers what changed since the previous one, at most a day', () => {
+test('a letter covers what changed since their last visit', () => {
+  const now = Date.parse('2026-11-09T13:00:00Z'), H = 3600000, M = 60000;
+  const ts = (t) => ({ toMillis: () => t });
+  // Left 5 hours ago: since then.
+  assert.strictEqual(HL.sinceFor(null, { seenAt: ts(now - 5 * H) }, now), now - 5 * H);
+  // On now (opening the page): since the end of the visit before.
+  assert.strictEqual(HL.sinceFor(null, { seenAt: ts(now - 2 * M), lastVisitEnd: ts(now - 3 * 24 * H) }, now), now - 3 * 24 * H);
+  // Only days (before times were kept): the start of the last day before today, London (GMT in November).
+  assert.strictEqual(HL.sinceFor(null, { days: ['2026-11-05', '2026-11-07', '2026-11-09'] }, now), Date.parse('2026-11-07T00:00:00Z'));
+  // In summer, London's midnight is 23:00 UTC the day before.
+  assert.strictEqual(HL.sinceFor(null, { days: ['2026-07-01'] }, Date.parse('2026-07-03T09:00:00Z')), Date.parse('2026-06-30T23:00:00Z'));
+  // Nothing known: the last 24 hours.
+  assert.strictEqual(HL.sinceFor(null, null, now), now - 24 * H);
+  // At most 14 days back.
+  assert.strictEqual(HL.sinceFor(null, { seenAt: ts(now - 40 * 24 * H) }, now), now - 14 * 24 * H);
+  // From the visit, not the previous letter: one they never opened doesn't hide what it said.
+  assert.strictEqual(HL.sinceFor({ at: now - 2 * H }, { seenAt: ts(now - 5 * H) }, now), now - 5 * H);
+});
+
+test('how long ago, in words', () => {
   const now = Date.parse('2026-11-09T13:00:00Z');
-  assert.strictEqual(HL.sinceFor({ at: now - 7 * 3600000 }, now), now - 7 * 3600000);
-  assert.strictEqual(HL.sinceFor({ at: now - 30 * 3600000 }, now), now - 24 * 3600000);
-  assert.strictEqual(HL.sinceFor(null, now), now - 24 * 3600000);
+  assert.strictEqual(HL.agoText(now - 40 * 60000, now), '40 minutes, since 12:20 today');
+  assert.strictEqual(HL.agoText(now - 5 * 3600000, now), '5 hours, since 08:00 today');
+  assert.strictEqual(HL.agoText(Date.parse('2026-11-08T18:40:00Z'), now), 'since yesterday 18:40');
+  assert.strictEqual(HL.agoText(Date.parse('2026-11-06T09:00:00Z'), now), '3 days, since Friday 2026-11-06 09:00');
+});
+
+test('the lab directory, trimmed to what bears on them: theirs and the closest matches first', () => {
+  const long = 'x'.repeat(1000);
+  const you = { interests: 'Reinforcement Learning, multi-agent coordination', projects: ['Mine'] };
+  const ps = [{ title: 'Unrelated', stage: 'ongoing', keywords: ['vision'], abstract: 'images', url: 'u0' },
+    { title: 'Mine', stage: 'ongoing', abstract: long, members: ['Ada'], you_are_in_it: true, url: 'u1' },
+    { title: 'Coordination games', stage: 'proposed', keywords: ['multi-agent'], abstract: 'reinforcement learning', open_cards: { count: 5, titles: ['a', 'b', 'c', 'd'] }, url: 'u2' }];
+  const people = [{ name: 'Zed', interests: 'Vision', profile: 'z' }, { name: 'Bo', role: 'PhD', interests: 'multi-agent reinforcement ' + long, profile: 'p' },
+    { name: 'Cy', interests: '', projects: ['Mine'], profile: 'q' }];
+  const d = HL.directoryOf(ps, people, 100000, you);
+  assert.deepStrictEqual(d.projects.map((p) => p.title), ['Mine', 'Coordination games']);
+  assert.deepStrictEqual(d.people.map((p) => p.name), ['Cy', 'Bo']);
+  assert.ok(d.projects[0].abstract.length <= 300 && d.projects[0].abstract.endsWith('…'));
+  assert.deepStrictEqual(d.projects[1].open_cards, { count: 5, titles: ['a', 'b', 'c'] });
+  assert.ok(d.people[1].interests.length <= 200);
+  // Small: the least related go.
+  const small = HL.directoryOf(ps, people, 900, you);
+  assert.ok(small.projects.some((p) => p.title === 'Mine') && !small.projects.some((p) => p.title === 'Unrelated'));
+  assert.ok(!small.people.some((p) => p.name === 'Zed'));
+  assert.ok(JSON.stringify(small.projects).length + JSON.stringify(small.people).length <= 900);
 });
 
 test('who writes the letters: a ladder, tried in turn; nothing below rule-based', () => {
@@ -108,4 +149,35 @@ test('the morning’s line: the past week only, whoever comes most often first, 
   ], now).map((p) => p.email);
   assert.deepStrictEqual(line, ['daily@x', 'twice@x', 'twice-earlier@x', 'auth-only@x']);
   assert.strictEqual(HL.londonDate(Date.parse('2026-07-01T23:30:00Z')), '2026-07-02');   // London, in summer time
+});
+
+test('the facts worked out for the letter: days waited, GPU hours, deadlines, today and the next meeting', () => {
+  const now = Date.parse('2026-11-12T17:45:00Z');   // Thursday, 17:45 London
+  const f = HL.factsOf({
+    waiting_on_you: [
+      { kind: 'project-proposal', title: 'Proposed project: Trading Agent (20,000 GPU hours)', from: 'Valentin', since: '2026-11-06T10:00:00Z', url: 'v' },
+      { kind: 'project-proposal', title: 'Proposed project: Benchmark (350 GPU hours)', from: 'Tobias', since: '2026-11-10T09:00:00Z', url: 't' },
+      { kind: 'letter', title: 'Recommendation letter', from: 'Anubha', since: '2026-10-30T09:00:00Z', url: 'a' },
+    ],
+    your_letters: [{ with: 'Anubha', url: 'l', recipients: [{ name: 'Oxford', deadline: '2026-12-02', submitted: false }, { name: 'Cambridge', deadline: '2026-12-08', submitted: false }, { name: 'Done', deadline: '2026-11-20', submitted: true }] }],
+    your_week: [
+      { kind: 'project', title: 'Latent Option Models', when: 'Thursdays, 11:00–12:00 London time' },
+      { kind: 'supervision', title: 'Credit Assignment', when: 'Thursdays, 17:30–18:30 London time' },
+      { kind: 'project', title: 'AMAZE', when: 'Fridays, 10:00–11:00 London time' },
+    ],
+    os_changes: { content: [] },
+  }, now);
+  assert.deepStrictEqual(f.waiting_longest_first.map((w) => [w.from, w.days_waiting, w.gpu_hours]), [['Anubha', 13, undefined], ['Valentin', 6, 20000], ['Tobias', 2, 350]]);
+  const p = f.waiting_by_kind.find((k) => k.kind === 'project-proposal');
+  assert.deepStrictEqual([p.count, p.gpu_hours, p.longest_days, p.largest.from], [2, 20350, 6, 'Valentin']);
+  assert.deepStrictEqual(f.deadlines_within_3_weeks.map((d) => [d.deadline, d.days_left]), [['2026-12-02', 20]]);   // 8 December is 26 days: not within three
+  assert.deepStrictEqual(f.today.meetings.map((m) => [m.title, m.state]), [['Latent Option Models', 'done'], ['Credit Assignment', 'on now']]);
+  assert.strictEqual(f.today.free_for_rest_of_today, false);
+  assert.deepStrictEqual(f.next_meeting, { title: 'AMAZE', weekday: 'Friday', start: '10:00', url: undefined });
+  assert.strictEqual(f.os_changes_count, 0);
+  assert.strictEqual(HL.meetingOf('Mondays, 14:00–15:00 London time, every 2 weeks').fortnightly, true);
+  // As functions/api.js gives them: { you_asked, you_write }.
+  const g = HL.factsOf({ your_letters: { you_asked: [], you_write: [{ with: 'Anubha', recipients: [{ name: 'Oxford', deadline: '2026-12-02', submitted: false }] }] } }, now);
+  assert.strictEqual(g.deadlines_within_3_weeks.length, 1);
+  assert.deepStrictEqual(HL.factsOf({ your_letters: {}, your_week: null, waiting_on_you: null }, now).deadlines_within_3_weeks, []);
 });

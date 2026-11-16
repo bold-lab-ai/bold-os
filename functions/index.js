@@ -9458,6 +9458,7 @@ const boldLlm = require('./bold-llm')({ db, admin, logger, onCall, onSchedule, o
 exports.writeHomeLetters = boldLlm.writeHomeLetters;
 exports.homeLetter = boldLlm.homeLetter;
 exports.onLetterJob = boldLlm.onLetterJob;
+exports.onVisit = boldLlm.onVisit;
 
 exports._internal = { replaceEmail, accountEmailsBySlackId, calendarUpdates, isCalendarLimit, meetingStartsSoon,
   slackImagesOf, slackToPlain, pingText, bugReportOf, bugNotes, bugTitle,
