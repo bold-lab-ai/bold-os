@@ -1931,7 +1931,7 @@ function newTags(before, after){
 // Where a tag is: { title, url } for a document's path, or null where tags tell
 // nobody here: bookkeeping and private collections, and guides and the
 // BOLDiquette (their comments and proposed changes tell, above). Pure.
-const TAG_SILENT = ['problemBank', 'benchmarks', 'benchmarkReceipts', 'roles', 'people', 'meta', 'settings', 'readPoints', 'changelog', 'commentQueue', 'venueCalls', 'githubLinks', 'googleLinks',
+const TAG_SILENT = ['calendarMeetings', 'calendarMeetingEntries', 'calendarMeetingKeys', 'problemBank', 'benchmarks', 'benchmarkReceipts', 'roles', 'people', 'meta', 'settings', 'readPoints', 'changelog', 'commentQueue', 'venueCalls', 'githubLinks', 'googleLinks',
   'letterRequests', 'introRequests', 'joinRequests', 'members', 'hackathonJoins', 'projectWorkspaces', 'guides', 'handbook', 'interactions', 'privateInteractions',
   // Conversations (Experimental, 2026-11-04): no Slack messages from it while it's an experiment.
   'conversations', 'conversationImports', 'cardImageImports', 'notifications'];
@@ -9323,7 +9323,7 @@ async function tellStaff(text, except, key){
 
 // Validated problems and benchmark releases; the same callable serves the pages and acting API.
 // projectChoices: the Problem Bank's project picker, one row per project as Projects lists them.
-exports.benchmarkRegistry = require('./benchmark-registry')({ db, onCall, callerEmail, isFullWrite, access, HttpsError, projectChoices: async function(){
+async function existingProjectChoices(){
   const [boardsSnap, cardsSnap, unassignedSnap] = await Promise.all([db.collection('boards').get(), db.collectionGroup('cards').get(), db.collection('projects').get()]);
   const groups = allProjectsFromCards(
     boardsSnap.docs.map(function(d){ return { id: d.id, label: d.data().label, status: d.data().status || 'approved' }; }),
@@ -9332,7 +9332,27 @@ exports.benchmarkRegistry = require('./benchmark-registry')({ db, onCall, caller
   return [].concat(groups.proposed, groups.ongoing, groups.submission, groups.planned, groups.completed)
     .map(function(i){ return { id: i.cardId || i.projectId, board: i.boardId || '', title: i.title, venue: i.boardLabel || '' }; })
     .sort(function(a, b){ return a.title.localeCompare(b.title); });
-} }).benchmarkRegistry;
+}
+exports.benchmarkRegistry = require('./benchmark-registry')({ db, onCall, callerEmail, isFullWrite, access, HttpsError, projectChoices: existingProjectChoices }).benchmarkRegistry;
+
+// Direct calendar meetings. Existing listings never enter the Google adapter.
+const calendarMeetingService = require('./calendar-meetings').createService({ db, access, HttpsError,
+  slack: (method, args) => slackFetch(SLACK_BOT_TOKEN.value(), method, args),
+  projectChoices: async (email) => {
+    const view = await access.can(email, 'projects', 'view'), edit = await access.can(email, 'projects', 'edit');
+    if (!view && !edit) return [];
+    return existingProjectChoices();
+  },
+  googleSync: require('./calendar-meetings-google').createGoogleMeetings({ googleFetch, CAL,
+    addressesForIds: async (ids) => {
+      const people = await db.getAll(...ids.map((id) => db.collection('people').doc(id)));
+      const emails = people.filter((p) => p.exists && p.data().email).map((p) => p.data().email.toLowerCase());
+      return googleAddressesFor(Array.from(new Set(emails)));
+    }
+  })
+});
+exports.calendarMeeting = onCall({ secrets: [SLACK_BOT_TOKEN, GOOGLE_OAUTH], timeoutSeconds: 120 },
+  (request) => calendarMeetingService.run(callerEmail(request), request.data || {}));
 
 // BOLD.OS for agents: personal tokens (apiTokens) and the read-only API and MCP
 // endpoint (boldApi), in functions/api.js.
@@ -9342,7 +9362,7 @@ const agentApi = require('./api')({ access, db, admin, onRequest, onCall, HttpsE
   tellStaff,
   tellPerson: (email, text, key) => sendEvent(SLACK_BOT_TOKEN.value(), { key, emails: [email], headline: text }),
   slackText, linkedTitle, joinPageUrl, skillMd, onSchedule,
-  callables: () => ({ benchmarkRegistry: exports.benchmarkRegistry, projectWorkspace: exports.projectWorkspace, projectWork: exports.projectWork, projectChannel: exports.projectChannel, introRequest: exports.introRequest, studyRequest: exports.studyRequest,
+  callables: () => ({ calendarMeeting: exports.calendarMeeting, benchmarkRegistry: exports.benchmarkRegistry, projectWorkspace: exports.projectWorkspace, projectWork: exports.projectWork, projectChannel: exports.projectChannel, introRequest: exports.introRequest, studyRequest: exports.studyRequest,
     letterRequest: exports.letterRequest, decideProposal: exports.decideProposal, branchCommit: exports.branchCommit, branchMeta: exports.branchMeta, decideBranch: exports.decideBranch, groupRequest: exports.groupRequest, setMyInviter: exports.setMyInviter,
     confirmJoinInvite: exports.confirmJoinInvite, decideJoinRequest: exports.decideJoinRequest, joinChanges: exports.joinChanges, myRequests: exports.myRequests, eventSeries: exports.eventSeries, profilePhoto: exports.profilePhoto, commentConversation: exports.commentConversation }) });
 exports.apiTokens = agentApi.apiTokens;

@@ -8,6 +8,7 @@
 <link rel="stylesheet" href="../assets/css/bold.css">
 <link rel="stylesheet" href="../assets/css/board.css">
 <link rel="stylesheet" href="../assets/css/pages/projects.css">
+<link rel="stylesheet" href="../assets/css/calendar-meetings.css">
 <link rel="stylesheet" href="gallery.css">
 <script src="gallery.js"></script>
 </head>
@@ -216,7 +217,16 @@
     </section>
 
     <footer>BOLD Lab · this footer is the site's own.</footer>
-  </main>
+  <section class="cs-dialog" style="position:relative;margin:24px 0;max-height:none">
+    <div class="cs-heading"><h2>Add meeting</h2><span class="cs-help"><button type="button" class="cs-info" aria-label="About visibility and editing" title="Only verified channel members can see the meeting link."><span aria-hidden="true">i</span></button></span></div>
+    <div class="cs-grid"><label>Category<select><option>Project meeting</option><option>Supervision</option><option>Other meeting</option></select></label><label>Meeting link<select><option>Create a new Google Meet</option><option>Use an existing link</option></select></label></div>
+    <div class="cs-field"><div class="cs-label-row"><label for="gallery-cs-project">BOLD.OS project</label><span class="cs-help"><button type="button" class="cs-info" aria-label="About the project" aria-describedby="gallery-cs-tip" aria-expanded="true"><span aria-hidden="true">i</span></button></span></div><select id="gallery-cs-project"><option>Choose a project</option></select></div>
+    <p class="cs-tooltip" role="tooltip" id="gallery-cs-tip" style="position:static;max-width:300px">Link this meeting to an existing project.</p>
+    <label>Associated Slack channel<input placeholder="Paste a channel link or ID"></label><p class="cs-channel-status">✓ #example-channel verified</p>
+    <div class="cs-section-heading"><h3>Participants <span class="cs-count">1</span></h3></div><button type="button" class="view-btn">Import from channel</button><ul class="cs-selected"><li><span>Example participant<small>Manually added</small></span><button class="btn-text" type="button">Remove</button></li></ul>
+    <label class="cs-check"><input type="checkbox">Send Google Calendar invitations</label>
+  </section>
+</main>
 </div>
 </body>
 </html>
