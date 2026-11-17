@@ -2,7 +2,9 @@
 area: "service-desk"
 title: "Service desk | BOLD Lab"
 description: "Tools for things you need from the lab."
-css: "events"
+css: "projects"
+sdk: ["firestore", "functions"]
+scripts: ["pages/service-desk.js"]
 permalink: "service-desk.html"
 ---
 <div class="hero">
@@ -10,24 +12,27 @@ permalink: "service-desk.html"
   <p class="hero-note">Things you need from the lab, asked for and tracked here.</p>
 </div>
 
-<main>
-  <section class="block">
-    <ul class="event-list">
-      <li><a class="event-card" href="get-started.html">
-        <h3>Get started at BOLD</h3>
-        <p>Getting set up at BOLD, and settling in Oxford and London.</p>
-        <span class="event-cta">Open</span>
-      </a></li>
-      <li><a class="event-card" href="letters.html">
-        <h3>Recommendation letters</h3>
-        <p>Ask anyone in BOLD to be your referee. They get a Slack message, and you see when each letter is in.</p>
-        <span class="event-cta">Open</span>
-      </a></li>
-      <li><a class="event-card" href="introductions.html">
-        <h3>Introductions</h3>
-        <p>Offer to introduce people to someone at a company or institution you know, and ask for an introduction on what others offer.</p>
-        <span class="event-cta">Open</span>
-      </a></li>
-    </ul>
-  </section>
+<main id="desk">
+
+  <div class="actions">
+    <div class="view-toggle" role="group" aria-label="View">
+      <button type="button" class="view-btn" data-view="list" aria-pressed="true">List</button>
+      <button type="button" class="view-btn" data-view="grid" aria-pressed="false">Grid</button>
+    </div>
+    <div class="sd-actions">
+      <button type="button" class="btn sd-toggle" disabled title="Only PIs and admins change the Service desk.">Edit cards</button>
+      <button type="button" class="btn btn-primary sd-new" disabled title="Only PIs and admins change the Service desk.">+ Add a card</button>
+    </div>
+  </div>
+
+  <div class="filters" role="search">
+    <input type="search" id="deskSearch" placeholder="Search the Service desk" aria-label="Search the Service desk" autocomplete="off">
+  </div>
+
+  <p class="proj-msg" id="deskMsg">Loading&hellip;</p>
+  <div class="proj-views" id="deskViews" data-view="list">
+    <ul class="proj-list" id="deskList"></ul>
+  </div>
+  <div id="deskForm"></div>
+
 </main>

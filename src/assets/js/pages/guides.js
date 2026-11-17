@@ -14,21 +14,33 @@
 
   var guides = [], pending = {}, talk = {}, fullWrite = false;
 
-  function cardHtml(x){
+  var search = document.getElementById('guideSearch'), q = '';
+  // A row as on Projects (bold.css .proj-list, projects.css): the title, what awaits review, and the
+  // description.
+  function rowHtml(x){
     var n = pending[x.slug] || 0, c = talk[x.slug] || 0;
     var counts = [n ? n + ' proposed change' + (n === 1 ? '' : 's') : '', c ? c + ' comment' + (c === 1 ? '' : 's') : ''].filter(Boolean).join(' · ');
-    return '<a class="event-card" href="guide.html?guide=' + encodeURIComponent(x.slug) + '">' +
-      '<h3>' + esc(x.title || x.slug) + '</h3>' +
-      (counts ? '<p class="event-when">' + counts + '</p>' : '') +
-      '<p>' + esc(x.description || '') + '</p>' +
-      '<span class="event-cta">Read the guide &rarr;</span></a>';
+    var href = 'guide.html?guide=' + encodeURIComponent(x.slug);
+    return '<li><div class="proj-main">' +
+      '<a class="proj-title" href="' + href + '">' + esc(x.title || x.slug) + '</a>' +
+      (counts ? '<span class="proj-meta">' + counts + '</span>' : '') +
+      (x.description ? '<p class="proj-abstract">' + esc(x.description) + '</p>' : '') +
+      '</div></li>';
+  }
+  function matches(x){
+    if (!q) return true;
+    return (String(x.title || x.slug) + ' ' + String(x.description || '')).toLowerCase().indexOf(q) !== -1;
   }
 
   function render(){
-    list.innerHTML = guides.map(function(x){ return '<li>' + cardHtml(x) + '</li>'; }).join('');
+    var shown = guides.filter(matches);
+    list.innerHTML = shown.length ? shown.map(rowHtml).join('')
+      : (guides.length ? '<li class="proj-none"><p class="proj-empty">No guides match.</p></li>' : '');
     addBtn.disabled = !fullWrite;
     addBtn.title = fullWrite ? '' : G.NOT_PI;
   }
+  if (search) search.addEventListener('input', function(){ q = search.value.trim().toLowerCase(); render(); });
+  BOLD.mountViewToggle(document.querySelector('.view-toggle'), document.getElementById('guideViews'), 'boldGuides:view');
 
   addBtn.addEventListener('click', function(){ if (fullWrite) location.href = 'guide.html?new'; });
 

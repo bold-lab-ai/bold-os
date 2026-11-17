@@ -2,7 +2,7 @@
 area: "guides"
 title: "How to | BOLD Lab"
 description: "How we do things at BOLD."
-css: "events"
+css: "projects"
 sdk: ["firestore", "functions"]
 scripts: ["guides-common.js", "pages/guides.js"]
 permalink: "guides.html"
@@ -14,10 +14,21 @@ permalink: "guides.html"
 
 <main>
 
-  <section class="block">
-    <ul class="event-list" id="guideList"></ul>
-    <p class="event-loading" id="guideLoading">Loading…</p>
-    <button type="button" class="event-add" id="guideAdd" disabled title="Only PIs and admins can do this">+ Add a guide</button>
-  </section>
+  <div class="actions">
+    <div class="view-toggle" role="group" aria-label="View">
+      <button type="button" class="view-btn" data-view="list" aria-pressed="true">List</button>
+      <button type="button" class="view-btn" data-view="grid" aria-pressed="false">Grid</button>
+    </div>
+    <button type="button" class="btn btn-primary" id="guideAdd" disabled title="Only PIs and admins can do this">+ Add a guide</button>
+  </div>
+
+  <div class="filters" role="search">
+    <input type="search" id="guideSearch" placeholder="Search guides" aria-label="Search guides" autocomplete="off">
+  </div>
+
+  <p class="proj-msg" id="guideLoading">Loading&hellip;</p>
+  <div class="proj-views" id="guideViews" data-view="list">
+    <ul class="proj-list" id="guideList"></ul>
+  </div>
 
 </main>

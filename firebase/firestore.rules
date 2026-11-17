@@ -232,6 +232,29 @@ service cloud.firestore {
       allow read: if may('service-desk', 'view') && (resource.data.requesterEmail == email().lower() || resource.data.offererEmail == email().lower());
       allow write: if false;
     }
+    // The Service desk's cards (service-desk.html, each with its own page, service-desk-card.html;
+    // `about`: Markdown shown there): read by whoever sees the Service desk,
+    // added, edited, reordered and removed by PIs and admins. A card opens a page of the
+    // site or a link, or downloads its file; `file` is the server's alone (serviceDeskFile,
+    // functions/service-desk.js), so a client never sets or changes it.
+    match /serviceDesk/{id} {
+      function deskCard(d) {
+        return d.title is string && d.title.size() > 0 && d.title.size() <= 80
+          && d.text is string && d.text.size() <= 300
+          && d.href is string && d.href.size() <= 500
+          && (d.href == '' || d.href.matches('^[a-z0-9-]+[.]html([#?].*)?$') || d.href.matches('^https://.+'))
+          && d.order is number && d.updatedBy == email().lower() && d.updatedAt is number
+          && d.get('about', '') is string && d.get('about', '').size() <= 20000;
+      }
+      allow read: if may('service-desk', 'view');
+      allow create: if may('service-desk', 'view') && hasFullWrite()
+        && request.resource.data.keys().hasOnly(['title', 'text', 'href', 'about', 'order', 'updatedBy', 'updatedAt'])
+        && deskCard(request.resource.data);
+      allow update: if may('service-desk', 'view') && hasFullWrite()
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['title', 'text', 'href', 'about', 'order', 'updatedBy', 'updatedAt'])
+        && deskCard(request.resource.data);
+      allow delete: if may('service-desk', 'view') && hasFullWrite();
+    }
     // The join form's choices (join.html, read before signing in) and, for PIs and
     // admins only, the Slack invite link and the welcome email's text.
     // Who writes the lab's home letters (Settings › BOLD Agent, settings.html): BOLD LLM or the rule-based letter for

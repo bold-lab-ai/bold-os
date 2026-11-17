@@ -44,6 +44,7 @@ const logger = require('firebase-functions/logger');
 const admin = require('firebase-admin');
 const crypto = require('crypto');
 const { createPhotoService } = require('./profile-photos');
+const { createServiceDesk } = require('./service-desk');
 
 admin.initializeApp();
 const db = admin.firestore();
@@ -51,6 +52,8 @@ const photoService = createPhotoService({
   db, bucket: { file: path => admin.storage().bucket().file(path) }, fetcher: fetch,
   token: () => SLACK_BOT_TOKEN.value(), FieldValue: require('firebase-admin/firestore').FieldValue,
 });
+
+const serviceDesk = createServiceDesk({ db, bucket: { file: path => admin.storage().bucket().file(path) } });
 
 // ---------- View as (#172) and branches (#177): a PI or admin previews the site ----------
 // The browser (bold.js) adds `viewAs` (a group: the eye chip's View as) and `branch` (an
@@ -3362,6 +3365,31 @@ exports.profilePhoto = onCall(
       if (err && err.photoCode) throw new HttpsError(err.photoCode, err.message);
       logger.error('profilePhoto failed', { action: data.action, error: String(err && err.stack || err) });
       throw new HttpsError('internal', 'Could not update the photo. Try again.');
+    }
+  }
+);
+
+// Service desk files (functions/service-desk.js): a card's file, downloaded by anyone with
+// the Service desk's View through a short-lived link, and uploaded or removed by a PI or admin.
+exports.serviceDeskFile = onCall(
+  { timeoutSeconds: 60, memory: '512MiB' },
+  async request => {
+    const email = signedInEmail(request).toLowerCase();
+    const data = request.data || {};
+    try {
+      await access.requireAccess(email, 'service-desk', 'view');
+      // Awaited, so their errors reach the catch below.
+      if (data.action === 'link') return await serviceDesk.link(data.id);
+      if (data.action !== 'upload' && data.action !== 'remove') throw new HttpsError('invalid-argument', 'Unknown action.');
+      if (!(await isFullWrite(email))) throw new HttpsError('permission-denied', 'Only PIs and admins change the Service desk’s files.');
+      const by = { email, name: (request.auth.token && request.auth.token.name) || email };
+      if (data.action === 'upload') return await serviceDesk.upload(data.id, data.name, data.file, by);
+      return await serviceDesk.remove(data.id, by);
+    } catch (err) {
+      if (err instanceof HttpsError) throw err;
+      if (err && err.deskCode) throw new HttpsError(err.deskCode, err.message);
+      logger.error('serviceDeskFile failed', { action: data.action, error: String(err && err.stack || err) });
+      throw new HttpsError('internal', 'Couldn’t do that. Try again.');
     }
   }
 );

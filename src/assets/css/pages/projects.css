@@ -88,20 +88,20 @@ main .btn-text:hover{text-decoration-color:currentColor;}
 .proj-empty{margin:0; font-family:var(--sans); font-size:14px; color:var(--muted);}
 .proj-msg[hidden], #projects[hidden]{display:none;}
 /* ---------- grid ---------- */
-#projects[data-view="grid"] .proj-list{
+.proj-views[data-view="grid"] .proj-list{
   display:grid; grid-template-columns:repeat(auto-fill, minmax(260px, 1fr)); gap:16px;
 }
-#projects .proj-list[hidden]{display:none;}
-#projects[data-view="grid"] .proj-list li{
+.proj-views .proj-list[hidden]{display:none;}
+.proj-views[data-view="grid"] .proj-list li{
   padding:16px; border:1px solid var(--line); border-bottom:1px solid var(--line);
   flex-direction:column; align-items:flex-start; justify-content:flex-start;
 }
 /* Cards in a row stretch to equal height; the text takes the slack so the
    button lands bottom-left on every card, whatever its title or badges. */
-#projects[data-view="grid"] .proj-main{flex:1 1 auto; align-self:stretch;}
-#projects[data-view="grid"] .join-wrap{margin-top:14px; align-items:flex-start;}
-#projects[data-view="grid"] .join-msg{text-align:left;}
-#projects[data-view="grid"] .proj-list li.proj-none{grid-column:1 / -1; padding:0; border:none;}
+.proj-views[data-view="grid"] .proj-main{flex:1 1 auto; align-self:stretch;}
+.proj-views[data-view="grid"] .join-wrap{margin-top:14px; align-items:flex-start;}
+.proj-views[data-view="grid"] .join-msg{text-align:left;}
+.proj-views[data-view="grid"] .proj-list li.proj-none{grid-column:1 / -1; padding:0; border:none;}
 @media (max-width:820px){
   .hero{padding:44px var(--gutter) 8px;}
 }
@@ -230,3 +230,21 @@ html.is-dragging-meeting, html.is-dragging-meeting *{cursor:grabbing !important;
 .ex-links{display:flex; flex-wrap:wrap; align-items:center; gap:14px; font-size:13px;}
 .ex-frame{display:block; width:100%; height:calc(100vh - 220px); min-height:480px; border:1px solid var(--line); border-radius:var(--radius); background:#fff;}
 .ex-off{margin-top:24px;}
+
+/* ---------- How to and the Service desk (pages/guides.js, pages/service-desk.js): the same rows ---------- */
+.sd-actions{display:flex; gap:10px;}
+/* No tabs between the search and the list here: the tabs' gap instead. */
+#guideViews, #deskViews{margin-top:16px;}
+.sd-controls{display:flex; flex-wrap:wrap; gap:6px 16px; margin-top:8px;}
+.proj-list li.sd-editing{display:block;}
+.proj-list .sd-form, #deskForm .sd-form{margin:8px 0;}
+#deskForm:empty{display:none;}
+.proj-list a.is-busy{opacity:.5; cursor:progress;}
+/* A card's own page (pages/service-desk-card.js): Download or Open and its details, Edit on the right, then its About. */
+.sdc-file{display:flex; align-items:center; flex-wrap:wrap; gap:8px 14px;}
+.sdc-file .proj-meta{display:inline; margin:0;}
+a.btn.is-off{color:var(--muted); opacity:.5; cursor:default;}
+a.btn.is-off:hover{border-color:var(--line); color:var(--muted);}
+.sdc-error{margin-top:10px;}
+.sdc-about{margin-top:32px; font-family:var(--serif); font-size:17px; line-height:1.6; max-width:var(--article-max);}
+.sdc-about img{max-width:100%; height:auto; border:1px solid var(--line);}

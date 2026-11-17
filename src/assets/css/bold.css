@@ -1030,6 +1030,9 @@ textarea.md-field[hidden], .mdf-preview[hidden]{display:none;}
 .proj-meta{display:block; margin-top:2px; font-family:var(--sans); font-size:13px; color:var(--muted);}
 .proj-meta a{color:inherit;}
 .proj-msg{font-family:var(--sans); font-size:14px; color:var(--muted); margin:14px 0 0;}
+/* "← Back" above a page's title, to the list it belongs to (event, letters, Service desk card pages). */
+.back-link{font-family:var(--sans); font-size:13px; color:var(--muted); text-decoration:none; display:inline-block; margin-bottom:18px;}
+.back-link:hover{color:var(--link);}
 
 /* ---------- Easter eggs (eggs.js; none of them writes or tells anyone) ---------- */
 /* Ten clicks on the sun/moon: paper under a lamp. Light roles, warmed; not kept. */

@@ -37,6 +37,12 @@ const DEMO_JOIN_KEY = 'dec0de0c0ffee';
   const set = (p, d) => b.set(db.doc(p), d);
   set('roles/pis', { emails: ['pi@example.com'] });
   set('roles/admins', { emails: [] });
+  // The Service desk's cards (service-desk.html), as on BOLD.OS; the template's file is uploaded on the page.
+  [['get-started', 'Get started at BOLD', 'Getting set up at BOLD, and settling in Oxford and London.', 'get-started.html'],
+   ['letters', 'Recommendation letters', 'Ask anyone in BOLD to be your referee. They get a Slack message, and you see when each letter is in.', 'letters.html'],
+   ['introductions', 'Introductions', 'Offer to introduce people to someone at a company or institution you know, and ask for an introduction on what others offer.', 'introductions.html'],
+   ['preprint-template', 'Preprint template', 'The lab’s LaTeX template for preprints.', '']]
+    .forEach(([id, title, text, href], i) => set('serviceDesk/' + id, { title, text, href, order: i + 1, updatedBy: 'pi@example.com', updatedAt: Date.now() }));
   // As on BOLD.OS since 2026-11-06 (the BOLDiquette's Who can do what): everyone signed in sees everything.
   set('settings/access', { pages: {
     boldiquette: LEVEL('everyone', 'internal'), profile: LEVEL('everyone', 'everyone'), 'get-started': LEVEL('everyone', 'associate'),

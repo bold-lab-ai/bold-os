@@ -1112,6 +1112,22 @@
     document.head.appendChild(el);
   }
   BOLD.isFullWrite = function(){ return !!(access && access.fullWrite); };
+  // A list's List | Grid switch (projects.css .view-toggle, .proj-views): `views` gets data-view,
+  // each .view-btn in `toggle` its aria-pressed, and the choice is remembered in this browser (`key`).
+  // Projects, How to and the Service desk share it.
+  BOLD.mountViewToggle = function(toggle, views, key){
+    if (!toggle || !views) return;
+    var btns = toggle.querySelectorAll('.view-btn');
+    function set(view){
+      if (view !== 'grid') view = 'list';
+      views.setAttribute('data-view', view);
+      Array.prototype.forEach.call(btns, function(b){ b.setAttribute('aria-pressed', String(b.getAttribute('data-view') === view)); });
+      try { localStorage.setItem(key, view); } catch (e){}
+    }
+    Array.prototype.forEach.call(btns, function(b){ b.addEventListener('click', function(){ set(b.getAttribute('data-view')); }); });
+    var saved = null; try { saved = localStorage.getItem(key); } catch (e){}
+    set(saved);
+  };
 
   // ---------- who can see this page: a chip at its top right, and its panel ----------
   // The chip says who can see the page; it opens the page's row of the BOLDiquette's Who
@@ -1587,6 +1603,24 @@
     });
   }
 
+  // The Service desk's cards (serviceDesk; pages/service-desk.js), in their order: a card's page or
+  // link, or its own page (service-desk-card.html?card=<id>) when it holds a file or nothing yet. A card whose page
+  // is already a fixed link of the group (Get started, which has an area of its own) isn't repeated.
+  function deskNav(){
+    var group = document.querySelector('[data-nav-desk]');
+    var fixed = {};
+    if (group) Array.prototype.forEach.call(group.querySelectorAll('.nav-sub:not([data-loaded])'), function(a){ fixed[a.getAttribute('href')] = true; });
+    firestoreNav('desk', 'boldNavDesk', 'service-desk', function(db){
+      return db.collection('serviceDesk').get().then(function(snap){
+        return snap.docs.map(function(d){ return Object.assign({ id: d.id }, d.data()); })
+          .filter(function(c){ return c.title; })
+          .sort(function(a, b){ return (a.order || 0) - (b.order || 0); })
+          .map(function(c){ return { title: c.title, href: (!(c.file && c.file.path) && c.href) || 'service-desk-card.html?card=' + encodeURIComponent(c.id) }; })
+          .filter(function(c){ return !fixed[c.href]; });
+      });
+    });
+  }
+
   // The skills (skills/{name} — see skills-common.js), by title.
   function skillsNav(){
     firestoreNav('skills', 'boldNavSkills', 'skills', function(db){
@@ -1643,7 +1677,7 @@
 
     var shell = document.getElementById('shell');
     if (!shell) return;
-    if (BOLD.getAuth()) { sidebarAccess(); handbookNav(); eventsNav(); skillsNav(); guidesNav(); experimentsNav(); }
+    if (BOLD.getAuth()) { sidebarAccess(); handbookNav(); eventsNav(); skillsNav(); guidesNav(); deskNav(); experimentsNav(); }
     var toggle = document.getElementById('navToggle');
     var collapse = document.getElementById('sidebarCollapse');
     var backdrop = document.getElementById('sidebarBackdrop');
