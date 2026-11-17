@@ -40,6 +40,8 @@ async function req(path, method, token, body, mask) {
   assert.equal(await req('serviceDesk?documentId=c1', 'POST', jwt(PI), card(PI)), 200, 'a PI adds a card');
   assert.equal(await req('serviceDesk?documentId=c2', 'POST', jwt(PI), Object.assign(card(PI), { href: 'letters.html' })), 200, 'a page of the site');
   assert.equal(await req('serviceDesk?documentId=c3', 'POST', jwt(PI), Object.assign(card(PI), { href: 'https://example.org/x' })), 200, 'an https link');
+  assert.equal(await req('serviceDesk?documentId=c4', 'POST', jwt(PI), Object.assign(card(PI), { about: '## About\n![preview](https://x/y.png)' })), 200, 'an About');
+  assert.equal(await req('serviceDesk?documentId=c5', 'POST', jwt(PI), Object.assign(card(PI), { about: 'x'.repeat(20001) })), 403, 'an About too long');
 
   // Reading: whoever sees the Service desk.
   assert.equal(await req('serviceDesk/c1', 'GET', jwt(MEMBER)), 200, 'a member reads a card');
@@ -48,7 +50,7 @@ async function req(path, method, token, body, mask) {
 
   // Editing: PIs and admins, never the file.
   await db.doc('serviceDesk/c1').update({ file: { path: 'service-desk/c1/1-a.zip', name: 'a.zip' } });
-  const edit = { title: 'Preprint template', text: 'Changed.', href: '', order: 1, updatedBy: PI, updatedAt: 2 };
+  const edit = { title: 'Preprint template', text: 'Changed.', href: '', about: 'How to use it.', order: 1, updatedBy: PI, updatedAt: 2 };
   assert.equal(await req('serviceDesk/c1', 'PATCH', jwt(MEMBER), Object.assign({}, edit, { updatedBy: MEMBER }), Object.keys(edit)), 403, 'a member edits');
   assert.equal(await req('serviceDesk/c1', 'PATCH', jwt(PI), edit, Object.keys(edit)), 200, 'a PI edits');
   assert.equal(await req('serviceDesk/c1', 'PATCH', jwt(PI), Object.assign({}, edit, { file: { path: 'elsewhere' } }), Object.keys(edit).concat('file')), 403, 'a PI changes the file');

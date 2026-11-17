@@ -240,3 +240,11 @@ html.is-dragging-meeting, html.is-dragging-meeting *{cursor:grabbing !important;
 .proj-list .sd-form, #deskForm .sd-form{margin:8px 0;}
 #deskForm:empty{display:none;}
 .proj-list a.is-busy{opacity:.5; cursor:progress;}
+/* A card's own page (pages/service-desk-card.js): Download or Open and its details, Edit on the right, then its About. */
+.sdc-file{display:flex; align-items:center; flex-wrap:wrap; gap:8px 14px;}
+.sdc-file .proj-meta{display:inline; margin:0;}
+a.btn.is-off{color:var(--muted); opacity:.5; cursor:default;}
+a.btn.is-off:hover{border-color:var(--line); color:var(--muted);}
+.sdc-error{margin-top:10px;}
+.sdc-about{margin-top:32px; font-family:var(--serif); font-size:17px; line-height:1.6; max-width:var(--article-max);}
+.sdc-about img{max-width:100%; height:auto; border:1px solid var(--line);}

@@ -1604,7 +1604,7 @@
   }
 
   // The Service desk's cards (serviceDesk; pages/service-desk.js), in their order: a card's page or
-  // link, or the card itself on the Service desk (#<id>) when it downloads a file. A card whose page
+  // link, or its own page (service-desk-card.html?card=<id>) when it holds a file or nothing yet. A card whose page
   // is already a fixed link of the group (Get started, which has an area of its own) isn't repeated.
   function deskNav(){
     var group = document.querySelector('[data-nav-desk]');
@@ -1615,7 +1615,7 @@
         return snap.docs.map(function(d){ return Object.assign({ id: d.id }, d.data()); })
           .filter(function(c){ return c.title; })
           .sort(function(a, b){ return (a.order || 0) - (b.order || 0); })
-          .map(function(c){ return { title: c.title, href: c.href || 'service-desk.html#' + encodeURIComponent(c.id) }; })
+          .map(function(c){ return { title: c.title, href: (!(c.file && c.file.path) && c.href) || 'service-desk-card.html?card=' + encodeURIComponent(c.id) }; })
           .filter(function(c){ return !fixed[c.href]; });
       });
     });
