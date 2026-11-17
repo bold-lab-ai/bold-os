@@ -340,18 +340,7 @@
   });
 
   /* ---------- list / grid ---------- */
-  function setView(view){
-    if (view !== 'grid') view = 'list';
-    el('projects').setAttribute('data-view', view);
-    Array.prototype.forEach.call(document.querySelectorAll('.view-btn'), function(b){
-      b.setAttribute('aria-pressed', String(b.getAttribute('data-view') === view));
-    });
-    try { localStorage.setItem(VIEW_KEY, view); } catch (e){}
-  }
-  Array.prototype.forEach.call(document.querySelectorAll('.view-btn'), function(b){
-    b.addEventListener('click', function(){ setView(b.getAttribute('data-view')); });
-  });
-  try { setView(localStorage.getItem(VIEW_KEY)); } catch (e){}
+  BOLD.mountViewToggle(document.querySelector('.view-toggle'), el('projects'), VIEW_KEY);
 
   /* ---------- tabs ---------- */
   var tabs = Array.prototype.slice.call(document.querySelectorAll('.tab'));

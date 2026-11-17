@@ -19,19 +19,24 @@
   function validHref(h){ return h === '' || /^[a-z0-9-]+\.html([#?].*)?$/.test(h) || /^https:\/\/.+/.test(h); }
   function sorted(){ return (cards || []).slice().sort(function(a, b){ return (a.order || 0) - (b.order || 0) || String(a.title).localeCompare(String(b.title)); }); }
 
-  function cardHtml(c){
+  var list = document.getElementById('deskList'), msg = document.getElementById('deskMsg'), slot = document.getElementById('deskForm');
+  var search = document.getElementById('deskSearch'), q = '';
+  // A row as on Projects (bold.css .proj-list, projects.css): the title (the link, or the download),
+  // what it opens or holds, and the description.
+  function rowHtml(c, i, n){
     var file = c.file && c.file.path;
-    var cta = file ? 'Download' : 'Open';
-    var meta = file ? '<span class="sd-file">' + esc(c.file.name) + ' · ' + size(c.file.size || 0) + '</span>' : '';
+    var external = !file && /^https:/.test(c.href || '');
     var attrs = file ? 'href="#" data-file="' + esc(c.id) + '"'
-      : c.href ? 'href="' + esc(c.href) + '"' + (/^https:/.test(c.href) ? ' target="_blank" rel="noopener"' : '')
+      : c.href ? 'href="' + esc(c.href) + '"' + (external ? ' target="_blank" rel="noopener"' : '')
       : '';
-    var tag = attrs ? 'a' : 'div';
-    return '<' + tag + ' class="event-card" ' + attrs + '>' +
-      '<h3>' + esc(c.title) + '</h3>' + (c.text ? '<p>' + esc(c.text) + '</p>' : '') +
-      (attrs ? '<span class="event-cta">' + cta + '</span>' : '<span class="sd-empty">Not available yet</span>') + meta + '</' + tag + '>' +
-      // Nothing to open: a PI or admin goes straight to its form.
-      (!attrs && fullWrite && !editing ? '<p class="sd-fill"><button type="button" class="btn-text sd-edit" data-id="' + esc(c.id) + '">Add a file or link</button></p>' : '');
+    var meta = file ? esc(c.file.name) + ' · ' + size(c.file.size || 0)
+      : external ? esc(c.href.replace(/^https:\/\//, '').split('/')[0])
+      : !c.href ? 'Not available yet' : '';
+    return '<div class="proj-main">' +
+      (attrs ? '<a class="proj-title" ' + attrs + '>' : '<span class="proj-title">') + esc(c.title) + (attrs ? '</a>' : '</span>') +
+      (meta ? '<span class="proj-meta">' + meta + '</span>' : '') +
+      (c.text ? '<p class="proj-abstract">' + esc(c.text) + '</p>' : '') +
+      (editing ? controlsHtml(c, i, n) : '') + '</div>';
   }
   function controlsHtml(c, i, n){
     return '<div class="sd-controls">' +
@@ -57,18 +62,20 @@
         '<button type="button" class="sd-cancel">Cancel</button></div></div>';
   }
 
+  function matches(c){ return !q || (String(c.title) + ' ' + String(c.text || '')).toLowerCase().indexOf(q) !== -1; }
   function render(){
-    if (!cards) { main.innerHTML = '<p class="proj-msg">Loading&hellip;</p>'; return; }
-    var list = sorted();
-    var html = '<section class="block">';
-    html += '<div class="sd-head"><button type="button" class="btn-text sd-toggle"' + (fullWrite ? '' : ' disabled title="' + esc(NO) + '"') + '>' +
-      (editing ? 'Done' : 'Edit cards') + '</button></div>';
-    if (!list.length) html += '<p class="proj-msg">Nothing here yet.</p>';
-    html += '<ul class="event-list">' + list.map(function(c, i){
-      return '<li id="' + esc(c.id) + '">' + (form === c.id ? formHtml(c) : cardHtml(c) + (editing ? controlsHtml(c, i, list.length) : '')) + '</li>';
-    }).join('') + '</ul>';
-    if (editing) html += form === 'new' ? formHtml(null) : '<p class="sd-add"><button type="button" class="btn-text sd-new">Add a card</button></p>';
-    main.innerHTML = html + '</section>';
+    var toggle = main.querySelector('.sd-toggle'), add = main.querySelector('.sd-new');
+    toggle.disabled = add.disabled = !fullWrite;
+    toggle.title = add.title = fullWrite ? '' : NO;
+    toggle.textContent = editing ? 'Done' : 'Edit cards';
+    if (!cards) { msg.hidden = false; msg.innerHTML = 'Loading&hellip;'; list.innerHTML = ''; slot.innerHTML = ''; return; }
+    var all = sorted(), shown = all.filter(matches);
+    msg.hidden = !!all.length; msg.textContent = 'Nothing here yet.';
+    list.innerHTML = shown.map(function(c){
+      var i = all.indexOf(c);
+      return '<li id="' + esc(c.id) + '"' + (form === c.id ? ' class="sd-editing">' + formHtml(c) : '>' + rowHtml(c, i, all.length)) + '</li>';
+    }).join('') + (all.length && !shown.length ? '<li class="proj-none"><p class="proj-empty">No cards match.</p></li>' : '');
+    slot.innerHTML = form === 'new' ? formHtml(null) : '';
   }
 
   function fail(msg){ var p = main.querySelector('.sd-form .ev-error'); if (p) { p.textContent = msg; p.hidden = false; } }
@@ -143,7 +150,7 @@
     var id = t.getAttribute('data-id');
     var find = function(){ return (cards || []).find(function(x){ return x.id === id; }); };
     if (t.classList.contains('sd-toggle')) { editing = !editing; form = null; render(); }
-    else if (t.classList.contains('sd-new')) { form = 'new'; render(); }
+    else if (t.classList.contains('sd-new')) { editing = true; form = 'new'; render(); }
     else if (t.classList.contains('sd-edit')) { editing = true; form = id; render(); }
     else if (t.classList.contains('sd-cancel')) { form = null; render(); }
     // The card being edited is the open form's, not the Save button's (which carries no id).
@@ -153,6 +160,8 @@
     else if (t.classList.contains('sd-remove')) remove(id);
   });
 
+  if (search) search.addEventListener('input', function(){ q = search.value.trim().toLowerCase(); render(); });
+  BOLD.mountViewToggle(main.querySelector('.view-toggle'), document.getElementById('deskViews'), 'boldDesk:view');
   // A PI or admin, not while they view the site as a group.
   BOLD.onAccess(function(a){ fullWrite = !!(a && a.fullWrite && !a.viewAs); if (!fullWrite) { editing = false; form = null; } if (me) render(); });
   BOLD.onUser(function(user){

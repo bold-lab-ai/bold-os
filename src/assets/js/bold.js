@@ -1112,6 +1112,22 @@
     document.head.appendChild(el);
   }
   BOLD.isFullWrite = function(){ return !!(access && access.fullWrite); };
+  // A list's List | Grid switch (projects.css .view-toggle, .proj-views): `views` gets data-view,
+  // each .view-btn in `toggle` its aria-pressed, and the choice is remembered in this browser (`key`).
+  // Projects, How to and the Service desk share it.
+  BOLD.mountViewToggle = function(toggle, views, key){
+    if (!toggle || !views) return;
+    var btns = toggle.querySelectorAll('.view-btn');
+    function set(view){
+      if (view !== 'grid') view = 'list';
+      views.setAttribute('data-view', view);
+      Array.prototype.forEach.call(btns, function(b){ b.setAttribute('aria-pressed', String(b.getAttribute('data-view') === view)); });
+      try { localStorage.setItem(key, view); } catch (e){}
+    }
+    Array.prototype.forEach.call(btns, function(b){ b.addEventListener('click', function(){ set(b.getAttribute('data-view')); }); });
+    var saved = null; try { saved = localStorage.getItem(key); } catch (e){}
+    set(saved);
+  };
 
   // ---------- who can see this page: a chip at its top right, and its panel ----------
   // The chip says who can see the page; it opens the page's row of the BOLDiquette's Who

@@ -2,7 +2,7 @@
 area: "service-desk"
 title: "Service desk | BOLD Lab"
 description: "Tools for things you need from the lab."
-css: "events"
+css: "projects"
 sdk: ["firestore", "functions"]
 scripts: ["pages/service-desk.js"]
 permalink: "service-desk.html"
@@ -12,4 +12,27 @@ permalink: "service-desk.html"
   <p class="hero-note">Things you need from the lab, asked for and tracked here.</p>
 </div>
 
-<main id="desk"><p class="proj-msg">Loading&hellip;</p></main>
+<main id="desk">
+
+  <div class="actions">
+    <div class="view-toggle" role="group" aria-label="View">
+      <button type="button" class="view-btn" data-view="list" aria-pressed="true">List</button>
+      <button type="button" class="view-btn" data-view="grid" aria-pressed="false">Grid</button>
+    </div>
+    <div class="sd-actions">
+      <button type="button" class="btn sd-toggle" disabled title="Only PIs and admins change the Service desk.">Edit cards</button>
+      <button type="button" class="btn btn-primary sd-new" disabled title="Only PIs and admins change the Service desk.">+ Add a card</button>
+    </div>
+  </div>
+
+  <div class="filters" role="search">
+    <input type="search" id="deskSearch" placeholder="Search the Service desk" aria-label="Search the Service desk" autocomplete="off">
+  </div>
+
+  <p class="proj-msg" id="deskMsg">Loading&hellip;</p>
+  <div class="proj-views" id="deskViews" data-view="list">
+    <ul class="proj-list" id="deskList"></ul>
+  </div>
+  <div id="deskForm"></div>
+
+</main>
