@@ -13,7 +13,15 @@ function keywordEntryHtml(){
       '<ul class="kw-suggest" id="kwSuggest" role="listbox" hidden></ul>' +
     '</div>' +
     '<ul class="kw-list" id="kwList"></ul>' +
-    '<div class="field-hint">Type a keyword and press Enter or +. Existing keywords are suggested as you type.</div>';
+    '<div class="field-hint">Type a keyword and press Enter or +. Existing keywords are suggested as you type.</div>' +
+    '<details class="kw-browser">' +
+      '<summary>Browse existing keywords</summary>' +
+      '<label for="kwFilter">Filter keywords</label>' +
+      '<input type="search" id="kwFilter" autocomplete="off" placeholder="Search existing keywords" aria-controls="kwChoices">' +
+      '<p class="kw-browser-status" id="kwStatus" role="status"></p>' +
+      '<button class="btn-text" type="button" id="kwRetry" hidden>Try again</button>' +
+      '<ul class="kw-choices" id="kwChoices"></ul>' +
+    '</details>';
 }
 
 // Type, +, suggestions from the keywords already in use. `initial` is the current list;
@@ -24,12 +32,66 @@ function wireKeywordField(initial, showError, clearError){
   var keywords = (initial || []).slice();   // chosen
   var known = [];      // [{ name, count }] already used on other projects
   var kwActive = -1;
+  var kwFilter = el('kwFilter'), kwChoices = el('kwChoices'), kwStatus = el('kwStatus'), kwRetry = el('kwRetry');
+  var loading = false, loadFailed = false;
 
-  try {
-    firebase.app().functions('europe-west2').httpsCallable('getProjectKeywords')()
-      .then(function(r){ known = (r.data && r.data.keywords) || []; })
-      .catch(function(err){ console.error('[BOLD Lab] loading keywords failed', err); });
-  } catch (e){}
+  function loadKeywords(){
+    loading = true; loadFailed = false; renderBrowser();
+    Promise.resolve().then(function(){
+      return firebase.app().functions('europe-west2').httpsCallable('getProjectKeywords')();
+    }).then(function(r){
+      known = (r.data && r.data.keywords) || [];
+      loading = false; renderBrowser();
+      if (document.activeElement === kwInput) showSuggest();
+    }).catch(function(err){
+      console.error('[BOLD Lab] loading keywords failed', err);
+      loading = false; loadFailed = true; renderBrowser();
+    });
+  }
+
+  // Keep the controls mounted while selecting, so keyboard focus and scroll stay put.
+  function syncBrowserSelection(){
+    Array.prototype.forEach.call(kwChoices.children, function(li){
+      var input = li.firstChild.firstChild;
+      input.checked = keywords.indexOf(input.value) !== -1;
+      input.disabled = !input.checked && keywords.length >= KEYWORDS_MAX;
+      li.firstChild.title = input.disabled ? 'At most ' + KEYWORDS_MAX + ' keywords. Remove one to choose another.' : '';
+    });
+    var message;
+    if (loading) message = 'Loading keywords…';
+    else if (loadFailed) message = 'Couldn’t load existing keywords. You can still type your own.';
+    else if (!known.length) message = 'No keywords yet. Add the first above.';
+    else if (!kwChoices.children.length) message = 'No matching keywords.';
+    else message = kwChoices.children.length + ' of ' + known.length + ' keywords · ' + keywords.length + ' of ' + KEYWORDS_MAX + ' selected.';
+    if (!loading && !loadFailed && keywords.length >= KEYWORDS_MAX) message += ' Remove one to choose another.';
+    kwStatus.textContent = message;
+  }
+
+  function renderBrowser(){
+    kwChoices.innerHTML = '';
+    kwRetry.hidden = !loadFailed;
+    if (!loading && !loadFailed) {
+      var query = kwFilter.value.trim().toLowerCase().replace(/\s+/g, ' ');
+      known.filter(function(k){ return k.name.indexOf(query) !== -1; }).forEach(function(k){
+        var li = document.createElement('li');
+        var label = document.createElement('label'); label.className = 'kw-choice';
+        var input = document.createElement('input'); input.type = 'checkbox'; input.value = k.name;
+        var name = document.createElement('span'); name.className = 'kw-choice-name'; name.textContent = k.name;
+        var count = document.createElement('span'); count.className = 'kw-choice-count';
+        count.textContent = k.count + (k.count === 1 ? ' project' : ' projects');
+        input.addEventListener('change', function(){
+          if (input.checked && keywords.indexOf(k.name) === -1) {
+            if (keywords.length >= KEYWORDS_MAX) { syncBrowserSelection(); return showError('At most ' + KEYWORDS_MAX + ' keywords.'); }
+            keywords.push(k.name);
+          } else if (!input.checked) keywords = keywords.filter(function(item){ return item !== k.name; });
+          clearError(); renderKeywords();
+        });
+        label.appendChild(input); label.appendChild(name); label.appendChild(count);
+        li.appendChild(label); kwChoices.appendChild(li);
+      });
+    }
+    syncBrowserSelection();
+  }
 
   function renderKeywords(){
     kwList.innerHTML = '';
@@ -37,9 +99,10 @@ function wireKeywordField(initial, showError, clearError){
       var li = document.createElement('li'); li.className = 'kw-chip';
       li.appendChild(document.createTextNode(k));
       var x = document.createElement('button'); x.type = 'button'; x.textContent = '×'; x.setAttribute('aria-label', 'Remove ' + k);
-      x.addEventListener('click', function(){ keywords = keywords.filter(function(o){ return o !== k; }); renderKeywords(); });
+      x.addEventListener('click', function(){ keywords = keywords.filter(function(o){ return o !== k; }); clearError(); renderKeywords(); });
       li.appendChild(x); kwList.appendChild(li);
     });
+    syncBrowserSelection();
   }
   function hideSuggest(){ kwSuggest.hidden = true; kwInput.setAttribute('aria-expanded', 'false'); kwActive = -1; }
   function addKeyword(raw){
@@ -83,7 +146,11 @@ function wireKeywordField(initial, showError, clearError){
     }
   });
   el('kwAdd').addEventListener('click', function(){ addKeyword(kwInput.value); kwInput.focus(); });
+  kwFilter.addEventListener('input', renderBrowser);
+  kwFilter.addEventListener('keydown', function(e){ if (e.key === 'Enter') e.preventDefault(); });
+  kwRetry.addEventListener('click', loadKeywords);
   renderKeywords();
+  loadKeywords();
 
   return {
     get: function(){ return keywords; },

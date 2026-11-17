@@ -8,6 +8,7 @@
 <link rel="stylesheet" href="../assets/css/bold.css">
 <link rel="stylesheet" href="../assets/css/board.css">
 <link rel="stylesheet" href="../assets/css/pages/projects.css">
+<link rel="stylesheet" href="../assets/css/keyword-browser.css">
 <link rel="stylesheet" href="gallery.css">
 <script src="gallery.js"></script>
 </head>
@@ -75,6 +76,21 @@
       <div class="gl-row">
         <span class="badge badge-stage">Stage</span><span class="badge badge-review-approved">Approved</span><span class="badge badge-review-in_review">In review</span><span class="badge badge-outcome-rejected">Rejected</span><span class="badge badge-outcome-withdrawn">Withdrawn</span>
       </div>
+    </section>
+
+    <section>
+      <p class="gl-label">Keyword browser</p>
+      <details class="kw-browser" open>
+        <summary>Browse existing keywords</summary>
+        <label for="galleryKeywordFilter">Filter keywords</label>
+        <input id="galleryKeywordFilter" type="search" placeholder="Search existing keywords">
+        <p class="kw-browser-status">3 of 3 keywords · 1 of 10 selected.</p>
+        <ul class="kw-choices">
+          <li><label class="kw-choice"><input type="checkbox" checked><span class="kw-choice-name">attention</span><span class="kw-choice-count">8 projects</span></label></li>
+          <li><label class="kw-choice"><input type="checkbox"><span class="kw-choice-name">memory</span><span class="kw-choice-count">4 projects</span></label></li>
+          <li><label class="kw-choice" title="At most 10 keywords. Remove one to choose another."><input type="checkbox" disabled><span class="kw-choice-name">Disabled at the selection limit</span><span class="kw-choice-count">1 project</span></label></li>
+        </ul>
+      </details>
     </section>
 
     <section class="gl-cols">
