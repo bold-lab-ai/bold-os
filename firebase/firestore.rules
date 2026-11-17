@@ -713,6 +713,18 @@ service cloud.firestore {
       allow read: if may('events', 'view');
       allow write: if false;
     }
+    // Public calendar projection only; links and people are served through a callable
+    // which verifies live Slack membership. No client can read the private record.
+    match /calendarMeetingEntries/{id} {
+      allow read: if isSignedIn() && may('calendar', 'view');
+      allow write: if false;
+    }
+    match /calendarMeetings/{id} {
+      allow read, write: if false;
+    }
+    match /calendarMeetingKeys/{id} {
+      allow read, write: if false;
+    }
     match /eventSeries/{id} {
       allow read: if seesEvent(resource.data) || (isSignedIn() && (hasFullWrite() || email().lower() in resource.data.get('organisers', [])));
       allow write: if false;

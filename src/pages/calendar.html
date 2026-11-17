@@ -4,8 +4,9 @@ title: "Calendar | BOLD Lab"
 description: "Every event and meeting on BOLD.OS."
 sdk: ["firestore", "functions"]
 css: "projects"
+styles: ["calendar-meetings"]
 nav: "calendar.html"
-scripts: ["project-fields.js", "events-common.js", "pages/calendar.js"]
+scripts: ["project-fields.js", "events-common.js", "calendar-meetings.js", "pages/calendar.js"]
 permalink: "calendar.html"
 ---
 <div class="hero">
@@ -20,8 +21,10 @@ permalink: "calendar.html"
       <button type="button" class="view-btn kind-btn" data-kind="project" aria-pressed="false">Projects</button>
       <button type="button" class="view-btn kind-btn" data-kind="study" aria-pressed="false">Supervision</button>
       <button type="button" class="view-btn kind-btn" data-kind="series" aria-pressed="false">Recurring</button>
+      <button type="button" class="view-btn kind-btn" data-kind="other" aria-pressed="false">Other</button>
     </div>
     <div class="cal-right">
+    <button type="button" class="view-btn" id="addCalendarMeeting">+ Add meeting</button>
     <div class="view-toggle" role="group" aria-label="View">
       <button type="button" class="view-btn" data-view="week" aria-pressed="true">Week</button>
       <button type="button" class="view-btn" data-view="list" aria-pressed="false">List</button>

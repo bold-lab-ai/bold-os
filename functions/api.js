@@ -484,7 +484,7 @@ module.exports = function(deps){
   // only if its person may view that page. Acting goes through the rules and callables,
   // which check it themselves.
   const TOOL_PAGE = { list_benchmarks: 'projects', register_benchmark: 'projects', edit_problem: 'projects', search: 'search', list_group_rota: 'events', list_projects: 'projects', get_project: 'projects', find_people: 'people', get_person: 'people',
-    calendar: 'calendar', my_items: 'profile', list_introduction_offers: 'service-desk', list_tools: 'tools', list_skills: 'skills', get_skill: 'skills' };
+    get_calendar_meeting: 'calendar', calendar_meetings: 'calendar', calendar: 'calendar', my_items: 'profile', list_introduction_offers: 'service-desk', list_tools: 'tools', list_skills: 'skills', get_skill: 'skills' };
   const pageOfTool = (name, args) => { const p = String((args || {}).page || '').trim().toLowerCase();
     return name === 'read_page' ? (p === 'boldiquette' ? 'boldiquette' : require('./access').guideArea(p)) : TOOL_PAGE[name]; };
   async function mayView(who, page){
@@ -762,6 +762,11 @@ module.exports = function(deps){
       out.project_meetings = workspaces.filter((w) => w.meeting && (w.eventId || w.pausedAt) && w.group !== 'completed' && !w.completedAt)
         .map((w) => ({ project: w.title, when: meetingText(w.meeting), paused: !!w.pausedAt, members: (w.members || []).map(name),
           you_are_in_it: (w.members || []).some((e) => String(e).toLowerCase() === who.email), url: url(projectHref(w.cardId || w._id, w.boardId)) }));
+      out.calendar_meetings = (await db.collection('calendarMeetingEntries').get()).docs.map((doc) => {
+        const s = doc.data();
+        return { id: doc.id, title: s.title, when: meetingText(s.meeting), first_date: s.firstDate,
+          display_only: s.mode !== 'create', category: s.category, project_id: s.projectId || '', project_url: s.projectId ? url(projectHref(s.projectId, s.projectBoard)) : '', calendar_state: s.calendarState || 'listed', url: url('calendar.html#meeting=' + encodeURIComponent(doc.id)) };
+      });
       out.supervision_meetings = studies.filter((s) => s.meeting && (s.eventId || s.pausedAt))
         .map((s) => ({ student: s.name || name(s._id), title: s.title || '', when: meetingText(s.meeting), paused: !!s.pausedAt,
           you_are_in_it: (s.everyone || []).some((e) => String(e).toLowerCase() === who.email) }));

@@ -23,12 +23,12 @@
   var E = window.BoldEvents;
   var db = null, me = null, busy = {}, msgs = {}, unsubs = [], slackIds = {}, seenProjects = false;
   var asked = {}, pop = null; // asked: student email → my open request's id; pop: the open card { key, x, y }
-  var data = { project: null, study: null, event: null, series: null };
+  var data = { project: null, study: null, event: null, series: null, co: null };
   var VIEW_KEY = 'boldCalendar:view', KIND_KEY = 'boldCalendar:kind', view = 'week', kind = 'all';
   var weekOffset = 0, geom = null, drag = null, noClick = false;
   try { db = firebase.firestore(BOLD.getApp()); } catch (e){}
 
-  var KIND_LABELS = { event: 'Event', project: 'Project', study: 'Supervision', series: 'Recurring' };
+  var KIND_LABELS = { event: 'Event', project: 'Project', study: 'Supervision', series: 'Recurring', co: 'Meeting', other: 'Other' };
   var GROUP_LABELS = { planned: 'Approved', ongoing: 'Ongoing', submission: 'In submission' };
   function kindBadge(k){ return '<span class="type-badge cal-' + k + '">' + KIND_LABELS[k] + '</span>'; }
   // The Projects page's badge: Ongoing and In submission in the accent, Planned plain.
@@ -64,6 +64,12 @@
       out.push({ kind: 'series', id: x.id, title: x.title, href: 'series.html?series=' + encodeURIComponent(x.id), meeting: x.meeting,
         mine: (x.guests || []).some(isMe), paused: !!x.pausedAt, hidden: !!x.hidden, start: x.eventStart || '', meetUrl: x.meetUrl, people: (x.guests || []).length, x: x,
         moved: x.meetingMoved || {}, canEdit: (x.organisers || []).some(isMe) || BOLD.isFullWrite() });
+    });
+    (data.co || []).forEach(function(s){
+      var displayKind = s.category === 'project' ? 'project' : s.category === 'other' ? 'other' : 'study';
+      if (!all && !shown(displayKind)) return;
+      out.push({ kind: 'co', displayKind: displayKind, mode: s.mode, calendarState: s.calendarState, projectId: s.projectId, projectTitle: s.projectTitle, projectBoard: s.projectBoard, id: s.id, title: s.title, href: 'calendar.html#meeting=' + encodeURIComponent(s.id),
+        meeting: s.meeting, start: s.firstDate, mine: false, canEdit: false, people: null });
     });
     return out;
   }
@@ -106,7 +112,7 @@
     if (m.mine && m.meetUrl) meta.push('<a href="' + esc(m.meetUrl) + '" target="_blank" rel="noopener">' + meetLabel(m.meeting) + '</a>');
     var o = pop.orig ? occIn(m, addDays(pop.orig, -62), addDays(pop.orig, 62)).filter(function(x){ return x.orig === pop.orig; })[0] : null;
     var html = '<button type="button" class="cal-pop-close" aria-label="Close">&times;</button>' +
-      '<div class="proj-badges">' + kindBadge(m.kind) + (m.w ? groupBadge(m.w) : '') + pausedBadge(m) + ownBadge(m) + '</div>' +
+      '<div class="proj-badges">' + kindBadge(m.displayKind || m.kind) + (m.w ? groupBadge(m.w) : '') + pausedBadge(m) + ownBadge(m) + '</div>' +
       titleHtml(m, 'proj-title') + '<span class="proj-meta">' + meta.join(' \u00b7 ') + '</span>';
     // This date of it (a block of the week), moved or not; and changing it, for whoever may.
     if (o) html += '<p class="cal-pop-when">This occurrence: ' + esc(dayText(o.date) + ', ' + o.time + '–' + endOf(o.time, o.minutes)) +
@@ -255,7 +261,8 @@
       html += '<h2 class="meet-day">' + d[1] + 's</h2><ul class="proj-list">';
       day.forEach(function(m){
         var when = meetingText(m.meeting).replace(/^[^,]*, /, '');
-        var meta = [esc(when), m.people + (m.people === 1 ? ' person' : ' people')];
+        var meta = m.kind === 'co' ? [esc(when), m.mode === 'create' ? (m.calendarState === 'ready' ? 'Google Calendar meeting' : 'Google Calendar update pending') : 'Existing meeting'] : [esc(when), m.people + (m.people === 1 ? ' person' : ' people')];
+        if (m.projectId) meta.push('<a href="project.html#id=' + encodeURIComponent(m.projectId) + (m.projectBoard ? '&amp;board=' + encodeURIComponent(m.projectBoard) : '') + '">' + esc(m.projectTitle || 'View project') + '</a>');
         // Its coming dates moved one by one.
         Object.keys(m.moved || {}).sort().filter(function(k){ return k >= today || (!m.moved[k].cancelled && m.moved[k].date >= today); }).slice(0, 3).forEach(function(k){
           var x = m.moved[k];
@@ -264,8 +271,8 @@
         if (m.mine && m.meetUrl) meta.push('<a href="' + esc(m.meetUrl) + '" target="_blank" rel="noopener">' + meetLabel(m.meeting) + '</a>');
         html += '<li' + (greyed(m) ? ' class="is-paused"' : '') + '><div class="proj-main">' + titleHtml(m, 'proj-title') +
           '<span class="proj-meta">' + meta.join(' · ') + '</span>' +
-          '<div class="proj-badges">' + kindBadge(m.kind) + (m.w ? groupBadge(m.w) : '') + pausedBadge(m) + ownBadge(m) + '</div></div>' +
-          (m.kind === 'project' ? joinHtml(m.w) : m.kind === 'series' ? (m.mine || m.hidden || !(m.x.invite && m.x.invite.mode === 'join') ? '' : '<div class="join-wrap"><button type="button" class="join-btn cal-open" data-key="' + esc(keyOf(m)) + '">Join</button></div>') : m.mine ? '' : '<div class="join-wrap"><button type="button" class="join-btn cal-open" data-key="' + esc(keyOf(m)) + '">' + (asked[m.id] ? 'Asked' : 'Ask to join') + '</button></div>') + '</li>';
+          '<div class="proj-badges">' + kindBadge(m.displayKind || m.kind) + (m.w ? groupBadge(m.w) : '') + pausedBadge(m) + ownBadge(m) + '</div></div>' +
+          (m.kind === 'co' ? '<div class="join-wrap"><button type="button" class="view-btn cal-open" data-key="' + esc(keyOf(m)) + '">View meeting</button></div>' : m.kind === 'project' ? joinHtml(m.w) : m.kind === 'series' ? (m.mine || m.hidden || !(m.x.invite && m.x.invite.mode === 'join') ? '' : '<div class="join-wrap"><button type="button" class="join-btn cal-open" data-key="' + esc(keyOf(m)) + '">Join</button></div>') : m.mine ? '' : '<div class="join-wrap"><button type="button" class="join-btn cal-open" data-key="' + esc(keyOf(m)) + '">' + (asked[m.id] ? 'Asked' : 'Ask to join') + '</button></div>') + '</li>';
       });
       html += '</ul>';
     });
@@ -406,9 +413,9 @@
         g.items.forEach(function(b){
           var m = b.m, o = b.o, n = g.lanes.length, tag = m.href ? 'a' : 'span';
           var drag = m.canEdit && !m.paused && !m.hidden && m.start && !o.cancelled;
-          html += '<' + tag + ' class="week-block cal-' + m.kind + (m.mine ? ' is-mine' : '') + (greyed(m) || o.cancelled ? ' is-paused' : '') + (o.moved ? ' is-moved' : '') + (o.cancelled ? ' is-cancelled' : '') + (drag ? ' is-draggable' : '') + (pend && pend.m === m && pend.orig === o.orig ? ' is-drag-source' : '') + '" data-key="' + esc(keyOf(m)) + '" data-orig="' + o.orig + '" draggable="false"' + (m.href ? ' href="' + esc(m.href) + '"' : '') +
+          html += '<' + tag + ' class="week-block cal-' + (m.displayKind || m.kind) + (m.mine ? ' is-mine' : '') + (greyed(m) || o.cancelled ? ' is-paused' : '') + (o.moved ? ' is-moved' : '') + (o.cancelled ? ' is-cancelled' : '') + (drag ? ' is-draggable' : '') + (pend && pend.m === m && pend.orig === o.orig ? ' is-drag-source' : '') + '" data-key="' + esc(keyOf(m)) + '" data-orig="' + o.orig + '" draggable="false"' + (m.href ? ' href="' + esc(m.href) + '"' : '') +
             ' style="top:' + y(b.s) + 'px;height:' + Math.max(18, y(b.e) - y(b.s) - 2) + 'px;' +
-            'left:calc(' + (b.lane * 100 / n) + '% + 2px);width:calc(' + (100 / n) + '% - 4px)" title="' + esc(m.title + ' · ' + (o.cancelled ? 'This occurrence is cancelled · ' : '') + (o.moved ? dayText(o.date) + ', ' + o.time + '–' + endOf(o.time, o.minutes) + ', moved from ' + dayText(o.orig) + ' · ' : '') + meetingText(m.meeting) + ' · ' + KIND_LABELS[m.kind] + (m.hidden ? ' · Hidden' : m.paused ? ' · Paused' : '') + (m.meeting.link ? ' · Own link' : '') + (drag ? ' · Drag to move this occurrence' : '')) + '">' +
+            'left:calc(' + (b.lane * 100 / n) + '% + 2px);width:calc(' + (100 / n) + '% - 4px)" title="' + esc(m.title + ' · ' + (o.cancelled ? 'This occurrence is cancelled · ' : '') + (o.moved ? dayText(o.date) + ', ' + o.time + '–' + endOf(o.time, o.minutes) + ', moved from ' + dayText(o.orig) + ' · ' : '') + meetingText(m.meeting) + ' · ' + KIND_LABELS[m.displayKind || m.kind] + (m.hidden ? ' · Hidden' : m.paused ? ' · Paused' : '') + (m.meeting.link ? ' · Own link' : '') + (drag ? ' · Drag to move this occurrence' : '')) + '">' +
             '<span class="week-time">' + esc(o.time) + '</span> ' + esc(m.title) + (o.cancelled ? ' <span class="badge">Cancelled</span>' : o.moved ? ' <span class="badge">Moved</span>' : '') + (m.w ? ' ' + groupBadge(m.w) : '') + (m.meeting.link ? ' ' + ownBadge(m) : '') + '</' + tag + '>';
         });
       });
@@ -417,6 +424,7 @@
     html += '</div></div>' +
       '<p class="week-note"><span class="week-key"></span> Yours' +
       (kind === 'all' ? ' <span class="week-key is-outline cal-project"></span> Projects <span class="week-key is-outline cal-study"></span> Supervision <span class="week-key is-outline cal-series"></span> Recurring' : '') +
+      (ms.some(function(m){ return m.displayKind === 'other'; }) ? ' <span class="week-key is-outline cal-other"></span> Other' : '') +
       (ms.some(function(m){ return m.paused; }) ? ' <span class="week-key is-outline is-paused"></span> Paused' : '') +
       (ms.some(function(m){ return m.hidden; }) || evs.some(function(x){ return x.hidden; }) ? ' <span class="week-key is-outline is-paused"></span> Hidden' : '') + '</p>';
     return html;
@@ -447,11 +455,13 @@
   setView(view); setKind(kind);
 
   el('meetings').addEventListener('click', function(e){
+    var coTitle = e.target.closest('a.proj-title[href*="#meeting="]');
+    if (coTitle && !(e.metaKey || e.ctrlKey || e.shiftKey || e.button)) { e.preventDefault(); co.openDetails(coTitle.getAttribute('href').split('#meeting=')[1]); return; }
     var step = e.target.closest('.cal-step');
     if (step) { var s = +step.getAttribute('data-step'); weekOffset = s ? weekOffset + s : 0; render(); return; }
     // A meeting's block (a plain click: a new tab still opens its page) or Ask to join.
     var opener = e.target.closest('.week-block, .cal-open');
-    if (opener && !(e.metaKey || e.ctrlKey || e.shiftKey || e.button)) { e.preventDefault(); openPop(opener.getAttribute('data-key'), opener); return; }
+    if (opener && !(e.metaKey || e.ctrlKey || e.shiftKey || e.button)) { e.preventDefault(); var k = opener.getAttribute('data-key'); if (k.indexOf('co:') === 0) { co.openDetails(k.slice(3)); return; } openPop(k, opener); return; }
     onJoin(e);
   });
   el('calPop').addEventListener('click', function(e){
@@ -706,11 +716,30 @@
     });
   }
 
+  var co = BoldCalendarMeetings({
+    call: function(d){ return firebase.app().functions('europe-west2').httpsCallable('calendarMeeting')(d).then(function(r){ return r.data; }); },
+    changed: function(){ /* Public projection's snapshot refreshes the calendar. */ }
+  });
+  el('addCalendarMeeting').addEventListener('click', function(){ co.openNew(); });
+  function coAccess(){
+    var allowed = BOLD.can('calendar', 'edit');
+    el('addCalendarMeeting').disabled = !allowed;
+    el('addCalendarMeeting').title = allowed ? '' : BOLD.cannotReason('calendar', 'edit');
+    if (me && allowed && BOLD.takeLinkAction('add-meeting')) co.openNew();
+  }
+  BOLD.onAccess(coAccess);
+  function coLink(){
+    var id = /^#meeting=([a-zA-Z0-9-]{20,80})$/.exec(location.hash);
+    if (id && me) co.openDetails(id[1]);
+  }
+  window.addEventListener('hashchange', coLink);
   BOLD.onUser(function(user){
-    me = user;
+    me = user; co.close(); data.co = null;
     unsubs.forEach(function(u){ u(); }); unsubs = []; seenProjects = false;
     if (!user || !db) return;
     var mine = String(user.email || '').toLowerCase(), signIn = unsubs;
+    watch('co', db.collection('calendarMeetingEntries'), function(d){ return d.data(); });
+    coLink(); coAccess();
     // A student's meeting opens their page: person.html?id=<their Slack id> (the people roster).
     db.collection('people').get().then(function(ps){
       ps.docs.forEach(function(d){ var e = String(d.data().email || '').toLowerCase(); if (e) slackIds[e] = d.id; });

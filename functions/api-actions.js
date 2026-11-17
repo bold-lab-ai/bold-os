@@ -764,6 +764,9 @@ module.exports = function(ctx){
   const S = (props, required) => ({ type: 'object', properties: props, required: required || ['action'] });
   const str = (d) => ({ type: 'string', description: d });
   const READ = [
+    { name: 'get_calendar_meeting', description: 'Read a meeting added through Calendar. The meeting link is returned only after verifying current Slack channel membership, including for PIs and admins. No email addresses are returned.',
+      inputSchema: S({ id: str('Meeting id from calendar.') }, ['id']), run: (who, a) => act(who, 'calendarMeeting', { action: 'get', id: a.id }) },
+
     { name: 'list_group_rota', description: 'Published group meeting dates and slots, including presenter, topic, slides, outcome, project link and stable slot revision. A date narrows the result.',
       inputSchema: S({ date: str('Optional YYYY-MM-DD meeting date.') }, []), run: listGroupRota },
     { name: 'list_benchmarks', description: 'Read the Problem Bank: its problems, with their stage and latest evaluator release. These use Projects access. Returns no private account identifiers.',
@@ -776,6 +779,13 @@ module.exports = function(ctx){
     { name: 'get_skill', description: 'One skill: its SKILL.md and files, to use or install it.', inputSchema: S({ name: str('The skill’s name.') }, ['name']), run: getSkill },
   ];
   const WRITE = [
+    { name: 'calendar_meetings', description: 'Manage meetings added through Calendar. A Slack channel and current membership are required for every category. Project meetings require a projectId from projects. Existing-link mode only lists the meeting; create mode creates and manages a recurring Google Meet event. Invitations are optional, off by default. Before Google changes, explain creation/updates/cancellations and recipients to your person and obtain confirmation; only then pass confirmed:true. Invitations expose the link to recipients outside the channel. directory lists participant IDs; channel previews members; projects lists existing projects; save takes full form fields and version for edits; remove/retry take id and version. Retry reconciles a failed Google update without duplicating the event.',
+      inputSchema: S({ action: ACTIONS(['directory', 'channel', 'projects', 'save', 'remove', 'retry']), id: str('Stable request/meeting ID.'), version: { type: 'integer' }, channel: str('Slack channel URL or ID.'),
+        mode: { type: 'string', enum: ['existing', 'create'] }, category: { type: 'string', enum: ['project', 'supervision', 'other'] }, projectId: str('Existing BOLD.OS project ID, required for project category.'), inviteGuests: { type: 'boolean' }, confirmed: { type: 'boolean' },
+        title: str('Meeting title.'), firstDate: str('YYYY-MM-DD.'), time: str('HH:MM, London time.'), minutes: { type: 'integer' }, every: { type: 'integer', enum: [1,2,3,4] }, until: str('Optional last date.'), link: str('Existing HTTPS meeting link.'),
+        participantIds: { type: 'array', items: { type: 'string' } }, manualIds: { type: 'array', items: { type: 'string' } } }),
+      run: (who, a) => act(who, 'calendarMeeting', a) },
+
     { name: 'group_rota', run: groupRota,
       description: 'The group meeting rota: BOLD-internal members and above are included automatically; register resumes participation after leaving. Presenters can edit their assigned talk, claim an open short or long slot, decline a slot with a private reason, or request a confirmed short-slot swap. Series organisers, PIs and admins can set outcomes, offer short slots (and withdraw an offer), and manage seasons and meetings. Swap and offer actions send a Slack message. All actions use the same callable and permissions as the rota page.',
       inputSchema: S({ action: ACTIONS(['register', 'leave', 'edit', 'claim', 'recuse', 'request_swap', 'cancel_swap', 'retry_swap', 'outcome', 'offer_short', 'cancel_offer', 'save_season', 'save_meeting', 'set_meeting_visibility', 'create_slot', 'delete_slot', 'delete_meeting']),
