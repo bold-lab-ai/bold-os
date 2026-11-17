@@ -79,4 +79,6 @@ a.event-add + a.event-add{margin-left:24px;}
 .event-card.is-busy{opacity:.5; cursor:progress;}
 .sd-controls{display:flex; gap:16px; margin:-14px 0 18px;}
 .sd-add{margin:16px 0 0;}
+.sd-empty{display:inline-block; margin-top:14px; font-family:var(--sans); font-size:14px; color:var(--muted);}
+.sd-fill{margin:-14px 0 18px;}
 .event-list .sd-form{margin:18px 0;}

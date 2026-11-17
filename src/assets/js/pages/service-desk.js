@@ -29,7 +29,9 @@
     var tag = attrs ? 'a' : 'div';
     return '<' + tag + ' class="event-card" ' + attrs + '>' +
       '<h3>' + esc(c.title) + '</h3>' + (c.text ? '<p>' + esc(c.text) + '</p>' : '') +
-      (attrs ? '<span class="event-cta">' + cta + '</span>' : '') + meta + '</' + tag + '>';
+      (attrs ? '<span class="event-cta">' + cta + '</span>' : '<span class="sd-empty">Not available yet</span>') + meta + '</' + tag + '>' +
+      // Nothing to open: a PI or admin goes straight to its form.
+      (!attrs && fullWrite && !editing ? '<p class="sd-fill"><button type="button" class="btn-text sd-edit" data-id="' + esc(c.id) + '">Add a file or link</button></p>' : '');
   }
   function controlsHtml(c, i, n){
     return '<div class="sd-controls">' +
@@ -142,7 +144,7 @@
     var find = function(){ return (cards || []).find(function(x){ return x.id === id; }); };
     if (t.classList.contains('sd-toggle')) { editing = !editing; form = null; render(); }
     else if (t.classList.contains('sd-new')) { form = 'new'; render(); }
-    else if (t.classList.contains('sd-edit')) { form = id; render(); }
+    else if (t.classList.contains('sd-edit')) { editing = true; form = id; render(); }
     else if (t.classList.contains('sd-cancel')) { form = null; render(); }
     // The card being edited is the open form's, not the Save button's (which carries no id).
     else if (t.classList.contains('sd-save')) save(form === 'new' ? null : (cards || []).find(function(x){ return x.id === form; }));
