@@ -68,10 +68,10 @@ export default {
     ], separatorAfter: true },
     // Its sub-pages are the how-to guides (Firestore), filled in by bold.js.
     { label: 'How to', href: 'guides.html', links: [], guides: true, area: 'guides' },
-    { label: 'Service desk', href: 'service-desk.html', area: 'service-desk', links: [
+    // Its sub-pages are its cards (Firestore), filled in by bold.js after Get started, which stays
+    // here for its own area (the sidebar shows it to whoever may read it, even without the Service desk).
+    { label: 'Service desk', href: 'service-desk.html', area: 'service-desk', desk: true, links: [
       { label: 'Get started at BOLD', href: 'get-started.html', area: 'get-started' },
-      { label: 'Recommendation letters', href: 'letters.html' },
-      { label: 'Introductions', href: 'introductions.html' },
     ] },
     // Hidden from the sidebar for now (2026-11-05: Conversations, its only experiment, has its own
     // place); experimental.html still works. To bring it back, uncomment it and put

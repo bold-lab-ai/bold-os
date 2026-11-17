@@ -1587,6 +1587,24 @@
     });
   }
 
+  // The Service desk's cards (serviceDesk; pages/service-desk.js), in their order: a card's page or
+  // link, or the card itself on the Service desk (#<id>) when it downloads a file. A card whose page
+  // is already a fixed link of the group (Get started, which has an area of its own) isn't repeated.
+  function deskNav(){
+    var group = document.querySelector('[data-nav-desk]');
+    var fixed = {};
+    if (group) Array.prototype.forEach.call(group.querySelectorAll('.nav-sub:not([data-loaded])'), function(a){ fixed[a.getAttribute('href')] = true; });
+    firestoreNav('desk', 'boldNavDesk', 'service-desk', function(db){
+      return db.collection('serviceDesk').get().then(function(snap){
+        return snap.docs.map(function(d){ return Object.assign({ id: d.id }, d.data()); })
+          .filter(function(c){ return c.title; })
+          .sort(function(a, b){ return (a.order || 0) - (b.order || 0); })
+          .map(function(c){ return { title: c.title, href: c.href || 'service-desk.html#' + encodeURIComponent(c.id) }; })
+          .filter(function(c){ return !fixed[c.href]; });
+      });
+    });
+  }
+
   // The skills (skills/{name} — see skills-common.js), by title.
   function skillsNav(){
     firestoreNav('skills', 'boldNavSkills', 'skills', function(db){
@@ -1643,7 +1661,7 @@
 
     var shell = document.getElementById('shell');
     if (!shell) return;
-    if (BOLD.getAuth()) { sidebarAccess(); handbookNav(); eventsNav(); skillsNav(); guidesNav(); experimentsNav(); }
+    if (BOLD.getAuth()) { sidebarAccess(); handbookNav(); eventsNav(); skillsNav(); guidesNav(); deskNav(); experimentsNav(); }
     var toggle = document.getElementById('navToggle');
     var collapse = document.getElementById('sidebarCollapse');
     var backdrop = document.getElementById('sidebarBackdrop');

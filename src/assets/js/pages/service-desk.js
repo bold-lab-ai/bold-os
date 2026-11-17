@@ -10,7 +10,7 @@
   var db;
   try { db = firebase.firestore(BOLD.getApp()); } catch (e){ return; }
   var call = function(data){ return firebase.app().functions('europe-west2').httpsCallable('serviceDeskFile')(data); };
-  var cards = null, me = null, fullWrite = false, editing = false, form = null, busy = false, unsub = null;
+  var shown = false, cards = null, me = null, fullWrite = false, editing = false, form = null, busy = false, unsub = null;
   var MAX_BYTES = 5 * 1024 * 1024;
   var NO = 'Only PIs and admins change the Service desk.';
 
@@ -63,7 +63,7 @@
       (editing ? 'Done' : 'Edit cards') + '</button></div>';
     if (!list.length) html += '<p class="proj-msg">Nothing here yet.</p>';
     html += '<ul class="event-list">' + list.map(function(c, i){
-      return '<li>' + (form === c.id ? formHtml(c) : cardHtml(c) + (editing ? controlsHtml(c, i, list.length) : '')) + '</li>';
+      return '<li id="' + esc(c.id) + '">' + (form === c.id ? formHtml(c) : cardHtml(c) + (editing ? controlsHtml(c, i, list.length) : '')) + '</li>';
     }).join('') + '</ul>';
     if (editing) html += form === 'new' ? formHtml(null) : '<p class="sd-add"><button type="button" class="btn-text sd-new">Add a card</button></p>';
     main.innerHTML = html + '</section>';
@@ -128,6 +128,11 @@
       .catch(function(e){ a.classList.remove('is-busy'); console.error('[BOLD Service desk] download failed', e); alert(errText(e, 'Couldn’t download it. Try again.')); });
   }
 
+  // From the sidebar while already here: the hash changes, the page doesn't reload.
+  window.addEventListener('hashchange', function(){
+    var t = location.hash.length > 1 && document.getElementById(decodeURIComponent(location.hash.slice(1)));
+    if (t) t.scrollIntoView({ block: 'start' });
+  });
   main.addEventListener('click', function(e){
     var a = e.target.closest('[data-file]');
     if (a) { e.preventDefault(); return download(a.getAttribute('data-file'), a); }
@@ -159,6 +164,10 @@
       // Keep an open form while someone else's edit arrives.
       if (form && form !== 'new' && !cards.some(function(c){ return c.id === form; })) form = null;
       if (!main.querySelector('.sd-form')) render();
+      // The sidebar links a file's card as service-desk.html#<id>: show it, once the cards are in.
+      var first = !shown; shown = true;
+      var target = first && location.hash.length > 1 && document.getElementById(decodeURIComponent(location.hash.slice(1)));
+      if (target) target.scrollIntoView({ block: 'start' });
     }, function(err){
       if (!BOLD.getAuth().currentUser) return;  // signing out: the listener goes with the sign-in
       console.error('[BOLD Service desk] loading failed', err); cards = []; render();
