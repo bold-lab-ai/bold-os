@@ -1,6 +1,6 @@
 #!/bin/sh
 # BOLD.OS, a local test copy to click through as anyone (2026-11-02): the Auth, Firestore and
-# Functions emulators on the demo project demo-bold-os (nothing real behind it: Slack calls land
+# Functions emulators (and Storage, for the Service desk's files) on the demo project demo-bold-os (nothing real behind it: Slack calls land
 # in the emulator's slackOutbox, Google and email fail), demo data (scripts/test-seed.cjs), and
 # the site built with BOLD_TEST=1 on http://localhost:8150, where Sign in offers test accounts
 # (src/assets/js/test-mode.js). Needs Java, for the emulators. Stop it with Ctrl-C.
@@ -20,7 +20,7 @@ if [ ! -f functions/.secret.local ]; then
   printf 'SLACK_BOT_TOKEN=outbox\nSLACK_SIGNING_SECRET=outbox\nGOOGLE_OAUTH={}\nGITHUB_APP={}\nANTHROPIC_API_KEY=none\n' > functions/.secret.local
 fi
 (cd functions && npm install --silent)
-npx --yes --package firebase-tools firebase emulators:start --only auth,firestore,functions --project demo-bold-os &
+npx --yes --package firebase-tools firebase emulators:start --only auth,firestore,functions,storage --project demo-bold-os &
 EMU=$!
 trap 'kill $EMU 2>/dev/null' EXIT INT TERM
 until curl -s http://127.0.0.1:8080 >/dev/null 2>&1 && curl -s http://127.0.0.1:9099 >/dev/null 2>&1; do sleep 1; done

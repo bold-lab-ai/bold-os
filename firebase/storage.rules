@@ -45,6 +45,11 @@ service firebase.storage {
         request.resource.contentType.matches('image/(png|jpeg|gif|webp)') && mayChange();
       allow delete: if signedIn() && mayChange();
     }
+    // Service desk files (functions/service-desk.js): written and read by the server only,
+    // which gives people with the Service desk's View a short-lived link.
+    match /service-desk/{allPaths=**} {
+      allow read, write: if false;
+    }
     match /{allPaths=**} {
       allow read, write: if false;
     }

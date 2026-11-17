@@ -72,3 +72,11 @@ a.event-add + a.event-add{margin-left:24px;}
 .eyebrow--hidden{color:var(--danger-text); opacity:.85;}
 .event-card.is-hidden > :not(.event-top){opacity:.55;}
 .event-loading{font-family:var(--sans); font-size:14px; color:var(--muted);}
+
+/* ---------- Service desk (pages/service-desk.js) ---------- */
+.sd-head{display:flex; justify-content:flex-end; margin-bottom:8px;}
+.sd-file{display:block; margin-top:6px; font-family:var(--sans); font-size:12.5px; color:var(--muted);}
+.event-card.is-busy{opacity:.5; cursor:progress;}
+.sd-controls{display:flex; gap:16px; margin:-14px 0 18px;}
+.sd-add{margin:16px 0 0;}
+.event-list .sd-form{margin:18px 0;}
