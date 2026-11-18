@@ -155,7 +155,7 @@ Every point where the site differs from BOLDiquette: the paper-submission toolin
 - **PAN-BOLD:** their details on their profile; the BOLDiquette marked read.
 - **BOLD-associate:** added to someone else's ongoing project by its owner. PAN-BOLD can't join or ask to join a project: they talk to the lead on Slack (Projects' **Talk to the lead**), who adds them.
 - **BOLD-internal:** a project of their own; every event series required for BOLD-internal joined (the Reading Group; Hamming Sessions invites them all). Attending the group meeting in person isn't checked: BOLD.OS can't measure it.
-- **When:** in their first week after joining the group, not before asking. A reminder on day 5; on day 7, if anything is left, the PIs and admins are told and decide.
+- **When:** in their first week after joining the group, not before asking. A reminder on day 5; on day 7, if anything is left, they’re told it’s over; the PIs and admins see it on People and decide.
 - **Who moves them:** PIs and admins only. When someone meets the next group's requirements (a required series hidden from them doesn't count), the PIs and admins are told on Slack; nobody is moved automatically.
 
 **Proposed BOLDiquette change:** write these as Who is BOLD's measurable Requirements, with the first week, once the BOLDiquette's own discussion of it is possible.

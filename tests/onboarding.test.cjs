@@ -95,8 +95,8 @@ test('a first week’s timers: remind on day 5, end on day 7, nothing once done 
   assert.strictEqual(trialAction('end', trial, data, 'staff', left), 'nothing', 'in another group now');
   assert.strictEqual(trialAction('end', null, data, 'internal', left), 'nothing');
   assert.deepStrictEqual(stepsLeft(left), ['join BOLD Reading Group']);
-  const t = trialTexts('BOLD-internal', stepsLeft(left), 'Ari');
-  assert.match(t.remind, /Two days left/); assert.match(t.end, /PIs and admins have been told/); assert.match(t.staff, /^⌛ Ari/);
+  const t = trialTexts('BOLD-internal', stepsLeft(left));
+  assert.match(t.remind, /Two days left/); assert.match(t.end, /first week in BOLD-internal is over/); assert.strictEqual(t.staff, undefined, 'PIs and admins aren’t told');
 });
 
 test('only who was newly added to a list counts (onProjectJoined, onSeriesJoined)', () => {

@@ -3,8 +3,7 @@
 // Notifications for what someone is part of (2026-11-05): each goes to their Notifications Inbox
 // (notifications.html) through `deliver` (functions/index.js), which also pings them on Slack if
 // they're on pings (pilot notification-pings). Nobody hears of what they did themselves.
-// - A project they're on: someone joins or leaves it; a presentation is added; it starts (ongoing)
-//   or is completed; its meeting, slides, notes or repository change.
+// - A project they lead: someone joins or leaves it.
 // - A board card they're on or raised: they're put on it; it moves column; it's done (its raiser
 //   hears of that through card-done already, so here its people do).
 // - A part of the BOLDiquette or a guide they last changed (its `changedBy`): a comment on it, a
@@ -19,26 +18,15 @@ const minus = (list, who) => Array.from(new Set(emailsOf(list))).filter((e) => e
 const q = (t) => '“' + String(t || '').replace(/\s+/g, ' ').trim().slice(0, 120) + '”';
 
 // Pure: a project's workspace before → after → [{ to, text, kind }]. leads: whose project it is (its card's
-// submitter): someone joining or leaving it is a kind of its own for them (project-joined-mine, notify-kinds.js).
+// submitter). Only they hear of someone joining or leaving it (2026-11-18: everyone else, and every other
+// change to a project (its status, meeting, slides, notes, repository, presentations), was too much).
 function projectChanges(b, a, names, leads){
   b = b || {}; a = a || {};
   const out = [], title = q(a.title || b.title || 'your project'), name = (e) => (names && names[e]) || e.split('@')[0];
-  const was = emailsOf(b.members), now = emailsOf(a.members);
-  const lead = emailsOf(leads), split = (to, text, kind) => {
-    out.push({ to: to.filter((e) => lead.indexOf(e) >= 0), text, kind: kind + '-mine' });
-    out.push({ to: to.filter((e) => lead.indexOf(e) < 0), text, kind });
-  };
-  now.filter((e) => was.indexOf(e) < 0).forEach((e) => split(minus(now, e), name(e) + ' joined ' + title + '.', 'project-joined'));
-  was.filter((e) => now.indexOf(e) < 0).forEach((e) => split(minus(now, e), name(e) + ' left ' + title + '.', 'project-left'));
-  if (!b.startedAt && a.startedAt) out.push({ to: minus(now, a.startedBy), text: title + ' is ongoing now.', kind: 'project-status' });
-  if (!b.completedAt && a.completedAt) out.push({ to: minus(now, a.completedBy), text: title + ' is completed.', kind: 'project-status' });
-  const same = (x, y) => JSON.stringify(x || null) === JSON.stringify(y || null);
-  const changed = [];
-  if (!same(b.meeting, a.meeting) && (b.meeting || a.meeting)) changed.push(a.meeting ? 'its meeting' : 'its meeting (removed)');
-  if (!same([b.deckId, b.ownDeckUrl], [a.deckId, a.ownDeckUrl])) changed.push('its slides');
-  if (!same([b.notesId, b.ownNotesUrl], [a.notesId, a.ownNotesUrl])) changed.push('its notes');
-  if (!same([b.repoName, b.ownRepoUrl], [a.repoName, a.ownRepoUrl])) changed.push('its repository');
-  if (changed.length && was.length) out.push({ to: minus(now, a.updatedBy), text: title + ': ' + changed.join(', ') + ' changed.', kind: 'project-setup' });
+  const was = emailsOf(b.members), now = emailsOf(a.members), lead = emailsOf(leads);
+  const tell = (e, text, kind) => out.push({ to: lead.filter((l) => l !== e), text, kind });
+  now.filter((e) => was.indexOf(e) < 0).forEach((e) => tell(e, name(e) + ' joined ' + title + '.', 'project-joined-mine'));
+  was.filter((e) => now.indexOf(e) < 0).forEach((e) => tell(e, name(e) + ' left ' + title + '.', 'project-left-mine'));
   return out.filter((x) => x.to.length);
 }
 
@@ -93,20 +81,12 @@ module.exports = function({ db, onDocumentWritten, onDocumentUpdated, onDocument
 
   const onWorkspaceNotify = onDocumentUpdated('projectWorkspaces/{pid}', safe('a project', async (event) => {
     const b = event.data.before.data(), a = event.data.after.data();
+    // Only someone joining or leaving is told (to whose project it is: its card's submitter).
+    if (JSON.stringify(emailsOf(b.members).sort()) === JSON.stringify(emailsOf(a.members).sort()) || !a.boardId || !a.cardId) return;
+    const card = (await db.collection('boards').doc(a.boardId).collection('cards').doc(a.cardId).get()).data() || {};
+    const leads = [(card.submittedBy || {}).email];
     const names = await namesOf(emailsOf(b.members).concat(emailsOf(a.members)));
-    // Whose project it is: its card's submitter, only looked up when someone joined or left.
-    let leads = [];
-    if (JSON.stringify(emailsOf(b.members).sort()) !== JSON.stringify(emailsOf(a.members).sort()) && a.boardId && a.cardId) {
-      const card = (await db.collection('boards').doc(a.boardId).collection('cards').doc(a.cardId).get()).data() || {};
-      leads = [(card.submittedBy || {}).email];
-    }
     await send(projectChanges(b, a, names, leads), projectPageUrl(a.cardId || event.params.pid, a.boardId), 'project:' + event.params.pid);
-  }));
-  const onPresentationNotify = onDocumentCreated('projectWorkspaces/{pid}/presentations/{id}', safe('a presentation', async (event) => {
-    const t = event.data.data() || {}, ws = (await db.collection('projectWorkspaces').doc(event.params.pid).get()).data() || {};
-    const to = minus(ws.members, (t.by || {}).email);
-    if (to.length) await deliver(to, { text: ((t.by || {}).name || 'Someone') + ' added a presentation to ' + q(ws.title) + ': ' + q(t.title) + (t.date ? ', ' + t.date : '') + '.',
-      href: projectPageUrl(ws.cardId || event.params.pid, ws.boardId), feature: 'project-presentation', source: 'bold', about: 'project:' + event.params.pid });
   }));
   const onCardNotify = onDocumentUpdated('projectWorkspaces/{pid}/work/{id}', safe('a card', async (event) => {
     const b = event.data.before.data(), a = event.data.after.data();
@@ -166,7 +146,7 @@ module.exports = function({ db, onDocumentWritten, onDocumentUpdated, onDocument
   }));
 
   return {
-    onWorkspaceNotify, onPresentationNotify, onCardNotify, onEditionNotify, onGroupNotify,
+    onWorkspaceNotify, onCardNotify, onEditionNotify, onGroupNotify,
     onHandbookCommentNotify: onPartNotify('handbook', 'comments'), onHandbookProposalNotify: onPartNotify('handbook', 'proposals'),
     onGuideCommentNotify: onPartNotify('guides', 'comments'), onGuideProposalNotify: onPartNotify('guides', 'proposals'),
     onSkillProposalNotify: onMadeNotify('skills', skillUrl, 'skill'), onToolProposalNotify: onMadeNotify('agentTools', toolUrl, 'tool'),

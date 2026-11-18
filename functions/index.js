@@ -8412,12 +8412,11 @@ function trialAction(stage, trial, data, group, steps){
   if (steps && steps.done) return 'done';
   return stage === 'remind' ? 'remind' : stage === 'end' ? 'end' : 'nothing';
 }
-function trialTexts(label, left, name){
+function trialTexts(label, left){
   const list = left.join('; ');
   return {
     remind: '⏳ Two days left of your first week in ' + label + '. Still to do: ' + list + '. ' + linkedTitle('Your first steps', SITE_URL + 'onboarding.html') + '.',
-    end: '⌛ Your first week in ' + label + ' is over, with this still to do: ' + list + '. ' + linkedTitle('Your first steps', SITE_URL + 'onboarding.html') + '. The PIs and admins have been told.',
-    staff: '⌛ ' + slackText(name) + '’s first week in ' + label + ' is over, with this still to do: ' + list + '. You decide what happens next: ' + linkedTitle('People', SITE_URL + 'people.html') + '.',
+    end: '⌛ Your first week in ' + label + ' is over, with this still to do: ' + list + '. ' + linkedTitle('Your first steps', SITE_URL + 'onboarding.html') + '.',
     done: '🎉 Congratulations! You’ve done everything ' + label + ' asks of you in your first week.',
   };
 }
@@ -8444,11 +8443,10 @@ exports.trialCheck = onTaskDispatched({ retryConfig: { maxAttempts: 3, minBackof
   const what = trialAction(data.stage, trial, data, group, steps);
   if (what === 'nothing') return;
   if (what === 'done') { await ref.set({ trial: { done: true, doneAt: Date.now() } }, { merge: true }); return; }
-  const m = await db.collection('members').doc(email).get(), name = (m.exists && m.data().name) || email;
-  const t = trialTexts(GROUP_LABELS[trial.group], stepsLeft(steps), name), token = SLACK_BOT_TOKEN.value();
+  const t = trialTexts(GROUP_LABELS[trial.group], stepsLeft(steps)), token = SLACK_BOT_TOKEN.value();
   if (what === 'remind') { await sendEvent(token, { key: 'group-trial', emails: [email], headline: t.remind }); return; }
+  // Only to them: PIs and admins aren't told of each new person's week (2026-11-18); People shows it.
   await sendEvent(token, { key: 'group-trial', emails: [email], headline: t.end });
-  await sendEvent(token, { key: 'group-trial', emails: (await rolesEmails('pis')).concat(await rolesEmails('admins')), headline: t.staff });
   await ref.set({ trial: { ended: Date.now() } }, { merge: true });
 });
 // Meeting the next group's requirements (2026-11-03): PIs and admins are told, once per person and
@@ -8496,7 +8494,7 @@ async function checkTrial(email){
     if (!trial || trial.done || trial.ended || (await access.groupFor(email)) !== trial.group) return;
     if (!(await onboardingFor(email)).done) return;
     await ref.set({ trial: { done: true, doneAt: Date.now() } }, { merge: true });
-    await sendEvent(SLACK_BOT_TOKEN.value(), { key: 'group-ready', emails: [email], headline: trialTexts(GROUP_LABELS[trial.group], [], '').done });
+    await sendEvent(SLACK_BOT_TOKEN.value(), { key: 'group-ready', emails: [email], headline: trialTexts(GROUP_LABELS[trial.group], []).done });
   } catch (err){ logger.warn('checkTrial failed', { error: String(err && err.message || err) }); }
 }
 // Who's newly in a list, between two versions of a document.
@@ -9412,59 +9410,7 @@ exports.retryCalendarLimits = onSchedule({ schedule: 'every 60 minutes', secrets
   if (todo.length) logger.info('Calendar retries', { waiting: todo.length, done });
 });
 
-// Meetings about to start (2026-11-05): 5 minutes before a project's meeting, a study meeting or a
-// recurring event's, everyone it invites gets a notification (Inbox and desktop, not Slack) with Join.
-// Only meetings in Google Calendar (eventId), not paused, not past their end date, and on their week
-// for one every N weeks (from eventStart, as calendar.html places it). Each once: meetingReminders/{key}.
-// Pure: minutes until `m` starts if that's 1–5 from now (London's `todayIso` and `nowHm`), else 0.
-function meetingStartsSoon(m, start, todayIso, nowHm){
-  if (!m || !m.day || !m.time) return 0;
-  const d = new Date(todayIso + 'T00:00:00Z');
-  if (WEEKDAYS[(d.getUTCDay() + 6) % 7] !== m.day) return 0;
-  if (m.until && m.until < todayIso) return 0;
-  if (start){
-    if (todayIso < start) return 0;
-    const weeks = Math.round((Date.parse(todayIso) - Date.parse(start)) / (7 * 86400000));
-    if (weeks % (m.every || 1) !== 0) return 0;
-  }
-  const mins = (hm) => Number(hm.slice(0, 2)) * 60 + Number(hm.slice(3, 5));
-  const left = mins(m.time) - mins(nowHm);
-  return left >= 1 && left <= 5 ? left : 0;
-}
-exports.meetingReminders = onSchedule({ schedule: '*/5 * * * *', timeZone: PROJECT_TZ }, async function(){
-  const today = todayIsoLondon(), now = nowHmLondon();
-  const code = WEEKDAYS[(new Date(today + 'T00:00:00Z').getUTCDay() + 6) % 7];
-  // On today's weekday, or with a date moved to today (meeting-moves.js), each once.
-  const both = async (col) => {
-    const [a, b] = await Promise.all([db.collection(col).where('meeting.day', '==', code).get(), db.collection(col).where('movedTo', 'array-contains', today).get()]);
-    const seen = new Set();
-    return { docs: a.docs.concat(b.docs).filter((d) => !seen.has(d.id) && seen.add(d.id)) };
-  };
-  const [wsSnap, seriesSnap, studySnap] = await Promise.all([both('projectWorkspaces'), both('eventSeries'), both('studies')]);
-  const due = [];
-  wsSnap.docs.forEach((d) => { const w = d.data();
-    if (w.eventId && !w.pausedAt && w.group !== 'completed') due.push({ key: 'project-' + d.id, m: w.meeting, moved: w.meetingMoved, start: w.eventStart, title: w.title || 'Your project', to: w.members || [], join: w.meetUrl || w.eventLink || '', href: projectPageUrl(w.cardId || d.id, w.boardId) });
-  });
-  seriesSnap.docs.forEach((d) => { const x = d.data();
-    if (x.eventId && !x.pausedAt && !x.hidden && x.kind !== 'editions') due.push({ key: 'series-' + d.id, m: x.meeting, moved: x.meetingMoved, start: x.eventStart, title: x.title || 'A meeting', to: x.guests || [], join: x.meetUrl || x.eventLink || '', href: SITE_URL + 'series.html?series=' + encodeURIComponent(d.id) });
-  });
-  studySnap.docs.forEach((d) => { const x = d.data();
-    if (x.eventId && !x.pausedAt) due.push({ key: 'study-' + d.id, m: x.meeting, moved: x.meetingMoved, start: x.eventStart, title: (x.name || d.id) + '\u2019s ' + (x.degree === 'Master student' ? 'Master' : 'PhD') + ' meeting', to: [d.id].concat((x.people || []).map((p) => p.email)), join: x.meetUrl || x.eventLink || '', href: SITE_URL + 'calendar.html' });
-  });
-  for (const x of due){
-    // Today's date of it, moved or not: as a meeting of its own today.
-    const t = x.m && meetingMoves.occurrences(x.m, x.start, x.moved, today, today)[0];
-    if (!t) continue;
-    x.m = Object.assign({}, x.m, { day: code, time: t.time, minutes: t.minutes, every: 1 });
-    const left = meetingStartsSoon(x.m, '', today, now);
-    if (!left || !x.to.length) continue;
-    // Once per meeting and day, however many runs see it.
-    try { await db.collection('meetingReminders').doc(x.key + '-' + today + '-' + x.m.time.replace(':', '')).create({ at: Date.now(), to: x.to.length }); }
-    catch (err){ continue; }
-    const endsAt = Date.now() + (left + (x.m.minutes || 60)) * 60000;
-    await noteFor(x.to, { source: 'bold', feature: 'meeting-soon', text: '\u201c' + x.title + '\u201d starts in ' + left + ' minute' + (left === 1 ? '' : 's') + '.', href: x.join || x.href, join: x.join, endsAt });
-  }
-});
+// Meetings about to start (meetingReminders, 2026-11-05) told everyone they invite: removed 2026-11-18, too many.
 // A public event's content, cut down for whoever can't read it directly (signed out, PAN-BOLD).
 exports.publicEvent = require('./public-event')({ db, onCall, HttpsError }).publicEvent;
 // Slack threads into Conversations (functions/slack-thread.js): Import from Slack on the page, Take it to the BOLD OS in Slack.
@@ -9501,7 +9447,7 @@ exports.homeLetter = boldLlm.homeLetter;
 exports.onLetterJob = boldLlm.onLetterJob;
 exports.onVisit = boldLlm.onVisit;
 
-exports._internal = { replaceEmail, accountEmailsBySlackId, calendarUpdates, isCalendarLimit, meetingStartsSoon,
+exports._internal = { replaceEmail, accountEmailsBySlackId, calendarUpdates, isCalendarLimit,
   slackImagesOf, slackToPlain, pingText, bugReportOf, bugNotes, bugTitle,
   channelsToJoin, setupMissing, setupMissingText, workspaceStarted, normalizeRepo, setupNudgeText, projectHealth,
   trialAction, trialTexts, stepsLeft, addedTo, eligibleSteps, eligibleText, onOthers,

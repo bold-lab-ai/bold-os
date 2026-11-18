@@ -12,11 +12,8 @@ const KINDS = [
     { id: 'conv-invites', label: 'Invitations to conversations', features: ['conversation-invites'] },
   ] },
   { section: 'Projects', items: [
-    { id: 'proj-people-mine', label: 'People joining or leaving my projects', features: ['project-joined-mine', 'project-left-mine'] },
-    { id: 'proj-people', label: 'People joining or leaving other projects I’m in', features: ['project-joined', 'project-left'] },
-    { id: 'proj-changes', label: 'A project I’m in starting, completing, changing its setup or adding a presentation', features: ['project-status', 'project-setup', 'project-presentation'] },
+    { id: 'proj-people-mine', label: 'People joining or leaving my projects, and their setup still missing', features: ['project-joined-mine', 'project-left-mine', 'project-setup'] },
     { id: 'proj-invites', label: 'Invitations to projects, and their answers', features: ['project-invites'] },
-    { id: 'meetings', label: 'Meetings about to start', features: ['meeting-soon'] },
   ] },
   { section: 'Boards', items: [
     { id: 'cards', label: 'Cards I’m on or raised: put on one, moved, done', features: ['card-assigned', 'card-moved', 'card-done'] },
@@ -32,7 +29,7 @@ const KINDS = [
     { id: 'events', label: 'Event series I joined or organise: new, moved or cancelled editions, and what’s due', features: ['edition-new', 'edition-moved', 'edition-cancelled', 'series-added', 'series-due'] },
   ] },
   { section: 'You, and what you asked', items: [
-    { id: 'group', label: 'My group: changes, a new group’s first week, being ready for the next', features: ['group-changed', 'group-trial', 'group-ready'] },
+    { id: 'group', label: 'My group: changes, my first week in a new one, being ready for the next', features: ['group-changed', 'group-trial', 'group-ready'] },
     { id: 'asks', label: 'Answers to what I asked, and asks waiting on me: letters, introductions, supervision, agents', features: ['letters', 'introductions', 'supervision-requests', 'agent-requests', 'inviter-confirm'] },
     { id: 'review', label: 'Internal Review: my papers, reviews and reviewers', features: ['irb-board', 'irb-author-cap', 'irb-reviews-out'] },
   ] },

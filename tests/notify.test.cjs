@@ -4,15 +4,16 @@ const assert = require('node:assert');
 const { projectChanges, cardChanges, partOwners, editionChange } = require('../functions/notify.js');
 const { pingText } = require('../functions/index.js')._internal;
 
-test('a project: who joined or left, its status and its setup, told to its other people', () => {
-  const b = { title: 'P', members: ['a@x', 'b@x'] };
-  const a = { title: 'P', members: ['a@x', 'c@x'], startedAt: 1, startedBy: 'a@x', meeting: { day: 'MO' }, updatedBy: 'a@x' };
-  const out = projectChanges(b, a, { 'c@x': 'Cara', 'b@x': 'Ben' });
-  assert.deepStrictEqual(out.find((x) => x.kind === 'project-joined'), { to: ['a@x'], text: 'Cara joined “P”.', kind: 'project-joined' });
-  assert.deepStrictEqual(out.find((x) => x.kind === 'project-left'), { to: ['a@x', 'c@x'], text: 'Ben left “P”.', kind: 'project-left' });
-  assert.deepStrictEqual(out.find((x) => x.kind === 'project-status').to, ['c@x']);
-  assert.strictEqual(out.find((x) => x.kind === 'project-setup').text, '“P”: its meeting changed.');
-  assert.deepStrictEqual(projectChanges(a, a), []);
+test('a project: only whose project it is hears who joined or left; nothing else about it', () => {
+  const b = { title: 'P', members: ['lead@x', 'a@x', 'b@x'] };
+  const a = { title: 'P', members: ['lead@x', 'a@x', 'c@x'], startedAt: 1, startedBy: 'a@x', meeting: { day: 'MO' }, notesId: 'n', updatedBy: 'a@x' };
+  assert.deepStrictEqual(projectChanges(b, a, { 'c@x': 'Cara', 'b@x': 'Ben' }, ['lead@x']), [
+    { to: ['lead@x'], text: 'Cara joined “P”.', kind: 'project-joined-mine' },
+    { to: ['lead@x'], text: 'Ben left “P”.', kind: 'project-left-mine' },
+  ]);
+  assert.deepStrictEqual(projectChanges(b, a, {}), [], 'nobody leads it: nobody told');
+  assert.deepStrictEqual(projectChanges({ title: 'P', members: ['lead@x'] }, { title: 'P', members: ['lead@x'] , notesId: 'n' }, {}, ['lead@x']), [], 'a change: nobody told');
+  assert.deepStrictEqual(projectChanges({ members: [] }, { title: 'P', members: ['lead@x'] }, {}, ['lead@x']), [], 'the lead joining: not told of themselves');
 });
 
 test('a card: whoever’s put on it, and its people and raiser when it moves; never the mover', () => {
@@ -59,15 +60,6 @@ test('moving someone to another email: values, arrays and map keys, any case', (
   const r = replaceEmail({ to: 'Old@x', members: ['a@x', 'old@x'], by: { email: 'old@x', name: 'Y' }, seen: { 'old@x': 1 }, n: 3, note: 'old@x said' }, 'old@x', 'new@x');
   assert.strictEqual(r.n, 4);
   assert.deepStrictEqual(r.value, { to: 'new@x', members: ['a@x', 'new@x'], by: { email: 'new@x', name: 'Y' }, seen: { 'new@x': 1 }, n: 3, note: 'old@x said' });
-});
-
-test('someone joining or leaving: whose project it is hears of it as a kind of its own', () => {
-  const b = { title: 'P', members: ['lead@x', 'a@x'] }, a = { title: 'P', members: ['lead@x', 'a@x', 'c@x'] };
-  const out = projectChanges(b, a, { 'c@x': 'Cara' }, ['Lead@x']);
-  assert.deepStrictEqual(out.find((x) => x.kind === 'project-joined-mine').to, ['lead@x']);
-  assert.deepStrictEqual(out.find((x) => x.kind === 'project-joined').to, ['a@x']);
-  // With nobody leading it, as before.
-  assert.strictEqual(projectChanges(b, a, {}).some((x) => /-mine$/.test(x.kind)), false);
 });
 
 const kinds = require('../functions/notify-kinds');
