@@ -1,0 +1,123 @@
+// Upstream components and helpers, with the alternative font recommended for
+// services outside GOV.UK. No crown, government wordmark or licensed font assets.
+@use 'govuk-frontend/dist/govuk' as govuk with (
+  $govuk-font-family: (Arial, Helvetica, sans-serif)
+);
+
+// Existing application selectors are aliases, so Firestore-rendered controls
+// receive the same upstream styles without rewriting HTML or observing the DOM.
+// Keep application layout rules in the lower-priority `bold` cascade layer.
+.btn-box, .btn-primary, .auth-signin, .gate-signup-btn,
+.event-form-actions button, .confirm-actions button {
+  @extend .govuk-button;
+  margin-bottom: govuk.govuk-spacing(2);
+}
+.btn-box:not(.is-primary), .event-form-actions button:not(.ev-save),
+.confirm-actions button:not(.is-primary), .gate-signup-btn {
+  @extend .govuk-button--secondary;
+}
+.btn-box.danger, .btn-primary.danger { @extend .govuk-button--warning; }
+.btn-text { @extend .govuk-link; @include govuk.govuk-font(16); }
+input:not([type]), input[type='text'], input[type='email'], input[type='url'],
+input[type='tel'], input[type='number'], input[type='search'], input[type='password'],
+input[type='date'], input[type='time'], input[type='datetime-local'] {
+  @extend .govuk-input;
+  color: var(--ink); background-color: var(--surface);
+  border-color: var(--ink);
+  min-width: 0;
+}
+textarea {
+  @extend .govuk-textarea;
+  color: var(--ink); background-color: var(--surface); border-color: var(--ink);
+}
+select {
+  @extend .govuk-select;
+  color: var(--ink); background-color: var(--surface); border-color: var(--ink);
+  max-width: 100%;
+}
+// Native checkboxes/radios retain their labels and handlers, with larger targets.
+input[type='checkbox'], input[type='radio'] {
+  width: 24px; height: 24px; flex-shrink: 0; accent-color: var(--ink);
+}
+.ev-error, .field-error, .jn-field-error, .sched-error {
+  @extend .govuk-error-message;
+  color: var(--danger-text);
+}
+.event-form-hint, .field-hint { @extend .govuk-hint; color: var(--muted); }
+.back-link { @extend .govuk-back-link; color: var(--link); }
+
+table { @extend .govuk-table; color: var(--ink); }
+th { @extend .govuk-table__header; border-color: var(--line); }
+td { @extend .govuk-table__cell; border-color: var(--line); }
+caption { @extend .govuk-table__caption; }
+details { color: var(--ink); }
+summary { color: var(--link); cursor: pointer; text-decoration: underline; }
+// The search field is a compact control in the shared header.
+.mast-search input { width: min(240px, 25vw); }
+.mast-search input:focus { width: min(300px, 35vw); }
+body { @include govuk.govuk-font(19); background: var(--paper); color: var(--ink); }
+h1 { @include govuk.govuk-font(36, $weight: bold); }
+h2 { @include govuk.govuk-font(24, $weight: bold); }
+h3, h4 { @include govuk.govuk-font(19, $weight: bold); }
+h1, h2, h3, h4 { letter-spacing: normal; color: var(--ink); }
+p { line-height: 1.5; }
+a { color: var(--link); text-decoration-thickness: max(1px, .0625rem); text-underline-offset: .15em; }
+a:hover { text-decoration-thickness: max(3px, .1875rem); }
+code, kbd, samp { font-size: .875em; }
+hr { border: 0; border-bottom: 1px solid var(--line); }
+label, legend { color: var(--ink); }
+fieldset { min-width: 0; }
+// Same keyboard affordance on bespoke boards, menus and upstream components.
+a:focus-visible, button:focus-visible, summary:focus-visible,
+[tabindex]:not([tabindex='-1']):focus-visible {
+  @include govuk.govuk-focused-text;
+}
+input:focus, textarea:focus, select:focus {
+  @include govuk.govuk-focused-form-input;
+}
+[aria-invalid='true'] { border-color: var(--danger-text); }
+button:disabled, .is-off { cursor: not-allowed; }
+[hidden] { display: none !important; }
+
+// Application shell: GOV.UK generic header, with BOLD's existing navigation,
+// search and account controls. Menus inherit the page palette in both themes.
+.masthead.govuk-generic-header {
+  background: var(--paper); color: var(--ink);
+  border-bottom: 4px solid var(--accent);
+}
+.wordmark.govuk-generic-header__homepage-link {
+  color: var(--ink); font-size: 24px; font-weight: 700;
+  padding: 0; margin: 0; text-decoration: none;
+}
+.govuk-generic-header__logo { padding: 0; }
+.nav-group-label, .nav-link, .sidebar-title { font-size: 16px; letter-spacing: normal; }
+.nav-link.active, .nav-group-label.active { font-weight: 700; }
+.event-form { padding: govuk.govuk-spacing(4); font-size: 19px; }
+.event-form-head { font-size: 19px; font-weight: 700; }
+.event-form label { color: var(--ink); }
+.event-form-actions, .confirm-actions { gap: govuk.govuk-spacing(3); flex-wrap: wrap; }
+footer { border-top: 1px solid var(--line); background: var(--wash); font-size: 16px; }
+.govuk-skip-link { z-index: 10000; }
+#pageContent { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; }
+#pageContent:focus { outline: none; }
+
+// Dark mode is BOLD.OS's extension, not an upstream GOV.UK theme. Existing
+// tokens keep custom boards/graphs in sync; upstream components get equivalents.
+:root[data-theme='dark'] {
+  .govuk-body, .govuk-body-l, .govuk-body-s, .govuk-label, .govuk-legend,
+  .govuk-heading-xl, .govuk-heading-l, .govuk-heading-m, .govuk-heading-s,
+  .govuk-table, .govuk-summary-list, .govuk-details { color: var(--ink); }
+  .govuk-hint { color: var(--muted); }
+  .govuk-link, .govuk-details__summary, .govuk-back-link { color: var(--link); }
+  .govuk-input, .govuk-textarea, .govuk-select {
+    color: var(--ink); background: var(--surface); border-color: var(--ink);
+  }
+  .govuk-error-message { color: var(--danger-text); }
+}
+@media (prefers-reduced-motion: reduce) { html { scroll-behavior: auto; } }
+@media print {
+  body { color: #000; background: #fff; }
+  .masthead, .sidebar, .govuk-skip-link { display: none; }
+  .shell { display: block; }
+  .shell-main { margin: 0; }
+}

@@ -1,39 +1,32 @@
-/* Minimal editorial design system, shared across bold-lab.ai — one accent
-   hue doing all the work (BOLD's own blue, deepened for reading), EB
-   Garamond for anything meant to be read, Cabin for nav/UI chrome, no
-   border-radius, no filled badges or button blocks, hairline rules.
-   Adapted from inherentlabs.ai's visual language (cream ground, single
-   muted accent, serif body, sans chrome, underlined links over buttons). */
-/* ---------- colour ----------
-   Rules use these roles, never a colour value, so a theme is one block that sets them:
-   light here, dark under :root[data-theme="dark"] below. Tints, rules and shadows are
-   mixed from the roles (color-mix), so they follow the theme too. A page may change a
-   role in its own :root; the dark block's selector is stronger, so in dark mode the
-   shared value wins unless the page also gives its own :root[data-theme="dark"] one. */
+/* BOLD.OS layouts and application components. GOV.UK Frontend supplies the
+   design system through govuk.scss; these legacy role names keep every page,
+   dynamic component and the theme editor on the same palette. Dark mode is
+   a BOLD.OS extension. Load this stylesheet in the `bold` cascade layer. */
 :root{
   color-scheme:light;
-  --ink:#1a2b4a;          /* headings, strong text, solid fills */
-  --ink-soft:#33445f;     /* body text */
-  --muted:#7d8698;        /* secondary text, quiet icons */
-  --paper:#f5f3ee;        /* the page */
+  --ink:#0b0c0c;          /* headings, strong text, solid fills */
+  --ink-soft:#0b0c0c;     /* body text */
+  --muted:#484949;        /* secondary text, quiet icons */
+  --paper:#ffffff;        /* the page */
   --surface:#ffffff;      /* cards, inputs, raised panels */
-  --wash:#ece9e1;         /* menus, code, hover fills: a step off the paper */
-  --line:color-mix(in srgb, var(--ink) 16%, transparent);     /* borders, hairline rules */
+  --wash:#f4f8fb;         /* menus, code, hover fills: a step off the paper */
+  --line:#cecece;     /* borders, hairline rules */
   --rule:color-mix(in srgb, var(--ink) 8%, transparent);      /* fainter rules between list rows */
   --underline:color-mix(in srgb, var(--ink) 32%, transparent); /* a link's resting underline */
   /* The accent marks things (focus rings, current tab, indicators, filled buttons);
-     --link colours text you can click. One navy in light; in dark the marks turn
+     --link colours text you can click. GOV.UK blue in light; in dark the marks turn
      azure while the text stays white. */
-  --accent:#1a2b4a;
-  --accent-hover:#0f1c33; /* a filled accent control under the pointer */
-  --accent-dim:#e3e6ec;   /* a quiet accent-tinted fill */
-  --link:var(--accent);
+  --accent:#1d70b8;
+  --accent-hover:#0f385c; /* a filled accent control under the pointer */
+  --accent-dim:#d2e2f1;   /* a quiet accent-tinted fill */
+  --link:#1a65a6;
+  --focus:#ffdd00; --focus-text:#0b0c0c;
   --on-fill:#fff;         /* text and icons on the accent, or on a hue below */
   --hover-mix:#000;       /* mixed into a filled hue under the pointer: darker in light, lighter in dark */
-  --shade:#1a2b4a;        /* shadows and backdrops */
+  --shade:#0b0c0c;        /* shadows and backdrops */
   --shadow:0 14px 44px color-mix(in srgb, var(--shade) 12%, transparent);
   /* Hues for kinds of things (session types, groups, calendar entries) and status. */
-  --green:#256b60;
+  --green:#0f7a52;
   --brown:#8a5a12;
   --amber:#b7791f;
   --plum:#7d5a99;
@@ -42,15 +35,15 @@
   --teal:#4f7f94;
   --success-text:var(--green); --success-bg:#ddefe9; --success-line:#bfe0d6;
   --warn-text:var(--brown);    --warn-bg:#f6ecda;    --warn-line:#e6c98f;
-  --danger-text:#b42318;       --danger-bg:#fbe6e4;  --danger-line:#f0c9c4;
+  --danger-text:#ca3535;       --danger-bg:#fbe6e4;  --danger-line:#f0c9c4;
   --neutral-text:#4b5563;      --neutral-bg:#eef2f4;
   --highlight:rgba(232,190,80,.28);        /* search matches, commented text */
   --highlight-strong:rgba(232,190,80,.55);
   --highlight-line:rgba(200,150,30,.55);
 
-  --label-fade:.7;        /* small uppercase labels in --muted are faded this much */
+  --label-fade:1;        /* small uppercase labels in --muted are faded this much */
 
-  --radius:2px;
+  --radius:0;
   --content-max:900px;
   /* Every page's content starts at the same left edge: that of a 900px column centred beside
      the sidebar. A wider page (a board, a guide with its contents) keeps that edge and grows
@@ -60,10 +53,10 @@
   --article-max:640px;
   --gutter:clamp(20px, 4vw, 48px);
   --chrome-pad:16px; /* shared inset: masthead left/right padding = sidebar-inner left/right padding */
-  --serif:'EB Garamond', Georgia, 'Times New Roman', serif;
-  --sans:'Cabin', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  --serif:Arial, Helvetica, sans-serif;
+  --sans:Arial, Helvetica, sans-serif;
 }
-/* Dark: the light theme's navy becomes the page, its slate the cards. Set by the masthead's
+/* BOLD dark extension: dark surfaces and light text. Set by the masthead's
    theme button (bold.js mountTheme), kept in localStorage and applied before the page paints
    (base.njk). */
 :root[data-theme="dark"]{
@@ -71,7 +64,7 @@
   --ink:#fff;
   --ink-soft:#dfe3ea;
   --muted:#a6b3c6;
-  --paper:#1a2b4a;
+  --paper:#0b0c0c;
   --surface:#284171;
   --wash:#22365a;
   /* Filled buttons are a light blue with the navy text on them (--on-fill), for contrast. */
@@ -87,7 +80,7 @@
   --success-text:var(--green);
   --warn-text:var(--brown);
   --link:var(--ink);
-  --on-fill:#1a2b4a;
+  --on-fill:#0b0c0c;
   --hover-mix:#fff;
   --shade:#000;
   --shadow:0 14px 44px color-mix(in srgb, var(--shade) 35%, transparent);
@@ -106,7 +99,7 @@
 }
 
 *{box-sizing:border-box;}
-html{scroll-behavior:smooth;}
+html{scroll-behavior:auto;}
 
 body{
   margin:0;

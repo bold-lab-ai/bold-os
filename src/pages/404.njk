@@ -18,17 +18,17 @@ eleventyExcludeFromCollections: true
   try { var t = localStorage.getItem('boldTheme'); if (t === 'dark' || (t === 'auto' && boldSunDark(Date.now()))) document.documentElement.setAttribute('data-theme', 'dark'); } catch (e){}  /* the lamp: light here */
 })();
 </script>
-<link href="{{ site.fonts }}" rel="stylesheet">
+
 <style>
-:root{--ink:#1a2b4a; --muted:#7d8698; --paper:#f5f3ee; --line:color-mix(in srgb, var(--ink) 16%, transparent); --accent:#1a2b4a; --ball:#b42318;}
-:root[data-theme="dark"]{--ink:#fff; --muted:#a6b3c6; --paper:#1a2b4a; --accent:#a6c1f2; --ball:#f0a39b;}
+:root{--ink:#0b0c0c; --muted:#484949; --paper:#ffffff; --line:color-mix(in srgb, var(--ink) 16%, transparent); --accent:#0b0c0c; --ball:#b42318;}
+:root[data-theme="dark"]{--ink:#fff; --muted:#a6b3c6; --paper:#0b0c0c; --accent:#a6c1f2; --ball:#f0a39b;}
 html,body{margin:0; background:var(--paper); color:var(--ink);}
-main{max-width:720px; margin:0 auto; padding:72px 16px 48px; font-family:'EB Garamond', Georgia, serif;}
-.kicker{font-family:'Cabin', system-ui, sans-serif; font-size:12px; letter-spacing:.14em; text-transform:uppercase; color:var(--muted); margin:0;}
+main{max-width:720px; margin:0 auto; padding:72px 16px 48px; font-family:Arial, Helvetica, sans-serif;}
+.kicker{font-family:Arial, Helvetica, sans-serif; font-size:12px; letter-spacing:.14em; text-transform:uppercase; color:var(--muted); margin:0;}
 h1{font-weight:500; font-size:clamp(30px, 6vw, 44px); margin:8px 0 12px; line-height:1.15;}
 p{font-size:19px; line-height:1.5; margin:0 0 10px;}
 canvas{display:block; width:100%; height:240px; margin:28px 0 8px; cursor:pointer; border-bottom:1px solid var(--line);}
-.hint{font-family:'Cabin', system-ui, sans-serif; font-size:13px; color:var(--muted);}
+.hint{font-family:Arial, Helvetica, sans-serif; font-size:13px; color:var(--muted);}
 a{color:var(--accent);}
 </style>
 </head><body><main>

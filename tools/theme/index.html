@@ -5,10 +5,10 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Theme | BOLD.OS</title>
 <script>try { if (localStorage.getItem('boldTheme') === 'dark') document.documentElement.setAttribute('data-theme', 'dark'); } catch (e){}</script>
-<link href="https://fonts.googleapis.com/css2?family=EB+Garamond:ital,wght@0,400;0,500;0,600;0,700;0,800;1,400&family=Cabin:ital,wght@0,400;0,500;0,600;0,700;1,400&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="../assets/css/bold.css">
-<link rel="stylesheet" href="editor.css">
+<style>@import url("../assets/css/bold.css") layer(bold);</style>
+<style>@import url("editor.css") layer(bold);</style>
 <style id="themeEdits"></style>
+<link rel="stylesheet" href="../assets/css/govuk.css">
 </head>
 <body>
 <!-- The theme tool (tools/theme, served by `npm start` only): bold.css's colour roles in light and

@@ -1,5 +1,7 @@
 # Reference
 
+The shared UI now uses GOV.UK Frontend; see [DESIGN-SYSTEM.md](DESIGN-SYSTEM.md) for the build, component aliases and theme extension. Older dated visual descriptions below may describe the previous design.
+
 Detailed notes on every file and feature, with the reasoning behind them, for anyone editing this project. Start with the root [`AGENTS.md`](../AGENTS.md); search this file for what you're touching. Parts are dated and some describe earlier states of the site.
 
 ## What this is

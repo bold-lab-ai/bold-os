@@ -4,14 +4,26 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Site components</title>
-<link href="https://fonts.googleapis.com/css2?family=EB+Garamond:ital,wght@0,400;0,500;0,600;0,700;0,800;1,400&family=Cabin:ital,wght@0,400;0,500;0,600;0,700;1,400&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="../assets/css/bold.css">
-<link rel="stylesheet" href="../assets/css/board.css">
-<link rel="stylesheet" href="../assets/css/pages/projects.css">
-<link rel="stylesheet" href="gallery.css">
+<style>@import url("../assets/css/bold.css") layer(bold);</style>
+<style>@import url("../assets/css/board.css") layer(bold);</style>
+<style>@import url("../assets/css/pages/projects.css") layer(bold);</style>
+<style>@import url("gallery.css") layer(bold);</style>
 <script src="gallery.js"></script>
+<link rel="stylesheet" href="../assets/css/govuk.css">
 </head>
 <body>
+<section aria-labelledby="govukGalleryTitle">
+  <h2 id="govukGalleryTitle">GOV.UK Frontend</h2>
+  <p class="govuk-body">Shared controls use the upstream component styles.</p>
+  <button type="button" class="govuk-button">Continue</button>
+  <button type="button" class="govuk-button govuk-button--secondary">Save draft</button>
+  <button type="button" class="govuk-button" disabled>Unavailable</button>
+  <div class="govuk-form-group">
+    <label class="govuk-label" for="govukGalleryInput">Example field</label>
+    <div class="govuk-hint" id="govukGalleryHint">A hint linked to its input.</div>
+    <input class="govuk-input" id="govukGalleryInput" type="text" aria-describedby="govukGalleryHint">
+  </div>
+</section>
 <!-- The shared components, with the classes the site gives them (bold.css, board.css, projects.css). -->
 <div class="masthead">
   <div class="masthead-left"><div class="masthead-brand"><a class="wordmark" href="#"><strong>BOLD</strong><span>.</span>OS</a><div class="masthead-sub">Internal</div></div></div>

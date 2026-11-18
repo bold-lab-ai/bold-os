@@ -3,8 +3,21 @@
 // (events.html, audit-board.html, …) — Slack messages and bookmarks deep-link to them.
 import fs from 'node:fs';
 import path from 'node:path';
+import * as sass from 'sass';
 
 export default function (eleventyConfig) {
+  // Compile upstream GOV.UK and the small compatibility layer in both build and watch mode.
+  eleventyConfig.addWatchTarget('src/assets/scss/');
+  eleventyConfig.on('eleventy.after', ({ dir }) => {
+    const output = path.join(dir.output, 'assets/css/govuk.css');
+    fs.mkdirSync(path.dirname(output), { recursive: true });
+    fs.writeFileSync(output, sass.compile('src/assets/scss/govuk.scss', {
+      loadPaths: ['node_modules'], style: 'compressed', quietDeps: true
+    }).css);
+  });
+  eleventyConfig.addPassthroughCopy({
+    'node_modules/govuk-frontend/dist/govuk/govuk-frontend.min.js': 'assets/js/govuk-frontend.min.js'
+  });
   // Static files served as-is.
   eleventyConfig.addPassthroughCopy({ 'src/assets': 'assets' });
   // The three-way merge proposals use: one file for the server and the pages (#177).
