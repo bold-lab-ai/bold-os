@@ -69,6 +69,9 @@
   }
   function events(){ return shown('event') ? (data.event || []) : []; }
   function eventUrl(x){ return x.page || 'event.html?event=' + encodeURIComponent(x.slug); }
+  // A one-day event with a start time (a group meeting): a block at its hour, not an all-day chip.
+  function timed(x){ return /^\d\d:\d\d$/.test(x.startTime || '') && (!x.endDate || x.endDate === x.startDate); }
+  function evMinutes(x){ return +x.durationMinutes || 60; }
 
   function projectUrl(w){
     return 'project.html#id=' + encodeURIComponent(w.cardId) + (w.boardId ? '&board=' + encodeURIComponent(w.boardId) : '');
@@ -241,7 +244,7 @@
       html += '<h2 class="meet-day">Events</h2><ul class="proj-list">';
       coming.forEach(function(x){
         html += '<li' + (x.hidden ? ' class="is-paused"' : '') + '><div class="proj-main"><a class="proj-title" href="' + esc(eventUrl(x)) + '">' + esc(x.title) + '</a>' +
-          '<span class="proj-meta">' + esc(E.when(x.startDate, x.endDate)) + (x.place ? ' · ' + esc(x.place) : '') + '</span>' +
+          '<span class="proj-meta">' + esc(E.when(x.startDate, x.endDate) + (timed(x) ? ', ' + x.startTime + '–' + endOf(x.startTime, evMinutes(x)) : '')) + (x.place ? ' · ' + esc(x.place) : '') + '</span>' +
           '<div class="proj-badges">' + kindBadge('event') + (x.hidden ? '<span class="badge">Hidden</span>' : '') + '</div></div></li>';
       });
       html += '</ul>';
@@ -326,7 +329,7 @@
   function weekHtml(ms, evs){
     var start = monday(weekOffset), dates = [];
     for (var i = 0; i < 7; i++) { var d = new Date(start); d.setDate(start.getDate() + i); dates.push(d); }
-    var onDay = function(i){ var t = iso(dates[i]); return evs.filter(function(x){ return x.startDate <= t && (x.endDate || x.startDate) >= t; }); };
+    var onDay = function(i){ var t = iso(dates[i]); return evs.filter(function(x){ return !timed(x) && x.startDate <= t && (x.endDate || x.startDate) >= t; }); };
     // A move of one occurrence being decided in its card: { m, orig, from (its date now), date, time, minutes }.
     var pend = null;
     if (pop && pop.edit && pop.orig && pop.edit.scope === 'once') {
@@ -338,6 +341,10 @@
     // Each meeting's dates this week, moved ones where they were moved to.
     var occs = [];
     ms.forEach(function(m){ occIn(m, iso(dates[0]), iso(dates[6])).forEach(function(o){ occs.push({ m: m, o: o }); }); });
+    evs.filter(function(x){ return timed(x) && x.startDate >= iso(dates[0]) && x.startDate <= iso(dates[6]); }).forEach(function(x){
+      occs.push({ m: { kind: 'event', id: x.slug, title: x.title, href: eventUrl(x), hidden: !!x.hidden, meeting: { time: x.startTime, minutes: evMinutes(x) }, ev: x },
+        o: { orig: x.startDate, date: x.startDate, time: x.startTime, minutes: evMinutes(x), moved: false } });
+    });
     var cols = MEETING_DAYS.map(function(d, i){ return i; }).filter(function(i){
       return i < 5 || occs.some(function(x){ return x.o.date === iso(dates[i]); }) || onDay(i).length;
     });
@@ -408,7 +415,7 @@
           var drag = m.canEdit && !m.paused && !m.hidden && m.start && !o.cancelled;
           html += '<' + tag + ' class="week-block cal-' + m.kind + (m.mine ? ' is-mine' : '') + (greyed(m) || o.cancelled ? ' is-paused' : '') + (o.moved ? ' is-moved' : '') + (o.cancelled ? ' is-cancelled' : '') + (drag ? ' is-draggable' : '') + (pend && pend.m === m && pend.orig === o.orig ? ' is-drag-source' : '') + '" data-key="' + esc(keyOf(m)) + '" data-orig="' + o.orig + '" draggable="false"' + (m.href ? ' href="' + esc(m.href) + '"' : '') +
             ' style="top:' + y(b.s) + 'px;height:' + Math.max(18, y(b.e) - y(b.s) - 2) + 'px;' +
-            'left:calc(' + (b.lane * 100 / n) + '% + 2px);width:calc(' + (100 / n) + '% - 4px)" title="' + esc(m.title + ' · ' + (o.cancelled ? 'This occurrence is cancelled · ' : '') + (o.moved ? dayText(o.date) + ', ' + o.time + '–' + endOf(o.time, o.minutes) + ', moved from ' + dayText(o.orig) + ' · ' : '') + meetingText(m.meeting) + ' · ' + KIND_LABELS[m.kind] + (m.hidden ? ' · Hidden' : m.paused ? ' · Paused' : '') + (m.meeting.link ? ' · Own link' : '') + (drag ? ' · Drag to move this occurrence' : '')) + '">' +
+            'left:calc(' + (b.lane * 100 / n) + '% + 2px);width:calc(' + (100 / n) + '% - 4px)" title="' + esc(m.title + ' · ' + (o.cancelled ? 'This occurrence is cancelled · ' : '') + (o.moved ? dayText(o.date) + ', ' + o.time + '–' + endOf(o.time, o.minutes) + ', moved from ' + dayText(o.orig) + ' · ' : '') + (m.ev ? dayText(o.date) + ', ' + o.time + '–' + endOf(o.time, o.minutes) + (m.ev.place ? ' · ' + m.ev.place : '') : meetingText(m.meeting)) + ' · ' + KIND_LABELS[m.kind] + (m.hidden ? ' · Hidden' : m.paused ? ' · Paused' : '') + (m.meeting.link ? ' · Own link' : '') + (drag ? ' · Drag to move this occurrence' : '')) + '">' +
             '<span class="week-time">' + esc(o.time) + '</span> ' + esc(m.title) + (o.cancelled ? ' <span class="badge">Cancelled</span>' : o.moved ? ' <span class="badge">Moved</span>' : '') + (m.w ? ' ' + groupBadge(m.w) : '') + (m.meeting.link ? ' ' + ownBadge(m) : '') + '</' + tag + '>';
         });
       });
@@ -450,7 +457,7 @@
     var step = e.target.closest('.cal-step');
     if (step) { var s = +step.getAttribute('data-step'); weekOffset = s ? weekOffset + s : 0; render(); return; }
     // A meeting's block (a plain click: a new tab still opens its page) or Ask to join.
-    var opener = e.target.closest('.week-block, .cal-open');
+    var opener = e.target.closest('.week-block:not(.cal-event), .cal-open');
     if (opener && !(e.metaKey || e.ctrlKey || e.shiftKey || e.button)) { e.preventDefault(); openPop(opener.getAttribute('data-key'), opener); return; }
     onJoin(e);
   });

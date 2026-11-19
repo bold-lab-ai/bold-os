@@ -342,8 +342,9 @@ module.exports = function(deps){
     const mine = (list) => (list || []).some((e) => String(e || '').toLowerCase() === email);
     let events = [], meetings = [];
     if (seeEvents) {
-      events = (await lab.eventsFor(email)).filter((e) => !isHidden(e, full)).map((e) => ({
-        id: e._id, title: e.title, start: e.startDate, end: e.endDate, place: e.place || '', description: plain(e.description),
+      // A skipped group meeting is left out, as on the Calendar page.
+      events = (await lab.eventsFor(email)).filter((e) => !isHidden(e, full) && e.status !== 'skipped').map((e) => ({
+        id: e._id, title: e.title, start: e.startDate, end: e.endDate, time: e.startTime || '', minutes: e.durationMinutes || 0, place: e.place || '', description: plain(e.description),
         url: url(e.page || 'event.html?event=' + encodeURIComponent(e._id)) }));
       // Lab meetings (eventSeries): the released ones they aren't invited to.
       (await lab.seriesFor(email)).filter((x) => x.hidden === false && x.meeting && (x.eventId || x.pausedAt) && (x.guests || []).indexOf(email) < 0).forEach((x) => {

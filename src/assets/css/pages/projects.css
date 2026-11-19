@@ -136,6 +136,7 @@ main .btn-text:hover{text-decoration-color:currentColor;}
 /* ---------- calendar: kinds, the week's dates and its events ---------- */
 .cal-actions{flex-wrap:wrap;}
 .type-badge.cal-event{color:var(--plum);}
+.week-block.cal-event{color:var(--plum); border-color:var(--plum);}
 .type-badge.cal-study{color:var(--green);}
 .week-block.cal-study{color:var(--green); border-color:var(--green);}
 .week-block.cal-study.is-mine{background:var(--green); color:var(--on-fill);}
