@@ -410,16 +410,18 @@ module.exports = function(ctx){
     if (a.action === 'register') {
       const title = need(a.title, 'a title'), abstract = need(a.abstract, 'an abstract or pitch');
       // Proposed (#226): a PI or admin approves it, then its channel, meeting, slides and notes are made.
-      const hours = Number(String(a.gpu_hours === undefined ? '' : a.gpu_hours).replace(/[,\s]/g, ''));
-      if (!isFinite(hours) || hours <= 0) throw httpError(400, 'Give its compute budget, in GPU hours (gpu_hours).');
+      // Within the standard compute allowance unless gpu_hours is given (more than it): see projectProposal.
+      const more = a.gpu_hours !== undefined && a.gpu_hours !== null && a.gpu_hours !== '';
+      const hours = more ? Number(String(a.gpu_hours).replace(/[,\s]/g, '')) : 0;
+      if (more && (!isFinite(hours) || hours <= 0)) throw httpError(400, 'Give the GPU hours it needs (gpu_hours), or leave it out for the standard allowance.');
       const ch = await act(who, 'projectChannel', { name: need(a.slack_channel, 'its Slack channel (proj-…)'), mode: 'check' });
       const card = makeRegisteredCard(user, { title, abstractText: abstract, keywords: (a.keywords || []).map(String), slackChannel: '' });
       card.setUpChannel = '#' + ch.name;
-      card.proposal = { status: 'proposed', gpuHours: Math.round(hours), at: Date.now(), by: who.email };
+      card.proposal = Object.assign({ status: 'proposed', more, at: Date.now(), by: who.email }, more ? { gpuHours: Math.round(hours) } : {});
       if (a.meeting) card.setUpMeeting = a.meeting;
       const id = card.id; delete card.id;
       await asUser(who, 'create', 'projects', card, id);
-      return { id, url: url('project.html#id=' + encodeURIComponent(id)), slack_channel: '#' + ch.name, note: 'Proposed: a PI or admin approves it; then its channel, meeting, slides and notes are set up.' };
+      return { id, url: url('project.html#id=' + encodeURIComponent(id)), slack_channel: '#' + ch.name, note: 'Proposed. BOLD-internal and above: within the standard allowance it\u2019s approved at once; asking for more, PIs and admins have 7 days, then it\u2019s approved by itself. Below BOLD-internal: a PI or admin approves it. Then its channel, meeting, slides and notes are set up.' };
     }
     const c = await cardOf(a.id);
     const ws = { id: c.id, board: c.boardId };
@@ -815,10 +817,10 @@ module.exports = function(ctx){
         remove: { type: 'boolean', description: 'A tool: propose removing it.' },
         note: str('propose: what you changed and why.'), proposal_id: str('withdraw, accept, decline: the proposed change’s id.') }, ['action', 'page']) },
     { name: 'projects', run: projects,
-      description: 'Projects, as on the Projects page and a project’s page: propose a new one (register: with its compute budget in GPU hours and its Slack channel; once a PI or admin approves it, the channel, created if new, its meeting, slides and notes are made), update its fields (a new Slack channel name renames the old channel), remove it, join or leave it, mark it ongoing (start: being worked on) or back to approved, not started (plan), mark it complete or reopen it, set, remove, pause or resume its weekly meeting, or submit it to a venue on the board.',
+      description: 'Projects, as on the Projects page and a project’s page: propose a new one (register: with its Slack channel, and gpu_hours only if it needs more than the standard compute allowance; once approved (at once for BOLD-internal and above within the allowance), the channel, created if new, its meeting, slides and notes are made), update its fields (a new Slack channel name renames the old channel), remove it, join or leave it, mark it ongoing (start: being worked on) or back to approved, not started (plan), mark it complete or reopen it, set, remove, pause or resume its weekly meeting, or submit it to a venue on the board.',
       inputSchema: S({ action: ACTIONS(['register', 'update', 'remove', 'join', 'leave', 'start', 'plan', 'complete', 'reopen', 'set_meeting', 'remove_meeting', 'pause_meeting', 'resume_meeting', 'submit_to_venue']),
         id: str('The project id (list_projects), for all but register.'), title: str(''), abstract: str(''), keywords: { type: 'array', items: { type: 'string' } },
-        slack_channel: str('register, update: "proj-…".'), gpu_hours: { type: 'number', description: 'register: its compute budget, in GPU hours (a project is proposed, and a PI or admin approves it)' }, overleaf: str('update'), arxiv: str('update'), pitch: str('update: the pitch deck link'), compute: str('update: the compute estimate'),
+        slack_channel: str('register, update: "proj-…".'), gpu_hours: { type: 'number', description: 'register: only if it needs more than the standard compute allowance, the GPU hours it needs' }, overleaf: str('update'), arxiv: str('update'), pitch: str('update: the pitch deck link'), compute: str('update: the compute estimate'),
         meeting: { type: 'object', description: 'register, set_meeting: London time.', properties: { day: ACTIONS(['MO', 'TU', 'WE', 'TH', 'FR', 'SA', 'SU']), time: str('HH:MM'), minutes: { type: 'integer', enum: [30, 45, 60, 90, 120] }, every: { type: 'integer', enum: [1, 2, 3, 4] }, until: str('YYYY-MM-DD (optional)') } },
         venue: str('submit_to_venue: the venue’s name, e.g. "ICLR 2027".') }) },
     { name: 'work', run: work,

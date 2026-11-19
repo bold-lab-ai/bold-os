@@ -398,19 +398,25 @@ function escapeHtml(s){ return BOLD.escapeHtml(s); }
   // A proposed project (#226; its conversation since 2026-11-06): one line of where it is, the decision as
   // buttons in the header (PIs and admins: Approve, Decline; its proposer, declined: Send it again), and below,
   // its conversation (functions/index.js proposalThread), where it's discussed and each decision is written.
+  // What it asks for (functions/index.js proposalHours): more than the standard allowance, its GPU hours; one from
+  // before the tickbox asks for more if it gives hours.
+  function asksForMore(p){ return !!p && (p.more !== undefined ? p.more === true : Number(p.gpuHours) > 0); }
+  function proposalHours(p){ return asksForMore(p) && Number(p.gpuHours) > 0 ? Number(p.gpuHours).toLocaleString('en-GB') + ' GPU hours' : 'the standard compute allowance'; }
   function proposalStatusHtml(){
-    var p = card.proposal, hours = (Number(p.gpuHours) || 0).toLocaleString('en-GB');
+    var p = card.proposal, hours = proposalHours(p);
     var who = esc((card.submittedBy && (card.submittedBy.name || card.submittedBy.email)) || 'Someone');
+    var due = p.dueAt ? ' Approved by itself on ' + esc(new Date(p.dueAt).toLocaleDateString('en-GB', { day: 'numeric', month: 'long' })) + ' if nobody decides first.' : '';
     return '<p class="proposal-status">' + (p.status === 'declined'
-      ? '<strong>Declined</strong> by ' + esc(p.decidedByName || p.decidedBy || 'a PI or admin') + '. It asked for ' + hours + ' GPU hours.'
-      : '<strong>Proposed</strong> by ' + who + ' \u00b7 <strong>' + hours + ' GPU hours</strong> \u00b7 waiting for a PI or admin. Once approved, its channel, meeting, slides, notes and repository are made.') +
+      ? '<strong>Declined</strong> by ' + esc(p.decidedByName || p.decidedBy || 'a PI or admin') + '. It asked for ' + hours + '.'
+      : '<strong>Proposed</strong> by ' + who + ' \u00b7 <strong>' + hours + '</strong> \u00b7 waiting for a PI or admin.' + due + ' Once approved, its channel, meeting, slides, notes and repository are made.') +
       '</p><p class="field-error" id="propError" hidden></p>';
   }
   function proposalActionsHtml(){
     var p = card.proposal;
     var mine = !!me && String((card.submittedBy || {}).email || '').toLowerCase() === String(me.email || '').toLowerCase();
     if (p.status === 'declined') {
-      return mine ? '<label class="proposal-hours">GPU hours <input type="number" id="propHours" min="1" step="1" value="' + esc(String(p.gpuHours || '')) + '"></label>' +
+      return mine ? '<label class="proposal-hours"><input type="checkbox" id="propMore"' + (asksForMore(p) ? ' checked' : '') + '> More than the standard allowance:</label>' +
+        '<label class="proposal-hours">GPU hours <input type="number" id="propHours" min="1" step="1" value="' + esc(String(p.gpuHours || '')) + '"></label>' +
         '<button type="button" class="btn-box is-primary" id="propResubmit">Send it again</button>' : '';
     }
     var why = !fullWrite ? 'Only PIs and admins decide a proposed project' : mine ? 'Another PI or admin decides your own proposal' : '';
@@ -443,14 +449,16 @@ function escapeHtml(s){ return BOLD.escapeHtml(s); }
     };
     var note = function(){ return ''; };   // a reason: in its conversation
     if (el('propApprove')) el('propApprove').addEventListener('click', function(){
-      BOLD.confirmAlways({ title: 'Approve \u201c' + card.title + '\u201d?', go: 'Approve', effects: ['Approve its budget of ' + (Number(card.proposal.gpuHours) || 0).toLocaleString('en-GB') + ' GPU hours',
+      BOLD.confirmAlways({ title: 'Approve \u201c' + card.title + '\u201d?', go: 'Approve', effects: ['Approve it, with ' + proposalHours(card.proposal),
         'Make its Slack channel, meeting, slides, notes and repository, as its proposer asked', 'Tell them, on BOLD.OS, and write it in its conversation'] }).then(function(ok){ if (ok) call({ accept: true, note: note() }, el('propApprove')); });
     });
     if (el('propDecline')) el('propDecline').addEventListener('click', function(){
       BOLD.confirmAlways({ title: 'Decline \u201c' + card.title + '\u201d?', go: 'Decline', effects: ['Tell its proposer, on BOLD.OS, and write it in its conversation'] }).then(function(ok){ if (ok) call({ accept: false, note: note() }, el('propDecline')); });
     });
     if (el('propResubmit')) el('propResubmit').addEventListener('click', function(){
-      BOLD.confirmAlways({ title: 'Send \u201c' + card.title + '\u201d again?', go: 'Send', effects: ['Send it to the PIs and admins to approve'] }).then(function(ok){ if (ok) call({ action: 'resubmit', gpuHours: el('propHours').value }, el('propResubmit')); });
+      var more = el('propMore').checked;
+      BOLD.confirmAlways({ title: 'Send \u201c' + card.title + '\u201d again?', go: 'Send', effects: [more ? 'Send it to the PIs and admins, asking for ' + (el('propHours').value || '?') + ' GPU hours' : 'Send it again, with the standard compute allowance'] })
+        .then(function(ok){ if (ok) call(more ? { action: 'resubmit', more: true, gpuHours: el('propHours').value } : { action: 'resubmit', more: false }, el('propResubmit')); });
     });
   }
 

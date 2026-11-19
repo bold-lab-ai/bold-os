@@ -3556,7 +3556,7 @@ function allProjectsFromCards(boards, cards, unassigned, completedIds, startedId
       ownerEmail: (d.submittedBy && d.submittedBy.email) || '',
       authors: (Array.isArray(d.authors) ? d.authors : []).map(function(a){ return { name: (a && a.name) || '', email: (a && a.email) || '' }; }),
       badges: badgesForCard(d),
-      proposal: d.proposal ? { status: d.proposal.status || 'proposed', gpuHours: Number(d.proposal.gpuHours) || 0 } : null
+      proposal: d.proposal ? { status: d.proposal.status || 'proposed', more: asksForMore(d.proposal), gpuHours: Number(d.proposal.gpuHours) || 0, dueAt: d.proposal.dueAt || 0 } : null
     };
   };
   cards.forEach(function(c){
@@ -4358,6 +4358,19 @@ const setupMissingText = (missing) => missing.map((k) => SETUP_NAMES[k]).join(',
 // 'declined', gpuHours, at, by, decidedBy, decidedByName, decidedAt, note } on the card it was registered
 // with. Without one (every project from before), it's approved.
 const proposalPending = (d) => !!(d && d.proposal && d.proposal.status !== 'approved');
+// What a new proposal does (2026-11-19): its proposer says whether it needs more compute than the BOLDiquette's
+// standard allowance (`more`, then `gpuHours`). BOLD-internal and above: within the allowance, it's approved at
+// once; asking for more, PIs and admins have PROPOSAL_DAYS to decide (`dueAt`), then it's approved by itself.
+// Below BOLD-internal: it always waits for a PI or admin. One from before the tickbox asks for more if it gives hours.
+const PROPOSAL_DAYS = 7;
+const asksForMore = (p) => !!p && (p.more !== undefined ? p.more === true : Number(p.gpuHours) > 0);
+// Pure: 'approve' | 'deadline' | 'wait', for its proposer's group.
+function proposalRoute(group, p){
+  if (accessLib.rank(group) < accessLib.rank('internal')) return 'wait';
+  return asksForMore(p) ? 'deadline' : 'approve';
+}
+// Pure: what it asks for, in words.
+const proposalHours = (p) => asksForMore(p) && Number(p.gpuHours) > 0 ? Number(p.gpuHours).toLocaleString('en-GB') + ' GPU hours' : 'the standard compute allowance';
 function projectGroupForCards(cards, completed, started){
   if (cards.length && proposalPending(cards[0].data)) return 'proposed';
   if (completed || cards.some(function(c){ return projectGroupForCard(c.data) === 'completed'; })) return 'completed';
@@ -4883,24 +4896,94 @@ function projectAnnouncement(card, url){
 }
 
 exports.onProjectRegistered = onDocumentCreated(
-  { document: 'projects/{cardId}', secrets: [SLACK_BOT_TOKEN] },
+  { document: 'projects/{cardId}', secrets: [SLACK_BOT_TOKEN, GOOGLE_OAUTH, GITHUB_APP], timeoutSeconds: 300 },
   async function(event){
     const card = event.data && event.data.data();
     if (card && card.submittedBy && card.submittedBy.email) await afterProgress(card.submittedBy.email);   // a project of their own
+    if (!card) return;
+    if (proposalPending(card)) { await routeProposal(card, event.params.cardId); return; }   // announced once approved
     // announce: false, whoever registered it chose not to (its workspace's `skipped`
     // says so, and its page offers to announce it later: projectWorkspace 'announce').
-    if (!card || card.announce === false) return;
-    if (proposalPending(card)) { await tellProposal(card, event.params.cardId); return; }   // announced once approved
+    if (card.announce === false) return;
     await announceProject(card, event.params.cardId).catch(function(err){ logger.warn('Announcing a new project failed', { error: String(err.message) }); });
   }
 );
-// A project proposed (#226): PIs and admins hear (their Inbox, To do); decided with projectProposal.
+// A project proposed (#226): approved at once, or PIs and admins hear (their Inbox, To do) and decide it with
+// projectProposal; asking for more compute, by its `dueAt` (approveDueProposals approves it after that).
+async function routeProposal(card, cardId){
+  const route = proposalRoute(await access.groupFor(lowerEmail(card.submittedBy)), card.proposal);
+  if (route === 'approve') { await approveProposal(cardId, card, null, ''); return; }
+  if (route === 'deadline') {
+    const dueAt = (Number(card.proposal.at) || Date.now()) + PROPOSAL_DAYS * DAY_MS;
+    await db.collection('projects').doc(cardId).update({ 'proposal.dueAt': dueAt });
+    card = Object.assign({}, card, { proposal: Object.assign({}, card.proposal, { dueAt }) });
+  }
+  await tellProposal(card, cardId);
+}
 async function tellProposal(card, cardId){
-  const by = (card.submittedBy && (card.submittedBy.name || card.submittedBy.email)) || 'Someone', hours = Number(card.proposal && card.proposal.gpuHours) || 0;
+  const by = (card.submittedBy && (card.submittedBy.name || card.submittedBy.email)) || 'Someone', p = card.proposal || {};
   const staff = (await rolesEmails('pis')).concat(await rolesEmails('admins')).filter((e) => e !== lowerEmail(card.submittedBy));
-  await deliver(staff, { text: by + ' proposes a project: \u201c' + (card.title || 'Untitled') + '\u201d, ' + hours.toLocaleString('en-GB') + ' GPU hours. Approve or decline it on its page.',
+  const due = p.dueAt ? ' by ' + new Date(p.dueAt).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', timeZone: PROJECT_TZ }) + ', or it\u2019s approved by itself' : '';
+  await deliver(staff, { text: by + ' proposes a project: \u201c' + (card.title || 'Untitled') + '\u201d, ' + proposalHours(p) + (asksForMore(p) ? ', more than the standard allowance' : '') + '. Approve or decline it on its page' + due + '.',
     href: projectPageUrl(cardId), feature: 'project-proposals', source: 'bold', about: 'project:' + cardId });
 }
+// Approves proposal `id` (still proposed; false if it's been decided meanwhile): by a PI or admin (`by`: { email,
+// name, note }), or by itself (by null; `why`, if any, is told its proposer and written in its conversation).
+// Sets it up as its proposer asked (its channel, meeting, slides, notes, repository), announces it if they asked,
+// and tells them.
+async function approveProposal(id, card, by, why){
+  const ref = db.collection('projects').doc(id), prop = card.proposal || {}, note = by ? String(by.note || '') : '';
+  const decided = Object.assign({}, prop, { status: 'approved', decidedBy: by ? by.email : 'auto', decidedByName: by ? by.name : 'BOLD.OS', decidedAt: Date.now(), note });
+  const fresh = await db.runTransaction(async (tx) => {
+    const s = await tx.get(ref), p = s.exists && s.data().proposal;
+    if (!p || p.status !== 'proposed') return false;
+    tx.update(ref, { proposal: decided, updatedAt: Date.now() });
+    return true;
+  });
+  if (!fresh) return false;
+  if (by || why) await proposalNote(id, card, '**Approved**' + (by ? (note ? ': ' + note : '.') : ' by itself: ' + why + '.'), by ? by.email : '', by ? by.name : 'BOLD.OS')
+    .catch((err) => logger.warn('Writing to a proposal’s conversation failed', { error: String(err.message) }));
+  const to = lowerEmail(card.submittedBy), title = card.title || 'Your project';
+  // Its channel, now (the proposer's name for it), with them in it.
+  let channel = '';
+  const want = normalizeProjectChannel(card.setUpChannel || '');
+  if (card.setUpChannel && !want.error){
+    const token = SLACK_BOT_TOKEN.value();
+    const r = (await slackChannelId(token, want.name)) ? { exists: true } : await makeProjectChannel(token, want.name, to).catch((err) => { logger.warn('Making a proposed project\u2019s channel failed', { error: String(err.message) }); return null; });
+    if (r) channel = '#' + want.name;
+  }
+  const now = Object.assign({}, card, { proposal: decided }, channel ? { slackChannel: channel } : {});
+  if (channel) await ref.update({ slackChannel: channel });
+  await setUpProject(projectIdOf(card, id), now);
+  if (card.announce !== false) await announceProject(now, id).catch((err) => logger.warn('Announcing a new project failed', { error: String(err.message) }));
+  await deliver([to], { text: (by ? by.name + ' approved your project \u201c' + title + '\u201d (' + proposalHours(prop) + ')' : 'Your project \u201c' + title + '\u201d is approved' + (why ? ' (' + why + ')' : ''))
+      + ': it\u2019s being set up.' + (note ? ' \u201c' + note + '\u201d' : ''),
+    href: projectPageUrl(id), feature: 'project-proposals', source: 'bold', about: 'project:' + id });
+  return true;
+}
+// Hourly: a proposal asking for more compute that nobody decided by its `dueAt` is approved.
+exports.approveDueProposals = onSchedule({ schedule: 'every 60 minutes', secrets: [SLACK_BOT_TOKEN, GOOGLE_OAUTH, GITHUB_APP], timeoutSeconds: 540 }, async function(){
+  const now = Date.now();
+  for (const d of (await db.collection('projects').where('proposal.status', '==', 'proposed').get()).docs) {
+    const p = d.data().proposal || {};
+    if (!p.dueAt || p.dueAt > now) continue;
+    await approveProposal(d.id, d.data(), null, 'nobody decided within ' + PROPOSAL_DAYS + ' days')
+      .catch((err) => logger.warn('Approving a due proposal failed', { id: d.id, error: String(err && err.message || err) }));
+  }
+});
+// A one-off (runs/{id} { action: 'approve-proposals', ids, why, dryRun? }, written by hand): approves those proposals.
+exports.onApproveProposalsRun = onDocumentCreated({ document: 'runs/{id}', secrets: [SLACK_BOT_TOKEN, GOOGLE_OAUTH, GITHUB_APP], timeoutSeconds: 540 }, async (event) => {
+  const run = event.data && event.data.data();
+  if (!run || run.action !== 'approve-proposals' || run.doneAt) return;
+  const done = [];
+  for (const id of (run.ids || []).map(String)) {
+    const s = await db.collection('projects').doc(id).get(), c = s.exists ? s.data() : null;
+    if (!c || !proposalPending(c) || (c.proposal || {}).status !== 'proposed') { done.push({ id, approved: false }); continue; }
+    if (run.dryRun === true) { done.push({ id, title: c.title || '' }); continue; }
+    done.push({ id, approved: await approveProposal(id, c, null, String(run.why || '')).catch((err) => { logger.warn('Approving a proposal failed', { id, error: String(err.message) }); return false; }) });
+  }
+  await event.data.ref.set({ doneAt: Date.now(), done }, { merge: true });
+});
 // Pure: a proposal's compute budget, in GPU hours → the number, or { error }.
 function normalizeGpuHours(v){
   const n = typeof v === 'string' ? Number(v.replace(/[,\s]/g, '')) : Number(v);
@@ -4921,7 +5004,7 @@ async function proposalThread(id, card){
   if ((await ref.get()).exists) return pid;
   const prop = card.proposal || {}, by = card.submittedBy || {}, abstract = String(card.abstractText || '').trim();
   const post = { title: ('Proposal: ' + String(card.title || 'a project')).slice(0, 200),
-    body: '**' + String(card.title || 'A project') + '**, with a compute budget of ' + (Number(prop.gpuHours) || 0).toLocaleString('en-GB') + ' GPU hours.' + (abstract ? '\n\n' + abstract : ''),
+    body: '**' + String(card.title || 'A project') + '**, asking for ' + proposalHours(prop) + '.' + (abstract ? '\n\n' + abstract : ''),
     name: String(by.name || by.email || 'Someone').slice(0, 200), createdBy: String(by.email || '').toLowerCase(), at: prop.at || card.createdAt || Date.now(),
     source: 'proposal', project: projectIdOf(card, id), projectTitle: String(card.title || '').slice(0, 300), private: false, readers: [], votes: {}, replies: 0 };
   await ref.create(post).catch((e) => { if (e.code !== 6) throw e; });   // 6: made meanwhile
@@ -4951,44 +5034,35 @@ exports.projectProposal = onCall(
     if (d.action === 'resubmit'){
       if (!mine) throw new HttpsError('permission-denied', 'Only whoever proposed it can send it again.');
       if (prop.status !== 'declined') throw new HttpsError('failed-precondition', 'It isn\u2019t declined.');
-      const hours = d.gpuHours === undefined ? prop.gpuHours : normalizeGpuHours(d.gpuHours);
-      if (hours && hours.error) throw new HttpsError('invalid-argument', hours.error);
-      const next = { status: 'proposed', gpuHours: hours, at: Date.now(), by: email };
+      const more = d.more === undefined ? asksForMore(prop) : d.more === true;
+      const next = { status: 'proposed', more, at: Date.now(), by: email };
+      if (more) {
+        const hours = d.gpuHours === undefined ? normalizeGpuHours(prop.gpuHours) : normalizeGpuHours(d.gpuHours);
+        if (hours && hours.error) throw new HttpsError('invalid-argument', hours.error);
+        next.gpuHours = hours;
+      }
       await ref.update({ proposal: next, updatedAt: Date.now() });
-      await tellProposal(Object.assign({}, card, { proposal: next }), id);
-      await proposalNote(id, card, 'Sent it again, with a budget of ' + (Number(hours) || 0).toLocaleString('en-GB') + ' GPU hours.', email, request.auth.token.name || email)
+      await proposalNote(id, card, 'Sent it again, asking for ' + proposalHours(next) + '.', email, request.auth.token.name || email)
         .catch((err) => logger.warn('Writing to a proposal’s conversation failed', { error: String(err.message) }));
+      await routeProposal(Object.assign({}, card, { proposal: next }), id);
       return { ok: true };
     }
     if (!(await isFullWrite(email))) throw new HttpsError('permission-denied', 'Only PIs and admins decide a proposed project.');
     if (mine) throw new HttpsError('failed-precondition', 'Another PI or admin decides your own proposal.');
     if (prop.status !== 'proposed') throw new HttpsError('failed-precondition', 'It\u2019s already been decided.');
     const accept = !!d.accept, note = String(d.note || '').trim().slice(0, 1000), name = request.auth.token.name || email;
-    const decided = Object.assign({}, prop, { status: accept ? 'approved' : 'declined', decidedBy: email, decidedByName: name, decidedAt: Date.now(), note });
-    await ref.update({ proposal: decided, updatedAt: Date.now() });
-    await proposalNote(id, card, (accept ? '**Approved**' : '**Declined**') + (note ? ': ' + note : '.'), email, name)
-      .catch((err) => logger.warn('Writing to a proposal’s conversation failed', { error: String(err.message) }));
-    const to = lowerEmail(card.submittedBy), title = card.title || 'Your project';
-    if (!accept){
-      await deliver([to], { text: name + ' declined your proposed project \u201c' + title + '\u201d' + (note ? ': \u201c' + note + '\u201d' : '.') + ' You can change it and send it again from its page.',
-        href: projectPageUrl(id), feature: 'project-proposals', source: 'bold', about: 'project:' + id });
+    if (accept) {
+      if (!(await approveProposal(id, card, { email, name, note }))) throw new HttpsError('failed-precondition', 'It\u2019s already been decided.');
       return { ok: true };
     }
-    // Its channel, now (the proposer's name for it), with them in it.
-    let channel = '';
-    const want = normalizeProjectChannel(card.setUpChannel || '');
-    if (card.setUpChannel && !want.error){
-      const token = SLACK_BOT_TOKEN.value();
-      const r = (await slackChannelId(token, want.name)) ? { exists: true } : await makeProjectChannel(token, want.name, to).catch((err) => { logger.warn('Making a proposed project\u2019s channel failed', { error: String(err.message) }); return null; });
-      if (r) channel = '#' + want.name;
-    }
-    const now = Object.assign({}, card, { proposal: decided }, channel ? { slackChannel: channel } : {});
-    if (channel) await ref.update({ slackChannel: channel });
-    await setUpProject(projectIdOf(card, id), now);
-    if (card.announce !== false) await announceProject(now, id).catch((err) => logger.warn('Announcing a new project failed', { error: String(err.message) }));
-    await deliver([to], { text: name + ' approved your project \u201c' + title + '\u201d (' + (Number(prop.gpuHours) || 0).toLocaleString('en-GB') + ' GPU hours): it\u2019s being set up.' + (note ? ' \u201c' + note + '\u201d' : ''),
+    const decided = Object.assign({}, prop, { status: 'declined', decidedBy: email, decidedByName: name, decidedAt: Date.now(), note });
+    await ref.update({ proposal: decided, updatedAt: Date.now() });
+    await proposalNote(id, card, '**Declined**' + (note ? ': ' + note : '.'), email, name)
+      .catch((err) => logger.warn('Writing to a proposal’s conversation failed', { error: String(err.message) }));
+    const to = lowerEmail(card.submittedBy), title = card.title || 'Your project';
+    await deliver([to], { text: name + ' declined your proposed project \u201c' + title + '\u201d' + (note ? ': \u201c' + note + '\u201d' : '.') + ' You can change it and send it again from its page.',
       href: projectPageUrl(id), feature: 'project-proposals', source: 'bold', about: 'project:' + id });
-    return { ok: true, slackChannel: channel };
+    return { ok: true };
   }
 );
 async function announceProject(card, cardId){
@@ -5635,7 +5709,7 @@ async function requestWork(email, full, person){
   proposals.forEach(function(d){
     const r = d.data(), p = r.proposal, open = p.status === 'proposed';
     if (!open && !(lowerEmail(r.submittedBy) === email)) return;
-    add({ kind: 'project-proposal', ref: d.ref.path, title: 'Proposed project: ' + (r.title || 'Untitled') + ' (' + (Number(p.gpuHours) || 0).toLocaleString('en-GB') + ' GPU hours)' + (open ? '' : ', declined'),
+    add({ kind: 'project-proposal', ref: d.ref.path, title: 'Proposed project: ' + (r.title || 'Untitled') + ' (' + proposalHours(p) + ')' + (open ? '' : ', declined'),
       url: projectPageUrl(d.id), by: person(lowerEmail(r.submittedBy), r.submittedBy && r.submittedBy.name),
       on: p.decidedBy ? [person(p.decidedBy, p.decidedByName)] : [], waiting: open ? PIS_ADMINS : '', state: p.status },
     requestColumn(open, false, p.decidedAt, p.at, now));
@@ -9447,7 +9521,7 @@ exports.homeLetter = boldLlm.homeLetter;
 exports.onLetterJob = boldLlm.onLetterJob;
 exports.onVisit = boldLlm.onVisit;
 
-exports._internal = { replaceEmail, accountEmailsBySlackId, calendarUpdates, isCalendarLimit,
+exports._internal = { proposalRoute, proposalHours, asksForMore, replaceEmail, accountEmailsBySlackId, calendarUpdates, isCalendarLimit,
   slackImagesOf, slackToPlain, pingText, bugReportOf, bugNotes, bugTitle,
   channelsToJoin, setupMissing, setupMissingText, workspaceStarted, normalizeRepo, setupNudgeText, projectHealth,
   trialAction, trialTexts, stepsLeft, addedTo, eligibleSteps, eligibleText, onOthers,
