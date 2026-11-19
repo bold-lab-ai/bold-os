@@ -7252,7 +7252,7 @@ TRACKED.forEach((c) => { exports['history' + c.charAt(0).toUpperCase() + c.slice
 // Group meeting rota. Presenter eligibility follows BOLD.OS membership category.
 const groupRota = require('./group-rota')({
   db, admin, HttpsError, onCall, onSchedule, signedInEmail, rolesEmails,
-  requireAccess: access.requireAccess, seesEvent: access.seesIt, groupFor: access.groupFor,
+  requireAccess: access.requireAccess, seesEvent: access.seesIt, eventGroup: access.eventGroup, groupFor: access.groupFor,
   isFullWrite, viewingAs, pilotSlack, botToken: SLACK_BOT_TOKEN, logger
 });
 Object.keys(groupRota).filter(k => k !== 'slackAction' && k !== 'slackCommand' && k !== '_internal').forEach(k => { exports[k] = groupRota[k]; });

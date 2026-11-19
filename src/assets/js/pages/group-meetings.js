@@ -195,10 +195,10 @@
   function refresh(){
     if (!user || busy) return;
     text('Loading…');
-    call('Access').then(function(a){ access = a.data; return Promise.all([
-      call('Snapshot'), db.collection('projectWorkspaces').get().catch(function(){ return { docs: [] }; })
-    ]); }).then(function(v){
-      var snapshot = v[0].data;
+    // One call for who they are and the rota; the projects (for linking a talk) alongside it.
+    Promise.all([call('Page'), db.collection('projectWorkspaces').get().catch(function(){ return { docs: [] }; })]).then(function(v){
+      access = v[0].data.access;
+      var snapshot = v[0].data.snapshot;
       meetings = snapshot.meetings || [];
       var linkedMeeting = selectedDate && meetings.filter(function(m){ return m.date === selectedDate; })[0];
       if (linkedMeeting) { archive = past(linkedMeeting); updateArchiveHeader(); }

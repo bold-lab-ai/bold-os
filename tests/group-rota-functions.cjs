@@ -51,6 +51,10 @@ const denied = async (fn, r) => assert.rejects(() => fn(r));
   const visibleSnapshot = await rota.groupRotaSnapshot(req(one, {}));
   assert.equal(visibleSnapshot.meetings.length, 3);
   assert.equal((await rota.groupRotaAccess(req(one, {}))).registered, true);
+  // The page's one call: the same as the two it replaces.
+  const both = await rota.groupRotaPage(req(one, {}));
+  assert.deepEqual(both.snapshot, visibleSnapshot);
+  assert.deepEqual(both.access, await rota.groupRotaAccess(req(one, {})));
   assert.equal((await rota.groupRotaSnapshot(req('viewer@example.org', {}))).meetings.length, 3);
   for (const viewer of [pan, associate]) {
     assert.equal((await rota.groupRotaSnapshot(req(viewer, {}))).slots.length, 3);

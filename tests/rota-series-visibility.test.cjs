@@ -31,8 +31,7 @@ async function page(seriesHidden, admin) {
     firestore: () => ({ collection: () => ({ get: async () => ({ docs: [] }) }) }),
     app: () => ({ functions: () => ({ httpsCallable: name => async data => {
       calls.push({ name, data });
-      if (name === 'groupRotaAccess') return { data: access };
-      if (name === 'groupRotaSnapshot') return { data: { meetings: [], slots: [], members: [], seasons: [] } };
+      if (name === 'groupRotaPage') return { data: { access, snapshot: { meetings: [], slots: [], members: [], seasons: [] } } };
       if (name === 'eventSeries') return { data: { series: { hidden: false } } };
       throw Error('Unexpected callable: ' + name);
     } }) }),

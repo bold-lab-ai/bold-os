@@ -4,7 +4,8 @@
 // calculation writes to a slot. The caller supplies the Firebase auth context;
 // every mutation below checks the linked Slack identity again on the server.
 module.exports = function rota({ db, admin, HttpsError, onCall, onSchedule, signedInEmail,
-  rolesEmails, requireAccess, seesEvent, groupFor, isFullWrite, viewingAs, pilotSlack, botToken, logger }) {
+  rolesEmails, requireAccess, seesEvent, eventGroup, groupFor, isFullWrite, viewingAs, pilotSlack, botToken, logger }) {
+  const seesAs = require('./access').seesEvent;
   const slots = db.collection('groupRotaSlots');
   const meetings = db.collection('events');
   const swaps = db.collection('groupRotaSwaps');
@@ -307,6 +308,14 @@ module.exports = function rota({ db, admin, HttpsError, onCall, onSchedule, sign
     await db.collection('groupMeetingSeasons').doc(id).set({ label: clean(d.label), regularTime: clean(d.regularTime), location: clean(d.location), rotationDescription: clean(d.rotationDescription), publicationState: state, ...stamp(a, 'Season details updated') }, { merge: true });
     return { ok: true };
   }
+  // What one request reads more than once (the page's access and snapshot together): read once.
+  const once = (a, key, read) => (a.reads = a.reads || {})[key] || (a.reads[key] = read());
+  const allSlots = a => once(a, 'slots', () => slots.get());
+  const rotaMembers = a => once(a, 'rotaMembers', () => db.collection('groupRotaMembers').get());
+  const allMembers = a => once(a, 'members', () => db.collection('members').get());
+  const seriesMeetings = a => once(a, 'meetings', () => meetings.where('series', '==', a.seriesId).get());
+  const allSeasons = a => once(a, 'seasons', () => db.collection('groupMeetingSeasons').get());
+  const staff = a => once(a, 'staff', () => Promise.all([rolesEmails('admins'), rolesEmails('pis')]));
   async function access(request) {
     let a;
     try { a = await actor(request, false); }
@@ -315,11 +324,12 @@ module.exports = function rota({ db, admin, HttpsError, onCall, onSchedule, sign
       if (!(e instanceof HttpsError)) throw e;
       return { slackId: '', registered: false, eligible: false, admin: false, reason: String(e.message || 'The rota is unavailable').replace(/\.$/, ''), swaps: [] };
     }
-    const ownSwaps = await swaps.where('requesterSlackId', '==', a.slackId).get();
-    const offeredSwaps = await swaps.where('recipientSlackId', '==', a.slackId).get();
-    const [assigned, registered, memberships, admins, pis, eventDocs, seasonDocs, people] = await Promise.all([
-      slots.get(), db.collection('groupRotaMembers').get(), db.collection('members').get(), rolesEmails('admins'), rolesEmails('pis'),
-      meetings.where('series', '==', a.seriesId).get(), db.collection('groupMeetingSeasons').get(), seesPeople(a.email)
+    return accessOf(a);
+  }
+  async function accessOf(a) {
+    const [ownSwaps, offeredSwaps, assigned, registered, memberships, [admins, pis], eventDocs, seasonDocs, people] = await Promise.all([
+      swaps.where('requesterSlackId', '==', a.slackId).get(), swaps.where('recipientSlackId', '==', a.slackId).get(),
+      allSlots(a), rotaMembers(a), allMembers(a), staff(a), seriesMeetings(a), allSeasons(a), seesPeople(a.email)
     ]);
     const byEmail = new Map(memberships.docs.map(d => [d.id, d.data()]));
     const bySlack = new Map(registered.docs.map(d => [d.id, d.data()]));
@@ -337,26 +347,37 @@ module.exports = function rota({ db, admin, HttpsError, onCall, onSchedule, sign
   }
   // The meetings `a` sees: in a published season (any, for managers), and released and
   // visible to them unless they manage the rota.
-  async function visibleMeetings(a, eventDocs, seasonDocs) {
-    const published = new Set(seasonDocs.docs.filter(doc => a.admin || doc.data().publicationState === 'published').map(doc => doc.id));
-    const out = [];
-    for (const doc of eventDocs.docs) { const m = doc.data(); if (published.has(m.seasonId) && (a.admin || !m.hidden && await seesEvent(a.email, m))) out.push(doc); }
-    return out;
+  // Their group looked up once, not once a meeting.
+  function visibleMeetings(a, eventDocs, seasonDocs) {
+    return once(a, 'visible', async () => {
+      const published = new Set(seasonDocs.docs.filter(doc => a.admin || doc.data().publicationState === 'published').map(doc => doc.id));
+      const group = a.admin ? '' : eventGroup ? await eventGroup(a.email) : null;
+      const sees = async m => group !== null ? seesAs(group, m) : seesEvent(a.email, m);
+      const out = [];
+      for (const doc of eventDocs.docs) { const m = doc.data(); if (published.has(m.seasonId) && (a.admin || !m.hidden && await sees(m))) out.push(doc); }
+      return out;
+    });
   }
   async function seesPeople(email) {
     try { await requireAccess(email, 'people', 'view'); return true; }
     catch (e) { if (e instanceof HttpsError) return false; throw e; }
   }
-  async function snapshot(request) {
+  async function snapshot(request) { return snapshotOf(await actor(request, false), request); }
+  // The rota page: who they are and what they see, in one call (one start-up, the roster read once).
+  async function page(request) {
     const a = await actor(request, false);
+    const [acc, snap] = await Promise.all([accessOf(a), snapshotOf(a, request)]);
+    return { access: acc, snapshot: snap };
+  }
+  async function snapshotOf(a, request) {
     const pick = (id, data, keys) => Object.fromEntries([['id', id], ...keys.filter(key => data[key] !== undefined).map(key => [key, data[key]])]);
     // A project page asks only for its own talks: those slots, and none of the people.
     const projectId = clean(request.data && request.data.projectId);
     if (projectId.length > 100) error('invalid-argument', 'Invalid project.');
-    const [eventDocs, slotDocs, memberDocs, membershipDocs, seasonDocs, admins, pis] = await Promise.all([
-      meetings.where('series', '==', a.seriesId).get(), projectId ? slots.where('projectId', '==', projectId).get() : slots.get(),
-      projectId ? { docs: [] } : db.collection('groupRotaMembers').get(), projectId ? { docs: [] } : db.collection('members').get(),
-      db.collection('groupMeetingSeasons').get(), projectId ? [] : rolesEmails('admins'), projectId ? [] : rolesEmails('pis')
+    const [eventDocs, slotDocs, memberDocs, membershipDocs, seasonDocs, [admins, pis]] = await Promise.all([
+      seriesMeetings(a), projectId ? slots.where('projectId', '==', projectId).get() : allSlots(a),
+      projectId ? { docs: [] } : rotaMembers(a), projectId ? { docs: [] } : allMembers(a),
+      allSeasons(a), projectId ? [[], []] : staff(a)
     ]);
     const byEmail = new Map(membershipDocs.docs.map(d => [d.id, d.data()]));
     const bySlack = new Map(memberDocs.docs.map(d => [d.id, d.data()]));
@@ -497,7 +518,7 @@ module.exports = function rota({ db, admin, HttpsError, onCall, onSchedule, sign
     } catch (e) { await ref.update({ status: 'uncertain', error: String(e).slice(0,300), at: now() }); logger.error('Rota reminder uncertain', { date, error: String(e) }); }
   }
   return {
-    groupRotaAccess: onCall(access), groupRotaSnapshot: onCall(snapshot), groupRotaRegister: onCall(register), groupRotaLeave: onCall(leave),
+    groupRotaAccess: onCall(access), groupRotaSnapshot: onCall(snapshot), groupRotaPage: onCall(page), groupRotaRegister: onCall(register), groupRotaLeave: onCall(leave),
     groupRotaEdit: onCall(details), groupRotaClaim: onCall(claim), groupRotaRecuse: onCall(recuse),
     groupRotaRequestSwap: onCall({ secrets: [botToken] }, async request => { const result = await requestSwap(request); await sendSwap(result.id, botToken.value()); return { id: result.id, notificationState: (await swaps.doc(result.id).get()).data().notificationState }; }),
     groupRotaRetrySwap: onCall({ secrets: [botToken] }, retrySwap),
