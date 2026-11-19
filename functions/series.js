@@ -270,16 +270,9 @@ module.exports = function series(deps){
       }
       case 'release': case 'hide':
         if (!change) throw new HttpsError('permission-denied', 'Only its organisers, PIs and admins release and hide it.');
-        if (d.action === 'hide' && s.page === 'group-meetings.html') {
-          // An edition is also a normal event. Hide it before the series so it
-          // cannot remain visible in Events or the Calendar on its own.
-          const editions = await db.collection('events').where('series', '==', id).get();
-          for (let i = 0; i < editions.docs.length; i += 400) {
-            const batch = db.batch();
-            editions.docs.slice(i, i + 400).forEach((edition) => batch.update(edition.ref, { hidden: true, updatedAt: Date.now(), updatedBy: email }));
-            await batch.commit();
-          }
-        }
+        // The group meetings are one recurring meeting: each of its meetings is seen when the series is.
+        // Hidden before the series, so none stays visible in Events or the Calendar on its own.
+        if (s.page === 'group-meetings.html') await followSeries(id, d.action === 'hide', email);
         await ref.set(Object.assign({ hidden: d.action === 'hide' }, stamp), { merge: true });
         break;
       case 'nextEdition': {
@@ -381,6 +374,24 @@ module.exports = function series(deps){
     }
     await iref.set(patch, { merge: true });
   }
+  // The group meetings' series' meetings hidden or released with it (`hidden`), those that differ.
+  async function followSeries(id, hidden, by){
+    const eds = (await db.collection('events').where('series', '==', id).get()).docs.filter((x) => x.data().hidden !== hidden);
+    for (let i = 0; i < eds.length; i += 400) {
+      const batch = db.batch();
+      eds.slice(i, i + 400).forEach((x) => batch.update(x.ref, { hidden, updatedAt: Date.now(), updatedBy: by }));
+      await batch.commit();
+    }
+    return eds.length;
+  }
+  // …whichever way the series changed (the site, an agent, the console): its meetings follow it.
+  const onGroupSeriesWritten = onDocumentWritten({ document: 'eventSeries/{id}' }, async (event) => {
+    const after = event.data.after.exists ? event.data.after.data() : null;
+    if (!after || after.page !== 'group-meetings.html') return;
+    const n = await followSeries(event.params.id, after.hidden !== false, 'series');
+    if (n) logger.info('Group meetings follow their series', { id: event.params.id, hidden: after.hidden !== false, n });
+  });
+
   const onOccurrenceWritten = onDocumentWritten({ document: 'events/{slug}', secrets: [GOOGLE_OAUTH] }, async (event) => {
     const before = event.data.before.exists ? event.data.before.data() : null;
     const after = event.data.after.exists ? event.data.after.data() : null;
@@ -427,5 +438,5 @@ module.exports = function series(deps){
     }
   });
 
-  return { eventSeries, onMemberGroupChanged, onOccurrenceWritten, seriesNudges, syncSeries, syncOccurrence, _internal: { normalizeSeries, inviteesOf, addMonths, addPeriod, nextDue } };
+  return { eventSeries, onMemberGroupChanged, onOccurrenceWritten, onGroupSeriesWritten, seriesNudges, syncSeries, syncOccurrence, _internal: { normalizeSeries, inviteesOf, addMonths, addPeriod, nextDue } };
 };

@@ -9458,6 +9458,7 @@ exports.eventSeries = labSeries.eventSeries;
 exports.onMemberGroupChanged = labSeries.onMemberGroupChanged;
 exports.seriesNudges = labSeries.seriesNudges;
 exports.onOccurrenceWritten = labSeries.onOccurrenceWritten;
+exports.onGroupSeriesWritten = labSeries.onGroupSeriesWritten;
 
 // Every hour: the syncs Google's calendar limit stopped (calendarLimitAt; see isCalendarLimit), oldest
 // first, a few at a time; a run stops at the first still refused, the limit not lifted yet.

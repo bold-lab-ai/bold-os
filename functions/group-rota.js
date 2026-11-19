@@ -299,16 +299,6 @@ module.exports = function rota({ db, admin, HttpsError, onCall, onSchedule, sign
       tx.delete(ref);
     }); return { ok: true };
   }
-  async function setMeetingVisibility(request) {
-    const a = await actor(request); requireAdmin(a);
-    const d = request.data || {}, date = clean(d.date);
-    if (!iso(date) || typeof d.hidden !== 'boolean') error('invalid-argument', 'Choose a meeting and visibility.');
-    if (!d.hidden && a.series.hidden) error('failed-precondition', 'Release the event series first.');
-    const ref = meetingRef(a.seriesId, date), snap = await ref.get();
-    if (!snap.exists) error('not-found', 'Meeting not found.');
-    await ref.update({ hidden: d.hidden, ...stamp(a, d.hidden ? 'Meeting hidden' : 'Meeting released') });
-    return { ok: true };
-  }
   async function saveSeason(request) {
     const a = await actor(request); requireAdmin(a); const d = request.data || {}, id = clean(d.id);
     const state = clean(d.publicationState) || 'draft';
@@ -514,7 +504,6 @@ module.exports = function rota({ db, admin, HttpsError, onCall, onSchedule, sign
     groupRotaCancelSwap: onCall(cancelSwap), groupRotaOutcome: onCall(outcome),
     groupRotaOfferShort: onCall({ secrets: [botToken] }, offerShort), groupRotaCancelOffer: onCall(cancelOffer),
     groupRotaSaveMeeting: onCall(saveMeeting), groupRotaSaveSeason: onCall(saveSeason),
-    groupRotaSetMeetingVisibility: onCall(setMeetingVisibility),
     groupRotaCreateSlot: onCall(createSlot), groupRotaDeleteSlot: onCall(deleteSlot), groupRotaDeleteMeeting: onCall(deleteMeeting),
     groupRotaReminder: onSchedule({ schedule: '0 14 * * 1', timeZone: 'Europe/London', secrets: [botToken] }, async () => remind(botToken.value())),
     groupRotaExpireSwaps: onSchedule({ schedule: 'every 30 minutes', timeZone: 'Europe/London' }, async () => {

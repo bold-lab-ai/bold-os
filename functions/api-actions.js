@@ -723,7 +723,6 @@ module.exports = function(ctx){
       offer_short: ['OfferShort', ['slotId', 'recipientSlackId']], cancel_offer: ['CancelOffer', ['id']],
       save_season: ['SaveSeason', ['id', 'label', 'regularTime', 'location', 'rotationDescription', 'publicationState']],
       save_meeting: ['SaveMeeting', ['date', 'seasonId', 'format', 'startTime', 'durationMinutes', 'location']],
-      set_meeting_visibility: ['SetMeetingVisibility', ['date', 'hidden']],
       create_slot: ['CreateSlot', ['date', 'slotNumber']],
       delete_slot: ['DeleteSlot', ['slotId']], delete_meeting: ['DeleteMeeting', ['date']],
     };
@@ -780,7 +779,7 @@ module.exports = function(ctx){
   const WRITE = [
     { name: 'group_rota', run: groupRota,
       description: 'The group meeting rota: BOLD-internal members and above are included automatically; register resumes participation after leaving. Presenters can edit their assigned talk, claim an open short or long slot, decline a slot with a private reason, or request a confirmed short-slot swap. Series organisers, PIs and admins can set outcomes, offer short slots (and withdraw an offer), and manage seasons and meetings. Swap and offer actions send a Slack message. All actions use the same callable and permissions as the rota page.',
-      inputSchema: S({ action: ACTIONS(['register', 'leave', 'edit', 'claim', 'recuse', 'request_swap', 'cancel_swap', 'retry_swap', 'outcome', 'offer_short', 'cancel_offer', 'save_season', 'save_meeting', 'set_meeting_visibility', 'create_slot', 'delete_slot', 'delete_meeting']),
+      inputSchema: S({ action: ACTIONS(['register', 'leave', 'edit', 'claim', 'recuse', 'request_swap', 'cancel_swap', 'retry_swap', 'outcome', 'offer_short', 'cancel_offer', 'save_season', 'save_meeting', 'create_slot', 'delete_slot', 'delete_meeting']),
         slotId: str('Stable slot id, from the rota.'), otherSlotId: str('Swap target slot id.'), id: str('Swap id, offer id (the slot’s pending action) or season id, depending on action.'),
         revision: { type: 'integer', description: 'The slot revision shown by the rota; stale edits fail.' },
         topic: str('Talk topic, up to 140 characters.'), projectId: str('Optional linked project id.'), slidesUrl: str('Optional HTTPS slides link.'), auditNote: str('Administrator correction note.'),

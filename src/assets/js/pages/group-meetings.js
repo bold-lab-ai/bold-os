@@ -96,9 +96,8 @@
   function meetingHtml(m, index){
     var rows = slots.filter(function(s){ return s.meetingId === m.date; }).sort(function(a,b){ return a.slotNumber - b.slotNumber; });
     var remove = m.origin === 'site' && !rows.length ? '<button type="button" class="btn-text" data-action="deleteMeeting" data-date="' + esc(m.date) + '"' + disabled(access && access.admin, 'Only a rota administrator can remove a new empty meeting') + '>Remove meeting</button>' : '';
-    var visibility = '<button type="button" class="btn-text" data-action="meetingVisibility" data-date="' + esc(m.date) + '" data-hidden="' + (m.hidden ? 'false' : 'true') + '"' + disabled(access && access.admin && (!m.hidden || !access.seriesHidden), access && access.seriesHidden && m.hidden ? 'Release the event series first' : 'Only a series organiser, PI or admin can change visibility') + '>' + (m.hidden ? 'Release meeting' : 'Hide meeting') + '</button>';
     return '<section class="rota-meeting' + (index === 0 && !archive ? ' is-next' : '') + '" id="date-' + esc(m.date) + '"><div class="rota-meeting-head has-actions"><div>' + (index === 0 && !archive ? '<span class="rota-meeting-eyebrow">Next meeting</span>' : '') + '<h2>' + esc(fmt(m.date)) + '</h2></div><p>' + esc(m.startTime || '') + ' · ' + esc(m.format || '') + (m.status === 'skipped' ? ' · Skipped' + (m.skipReason ? ': ' + esc(m.skipReason) : '') : '') + (m.hidden ? ' · Hidden' : '') + '</p>' +
-      actionsHtml('rota-actions-meeting-' + m.date, 'Actions for meeting on ' + fmt(m.date), visibility + remove) + '</div>' +
+      (remove ? actionsHtml('rota-actions-meeting-' + m.date, 'Actions for meeting on ' + fmt(m.date), remove) : '') + '</div>' +
       (m.status === 'skipped' ? '' : '<div class="rota-slots rota-slots--' + Math.min(rows.length, 3) + '">' + rows.map(slotHtml).join('') + '</div>') + '</section>';
   }
   function changesHtml(){
@@ -297,21 +296,13 @@
     if (action === 'claim') { act('Claim', { slotId: s.id }); return; }
     if (action === 'deleteSlot') { act('DeleteSlot', { slotId: s.id }); return; }
     if (action === 'deleteMeeting') { act('DeleteMeeting', { date: button.dataset.date }); return; }
-    if (action === 'meetingVisibility') {
-      var hidden = button.dataset.hidden === 'true', date = button.dataset.date;
-      BOLD.confirmAction({ title: (hidden ? 'Hide' : 'Release') + ' the meeting on ' + fmt(date) + '?', go: hidden ? 'Hide meeting' : 'Release meeting',
-        effects: [hidden ? 'Hide this date from members’ Events, Calendar and rota' : 'Show this date on Events, Calendar and the rota'], always: true
-      }).then(function(ok){ if (ok) act('SetMeetingVisibility', { date: date, hidden: hidden }); });
-      return;
-    }
     if (action === 'leave') { act('Leave', {}); return; }
     if (action === 'editSeries') { location.href = 'series.html?series=' + encodeURIComponent(access.seriesId) + '&edit=1&back=group-meetings.html'; return; }
     if (action === 'seriesVisibility') {
       var release = access.seriesHidden;
       BOLD.confirmAction({ title: release ? 'Release the group meeting series?' : 'Hide the group meeting series?', go: release ? 'Release series' : 'Hide series',
-        effects: release ? ['Show the series in Events to everyone with Events access', 'Open the rota page to members; it stays empty until you release its meetings, one at a time']
-          : ['Hide the series and every meeting from Events, the Calendar and the rota', 'Releasing the series again won’t release its meetings: each has to be released again'],
-        warn: release ? '' : 'Hiding can’t be undone in one step.', always: true
+        effects: release ? ['Show the series and every meeting in Events, the Calendar and the rota to everyone with Events access']
+          : ['Hide the series and every meeting from Events, the Calendar and the rota'], always: true
       }).then(function(ok){ if (ok) actSeries(release ? 'release' : 'hide'); });
       return;
     }
