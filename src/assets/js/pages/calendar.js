@@ -738,11 +738,7 @@
     E.access(function(all){
       if (signIn !== unsubs) return; // signed out or in again meanwhile
       var ev = db.collection('events'), se = db.collection('eventSeries'), fields = function(d){ return d.data(); };
-      watch('event', all ? ev : [ev.where('hidden', '==', false).where('visibleTo', 'in', BOLD.visibleLevels()), ev.where('createdBy', '==', user.email || '')], function(d){
-        var x = d.data();
-        if (x.page === 'group-meetings.html') return x.status === 'skipped' ? null : Object.assign({}, x, { page: 'group-meetings.html?date=' + encodeURIComponent(x.date || x.startDate) });
-        return x;
-      }, 'slug');
+      watch('event', all ? ev : [ev.where('hidden', '==', false).where('visibleTo', 'in', BOLD.visibleLevels()), ev.where('createdBy', '==', user.email || '')], fields, 'slug');
       watch('series', all ? se : [se.where('hidden', '==', false).where('visibleTo', 'in', BOLD.visibleLevels()), se.where('organisers', 'array-contains', mine)], fields, 'id');
     });
     // My open requests to join a student's meeting.

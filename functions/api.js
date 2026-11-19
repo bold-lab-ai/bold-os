@@ -251,7 +251,7 @@ module.exports = function(deps){
     rotaSeasons: () => cached('rotaSeasons', async () => docs(await db.collection('groupMeetingSeasons').get())),
     rotaMeetings: () => cached('rotaMeetings', async () => {
       const series = await db.collection('eventSeries').where('page', '==', 'group-meetings.html').limit(1).get();
-      return series.empty ? [] : docs(await db.collection('events').where('series', '==', series.docs[0].id).get());
+      return series.empty ? [] : docs(await db.collection('groupRotaMeetings').where('series', '==', series.docs[0].id).get());
     }),
     rotaSlots: () => cached('rotaSlots', async () => docs(await db.collection('groupRotaSlots').get())),
     studies: () => cached('studies', async () => docs(await db.collection('studies').get())),
@@ -562,7 +562,8 @@ module.exports = function(deps){
       if (!manager && (series.hidden || !(await access.seesIt(who.email, series)))) return;
       const published = new Set(seasons.filter((s) => s.publicationState === 'published').map((s) => s._id));
       const visible = [];
-      for (const m of meetings) if (published.has(m.seasonId) && (manager || !m.hidden && await access.seesIt(who.email, m))) visible.push(m);
+      // Seeing the series is seeing its meetings.
+      for (const m of meetings) if (published.has(m.seasonId)) visible.push(m);
       const dates = new Set(visible.map((m) => m.date));
       const names = Object.fromEntries(people.map((p) => [p.slackId || p._id, p.name || '']));
       item('rota', series.title || 'Group meetings', 'Rota', seasons.filter((s) => published.has(s._id)).map((s) => s.label).join(' '), 'group-meetings.html');

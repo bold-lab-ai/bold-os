@@ -4984,6 +4984,35 @@ exports.onApproveProposalsRun = onDocumentCreated({ document: 'runs/{id}', secre
   }
   await event.data.ref.set({ doneAt: Date.now(), done }, { merge: true });
 });
+// One-off (runs/{id} { action: 'group-meetings-to-meeting', dryRun }, 2026-11-19): the group meetings
+// become one weekly meeting like Hamming Sessions. Each of its dated events becomes a rota record
+// (groupRotaMeetings, the same id); the series becomes kind 'meeting' (Mondays 11:00, an hour, inviting
+// BOLD-internal and above), paused, so no Google Calendar invite goes out until it's resumed; its future
+// skipped dates are cancelled there. The old events are deleted, a copy of each kept on the run.
+exports.onGroupMeetingsRun = onDocumentCreated({ document: 'runs/{id}', timeoutSeconds: 300 }, async (event) => {
+  const run = event.data && event.data.data();
+  if (!run || run.action !== 'group-meetings-to-meeting' || run.doneAt) return;
+  const found = await db.collection('eventSeries').where('page', '==', 'group-meetings.html').get();
+  if (found.size !== 1) { await event.data.ref.set({ doneAt: Date.now(), error: 'Found ' + found.size + ' group meeting series.' }, { merge: true }); return; }
+  const sref = found.docs[0].ref, s = found.docs[0].data(), id = sref.id;
+  const eds = (await db.collection('events').where('series', '==', id).get()).docs;
+  const today = new Intl.DateTimeFormat('en-CA', { timeZone: 'Europe/London' }).format(new Date());
+  const keep = ['date', 'seasonId', 'format', 'location', 'status', 'skipReason', 'origin', 'createdAt', 'createdBy', 'updatedAt', 'updatedBy', 'changeNote'];
+  const records = eds.map((d) => { const e = d.data(), r = { series: id }; keep.forEach((k) => { if (e[k] !== undefined) r[k] = e[k]; }); return { id: d.id, r }; });
+  const cancelled = {};
+  eds.forEach((d) => { const e = d.data(); if (e.status === 'skipped' && e.date > today) cancelled[e.date] = { cancelled: true }; });
+  const patch = { kind: 'meeting', meeting: { day: 'MO', time: '11:00', minutes: 60, every: 1 }, invite: { mode: 'group', group: 'internal' },
+    meetingMoved: cancelled, pausedAt: Date.now(), pausedBy: 'migration', cadence: FieldValue.delete(), inviteGroup: FieldValue.delete(), updatedAt: Date.now(), updatedBy: 'migration' };
+  const summary = { series: id, kindBefore: s.kind || '', events: eds.length, cancelled: Object.keys(cancelled).sort(), first: records.map((x) => x.r.date).sort()[0] || '', last: records.map((x) => x.r.date).sort().pop() || '' };
+  if (run.dryRun === true) { await event.data.ref.set({ doneAt: Date.now(), dryRun: true, summary }, { merge: true }); return; }
+  if (s.kind !== 'editions') { await event.data.ref.set({ doneAt: Date.now(), error: 'Already converted: ' + s.kind, summary }, { merge: true }); return; }
+  // The copy first (on the run, as it was), then the records, then the series, then the old events.
+  await event.data.ref.set({ backup: eds.map((d) => Object.assign({ _id: d.id }, d.data())), summary }, { merge: true });
+  for (let i = 0; i < records.length; i += 400) { const b = db.batch(); records.slice(i, i + 400).forEach((x) => b.set(db.collection('groupRotaMeetings').doc(x.id), x.r)); await b.commit(); }
+  await sref.set(patch, { merge: true });
+  for (let i = 0; i < eds.length; i += 400) { const b = db.batch(); eds.slice(i, i + 400).forEach((d) => b.delete(d.ref)); await b.commit(); }
+  await event.data.ref.set({ doneAt: Date.now() }, { merge: true });
+});
 // Pure: a proposal's compute budget, in GPU hours → the number, or { error }.
 function normalizeGpuHours(v){
   const n = typeof v === 'string' ? Number(v.replace(/[,\s]/g, '')) : Number(v);
@@ -7252,7 +7281,7 @@ TRACKED.forEach((c) => { exports['history' + c.charAt(0).toUpperCase() + c.slice
 // Group meeting rota. Presenter eligibility follows BOLD.OS membership category.
 const groupRota = require('./group-rota')({
   db, admin, HttpsError, onCall, onSchedule, signedInEmail, rolesEmails,
-  requireAccess: access.requireAccess, seesEvent: access.seesIt, eventGroup: access.eventGroup, groupFor: access.groupFor,
+  requireAccess: access.requireAccess, seesEvent: access.seesIt, groupFor: access.groupFor,
   isFullWrite, viewingAs, pilotSlack, botToken: SLACK_BOT_TOKEN, logger
 });
 Object.keys(groupRota).filter(k => k !== 'slackAction' && k !== 'slackCommand' && k !== '_internal').forEach(k => { exports[k] = groupRota[k]; });
@@ -9458,7 +9487,6 @@ exports.eventSeries = labSeries.eventSeries;
 exports.onMemberGroupChanged = labSeries.onMemberGroupChanged;
 exports.seriesNudges = labSeries.seriesNudges;
 exports.onOccurrenceWritten = labSeries.onOccurrenceWritten;
-exports.onGroupSeriesWritten = labSeries.onGroupSeriesWritten;
 
 // Every hour: the syncs Google's calendar limit stopped (calendarLimitAt; see isCalendarLimit), oldest
 // first, a few at a time; a run stops at the first still refused, the limit not lifted yet.

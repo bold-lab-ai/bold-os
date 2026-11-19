@@ -722,7 +722,7 @@ module.exports = function(ctx){
       outcome: ['Outcome', ['slotId', 'revision', 'outcome']],
       offer_short: ['OfferShort', ['slotId', 'recipientSlackId']], cancel_offer: ['CancelOffer', ['id']],
       save_season: ['SaveSeason', ['id', 'label', 'regularTime', 'location', 'rotationDescription', 'publicationState']],
-      save_meeting: ['SaveMeeting', ['date', 'seasonId', 'format', 'startTime', 'durationMinutes', 'location']],
+      save_meeting: ['SaveMeeting', ['date', 'seasonId', 'format', 'location']],
       create_slot: ['CreateSlot', ['date', 'slotNumber']],
       delete_slot: ['DeleteSlot', ['slotId']], delete_meeting: ['DeleteMeeting', ['date']],
     };
@@ -751,11 +751,14 @@ module.exports = function(ctx){
     if (!series || (!manager && (series.hidden || !(await seesEvent(who.email, series))))) return { url: url('group-meetings.html'), seasons: [], meetings: [], slots: [] };
     const published = new Set(seasons.filter((s) => manager || s.publicationState === 'published').map((s) => s._id));
     const visible = [];
-    for (const m of meetings) if (published.has(m.seasonId) && (!a.date || m.date === a.date) && (manager || !m.hidden && await seesEvent(who.email, m))) visible.push(m);
+    // Seeing the series is seeing its meetings.
+    for (const m of meetings) if (published.has(m.seasonId) && (!a.date || m.date === a.date)) visible.push(m);
     const dates = new Set(visible.map((m) => m.date));
     const names = Object.fromEntries(people.map((p) => [p.slackId || p._id, p.name || '']));
     return { url: url('group-meetings.html'), seasons: seasons.filter((s) => published.has(s._id)).map((s) => ({ id: s._id, label: s.label, regular_time: s.regularTime, location: s.location })),
-      meetings: visible.map((m) => ({ date: m.date, format: m.format, start_time: m.startTime, location: m.location, status: m.status, skip_reason: m.skipReason || '', url: url('group-meetings.html?date=' + m.date) })),
+      meetings: visible.map((m) => { const mv = (series.meetingMoved || {})[m.date], mt = series.meeting || {}, moved = mv && !mv.cancelled ? mv : null;
+        return { date: moved ? moved.date : m.date, ...(moved ? { moved_from: m.date } : {}), format: m.format, start_time: moved ? moved.time : mt.time || '', location: m.location || '',
+          status: (mv && mv.cancelled) || m.status === 'skipped' ? 'skipped' : m.status || 'scheduled', skip_reason: m.skipReason || '', url: url('group-meetings.html?date=' + m.date) }; }),
       slots: slots.filter((s) => s.seriesId === series._id && dates.has(s.meetingId)).map((s) => ({ id: s._id, date: s.date, slot: s.slotNumber, format: s.format,
         presenter: names[s.presenterSlackId] || s.legacyName || 'Open slot', unresolved: !!(s.presenterSlackId && !names[s.presenterSlackId]) || !!(s.legacyName && !s.presenterSlackId),
         topic: s.topic || '', project_id: s.projectId || '', slides: s.slidesUrl || '', outcome: s.outcome || 'unconfirmed', revision: s.revision || 0, pending_action_id: s.pendingActionId || '',
@@ -785,8 +788,8 @@ module.exports = function(ctx){
         topic: str('Talk topic, up to 140 characters.'), projectId: str('Optional linked project id.'), slidesUrl: str('Optional HTTPS slides link.'), auditNote: str('Administrator correction note.'),
         reason: str('Private recusal reason.'),
         outcome: ACTIONS(['unconfirmed', 'presented', 'did-not-present']), recipientSlackId: str('Verified recipient Slack id.'),
-        date: str('Meeting date, YYYY-MM-DD.'), hidden: { type: 'boolean', description: 'Hide or release a meeting edition.' }, slotNumber: { type: 'integer' }, seasonId: str('Season id.'),
-        format: ACTIONS(['short', 'long']), startTime: str('HH:MM London time.'), durationMinutes: { type: 'integer' },
+        date: str('Meeting date, YYYY-MM-DD.'), slotNumber: { type: 'integer' }, seasonId: str('Season id.'),
+        format: ACTIONS(['short', 'long']),
         location: str('Meeting location.'), label: str('Season label.'), regularTime: str('Season regular time.'),
         rotationDescription: str('Season rotation description.'), publicationState: ACTIONS(['draft', 'published']) }) },
     { name: 'register_benchmark', description: 'Register an implemented evaluator from AutoKaggle Lite in the Problem Bank, linked to an existing project and its Lite session. The server derives its stage from the evidence, shown as reported by AutoKaggle. Approval is a PI’s or admin’s, on the page; a release is written once. Retries reuse the same registration key. This saves lab records; it sends no messages or invitations.',
