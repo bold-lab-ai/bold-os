@@ -21,7 +21,7 @@
 // (prefix), tool, args, at, expireAt } (expireAt: for a Firestore TTL policy, 90 days).
 const crypto = require('crypto');
 const keycloak = require('./keycloak');
-const { seesEvent } = require('./access');
+const { seesEvent, rank: groupRank } = require('./access');
 // Search ranking, shared with the site: copied here at deploy (firebase.json's predeploy),
 // else the site's copy (run as a script: the repo's root package is an ES module).
 const rank = (function(){
@@ -347,7 +347,10 @@ module.exports = function(deps){
         id: e._id, title: e.title, start: e.startDate, end: e.endDate, time: e.startTime || '', minutes: e.durationMinutes || 0, place: e.place || '', description: plain(e.description),
         url: url(e.page || 'event.html?event=' + encodeURIComponent(e._id)) }));
       // Lab meetings (eventSeries): the released ones they aren't invited to.
-      (await lab.seriesFor(email)).filter((x) => x.hidden === false && x.meeting && (x.eventId || x.pausedAt) && (x.guests || []).indexOf(email) < 0).forEach((x) => {
+      // One with an invite of its own (`ownInvite`): in the feed of whoever its group doesn't take in, as they don't have that invite.
+      const myRank = groupRank(await access.groupFor(email));
+      (await lab.seriesFor(email)).filter((x) => x.hidden === false && x.meeting && (x.eventId || x.pausedAt || x.ownInvite) && (x.guests || []).indexOf(email) < 0 &&
+        !(x.ownInvite && x.invite && x.invite.mode === 'group' && myRank >= groupRank(x.invite.group))).forEach((x) => {
         meetings.push({ id: 'series-' + x._id, title: x.title, meeting: x.meeting, moved: x.meetingMoved, start: x.eventStart, pausedAt: x.pausedAt,
           description: plain(x.description), url: url('series.html?series=' + encodeURIComponent(x._id)) });
       });

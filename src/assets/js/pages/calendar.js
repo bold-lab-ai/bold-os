@@ -60,9 +60,10 @@
         href: isMe(s.email) ? 'profile.html#studies' : id ? 'person.html?id=' + encodeURIComponent(id) : '' });
     });
     if (all || shown('series')) (data.series || []).forEach(function(x){
-      if (!x.meeting || !(x.eventId || x.pausedAt || x.hidden)) return;
+      // `ownInvite`: it has an invite of its own, not BOLD.OS's (the group meetings).
+      if (!x.meeting || !(x.eventId || x.pausedAt || x.hidden || x.ownInvite)) return;
       out.push({ kind: 'series', id: x.id, title: x.title, href: 'series.html?series=' + encodeURIComponent(x.id), meeting: x.meeting,
-        mine: (x.guests || []).some(isMe), paused: !!x.pausedAt, hidden: !!x.hidden, start: x.eventStart || '', meetUrl: x.meetUrl, people: (x.guests || []).length, x: x,
+        mine: (x.guests || []).some(isMe), paused: !!x.pausedAt, hidden: !!x.hidden, start: x.eventStart || '', meetUrl: x.meetUrl || (x.ownInvite && x.meeting.link) || '', people: (x.guests || []).length, x: x,
         moved: x.meetingMoved || {}, canEdit: (x.organisers || []).some(isMe) || BOLD.isFullWrite() });
     });
     return out;
