@@ -1,0 +1,43 @@
+---
+area: "agents"
+title: "BOLD LLM | BOLD Lab"
+description: "About Sofya, BOLD's self-hosted LLM, and how BOLD members can use it."
+css: "bold-llm"
+scripts: ["pages/bold-llm.js"]
+permalink: "bold-llm.html"
+nav: "bold-llm.html"
+---
+<div class="hero">
+  <h1>BOLD LLM</h1>
+</div>
+
+<main class="llm-page">
+  <section class="llm-section" aria-labelledby="llm-about-title">
+    <h2 id="llm-about-title">About</h2>
+    <p><a href="https://en.wikipedia.org/wiki/Sofya_Kovalevskaya" target="_blank" rel="noopener" title="Named after the mathematician Sofya Kovalevskaya">Sofya</a> is BOLD's self-hosted LLM. It runs <code>Qwen/Qwen3.8-27B-FP8</code> and is intended to co-evolve with the lab, becoming better suited to our work as our needs change.</p>
+    <p class="llm-warning"><strong>ALL REQUESTS ARE LOGGED FOR TRAINING PURPOSES.</strong></p>
+  </section>
+
+  <section class="llm-section" aria-labelledby="llm-access-title">
+    <h2 id="llm-access-title">How to access</h2>
+    <p>First create an API key at <a href="https://llm.bold-lab.ai/" target="_blank" rel="noopener">llm.bold-lab.ai</a>.</p>
+
+    <div class="llm-method">
+      <h3>cURL</h3>
+      <p>Call the OpenAI-compatible chat completions endpoint:</p>
+      <div id="llmCurl"></div>
+    </div>
+
+    <div class="llm-method">
+      <h3>OpenCode</h3>
+      <p>Add this provider to <code>opencode.json</code>:</p>
+      <div id="llmOpenCode"></div>
+    </div>
+
+    <div class="llm-method">
+      <h3>Chat</h3>
+      <p>For a chat experience, visit <a href="https://chat.bold-lab.ai" target="_blank" rel="noopener">chat.bold-lab.ai</a>.</p>
+    </div>
+  </section>
+
+</main>
