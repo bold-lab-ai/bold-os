@@ -88,17 +88,21 @@ a.btn{display:inline-block; text-decoration:none;}
 #pbInputs button{justify-self:start;}
 #pbAdd[aria-disabled="true"], #openBenchmarkLite[aria-disabled="true"]{opacity:.55; cursor:default;}
 
-/* ---------- adding a problem with BOLD-LLM (problem-new.html) ---------- */
-.pb-chat{margin:0 0 28px;}
-.pb-chat-log{display:flex; flex-direction:column; gap:12px; margin-bottom:14px;}
-.pb-chat-msg{max-width:85%; padding:10px 14px; border-radius:var(--radius); line-height:1.5;}
-.pb-chat-msg p{margin:0 0 6px;} .pb-chat-msg p:last-child{margin-bottom:0;}
-.pb-chat-msg.from-llm{align-self:flex-start; background:var(--surface); border:1px solid var(--line);}
-.pb-chat-msg.from-me{align-self:flex-end; background:color-mix(in srgb, var(--accent) 10%, transparent);}
-.pb-chat-msg.pending{color:var(--muted); font-style:italic;}
-.pb-chat-say textarea{width:100%; box-sizing:border-box;}
-.pb-chat-actions{display:flex; flex-wrap:wrap; align-items:center; gap:12px; margin:8px 0 4px;}
-.pb-draft-head{font:600 15px var(--sans); margin:0 0 12px;}
-.pb-form .pb-filled{animation:pb-filled 1.2s ease-out;}
-@keyframes pb-filled{from{background:color-mix(in srgb, var(--accent) 16%, transparent);} to{background:transparent;}}
-@media (prefers-reduced-motion: reduce){.pb-form .pb-filled{animation:none;}}
+/* ---------- adding a problem with BOLD (problem-new.html): the home page's conversation (bold.css .ha-*),
+   and beside it what the Problem Bank needs, each ticked once BOLD has it from what they said ---------- */
+.pb-talk{display:grid; grid-template-columns:minmax(0, 1fr) 220px; column-gap:48px; align-items:start; margin-top:8px;}
+.pb-talk-box{font-family:var(--sans); max-width:var(--article-max, 40em);}
+.pb-talk-box .ha-saved{margin:12px 0 0; font-size:12px; color:var(--muted);}
+.pb-needs{position:sticky; top:24px; font-family:var(--sans); font-size:12.5px; line-height:1.45;}
+.pb-needs .home-box-title{margin:0 0 10px; font-size:10.5px; font-weight:600; letter-spacing:.12em; text-transform:uppercase; color:var(--muted);}
+.pb-checks{list-style:none; margin:0 0 16px; padding:0; display:flex; flex-direction:column; gap:8px;}
+.pb-checks li{display:flex; align-items:baseline; gap:8px; color:var(--muted); transition:color .3s ease;}
+.pb-checks li::before{content:''; flex:none; display:inline-grid; place-items:center; width:13px; height:13px; box-sizing:border-box; border:1px solid var(--line); border-radius:50%; font-size:9px; line-height:1; color:var(--on-fill); transform:translateY(2px); transition:background .3s ease, border-color .3s ease;}
+.pb-checks li.is-done{color:var(--ink);}
+.pb-checks li.is-done::before{content:'\2713'; border-color:var(--accent); background:var(--accent);}
+.pb-checks small{color:var(--muted);}
+.pb-status{margin:10px 0 0; font-size:12px; color:var(--muted);}
+.pb-status:empty{display:none;}
+.pb-needs #pbSave[hidden]{display:none;}
+@media (max-width:900px){ .pb-talk{grid-template-columns:minmax(0, 1fr);} .pb-needs{position:static; order:-1; margin-bottom:20px;} }
+@media (prefers-reduced-motion:reduce){ .pb-checks li, .pb-checks li::before{transition:none;} }

@@ -1,6 +1,6 @@
 // Adding a problem by talking it through with BOLD-LLM (Sofya, functions/sofya.js): the person describes the
 // problem, BOLD-LLM asks what's missing, one thing at a time, and keeps a draft of the Problem Bank's fields
-// (problem-new.html shows it, to check and edit before saving through benchmarkRegistry's create). Thinking off,
+// (problem-new.html ticks off each field it has, and saves it through benchmarkRegistry's create). Thinking off,
 // so each turn takes seconds. Sofya logs its requests for training: the page says so. Pure but for `complete`.
 'use strict';
 
@@ -16,10 +16,10 @@ const SCHEMA = {
     ready: { type: 'boolean' },
     draft: {
       type: 'object', additionalProperties: false,
-      required: ['title', 'significance', 'difficulties', 'existing_solutions', 'builds_benchmark', 'collaborators', 'project_ids', 'parent_ids', 'related_ids'],
+      required: ['title', 'significance', 'difficulties', 'existing_solutions', 'builds_benchmark', 'benchmark_known', 'collaborators', 'project_ids', 'parent_ids', 'related_ids'],
       properties: {
         title: { type: 'string' }, significance: { type: 'string' }, difficulties: { type: 'string' }, existing_solutions: { type: 'string' },
-        builds_benchmark: { type: 'boolean' }, collaborators: { type: 'string' },
+        builds_benchmark: { type: 'boolean' }, benchmark_known: { type: 'boolean' }, collaborators: { type: 'string' },
         project_ids: { type: 'array', items: { type: 'string' } }, parent_ids: { type: 'array', items: { type: 'string' } }, related_ids: { type: 'array', items: { type: 'string' } }
       }
     }
@@ -38,7 +38,7 @@ function systemPrompt({ objectives, problems, projects }){
     '- significance: why it matters, who benefits if it’s solved.',
     '- difficulties: what makes it hard.',
     '- existing_solutions: where the frontier is: what current methods can do, and what remains open.',
-    '- builds_benchmark: true only if the goal is to build a benchmark itself (then it needs no separate verifier). Ask if it’s unclear.',
+    '- builds_benchmark: true only if the goal is to build a benchmark itself (then it needs no separate verifier). Ask if it’s unclear. benchmark_known: true once you know either way.',
     'Optional: once the required fields are there, suggest these when they fit (one question for all of them), and confirm with the person:',
     '- parent_ids: the northstars, moonshots or broader problems it contributes to (ids from the lists below).',
     '- related_ids: related problems (ids from the problem list).',
@@ -46,7 +46,7 @@ function systemPrompt({ objectives, problems, projects }){
     '- collaborators: names of people working on it with them.',
     '',
     'Write each text field in the researcher’s voice, from what they said, concise and concrete (a few sentences). Keep every field you already have unless they change it; use "" or [] for what you don’t know yet.',
-    'Set ready to true once title, significance, difficulties and existing_solutions are filled and builds_benchmark is settled; then tell them to check the draft below the conversation and save it. They can keep talking to change it.',
+    'Set ready to true once title, significance, difficulties and existing_solutions are filled and benchmark_known is true; then sum up the problem in two or three sentences, and tell them to save it with Save problem (beside the conversation), or to keep talking to change anything.',
     'Answer with JSON only: { "reply": what you say to them next, "ready": …, "draft": { … } }.',
     '',
     'Northstars and moonshots (id: title):', list(objectives, (o) => o.id + ': ' + o.title + ' (' + o.kind + ')'),
@@ -75,6 +75,7 @@ function cleanDraft(d, known){
   const out = {};
   Object.keys(TEXT).forEach((k) => { out[k] = typeof d[k] === 'string' ? d[k].trim().slice(0, TEXT[k]) : ''; });
   out.builds_benchmark = d.builds_benchmark === true;
+  out.benchmark_known = d.benchmark_known === true;
   const ids = (list, allowed) => Array.from(new Set((Array.isArray(list) ? list : []).map(String).filter((id) => allowed.has(id)))).slice(0, 20);
   out.project_ids = ids(d.project_ids, known.projects);
   out.parent_ids = ids(d.parent_ids, known.parents);
@@ -82,13 +83,13 @@ function cleanDraft(d, known){
   return out;
 }
 // Pure: whether the required fields are there.
-function complete(d){ return !!(d.title && d.significance && d.difficulties && d.existing_solutions); }
+function complete(d){ return !!(d.title && d.significance && d.difficulties && d.existing_solutions && d.benchmark_known); }
 
 // One turn: `turns` [{ role, content }], what the lab has (`lab`: { objectives, problems, projects }), Sofya's
 // `complete`, and the draft as it stands on the page (`current`) → { reply, ready, draft }.
 async function interview(turns, lab, sofyaComplete, said, jsonOf, current){
   const so = current && typeof current === 'object' ? JSON.stringify(current).slice(0, 30000) : '';
-  const messages = [{ role: 'system', content: systemPrompt(lab) + (so ? '\n\nThe draft so far, as the person sees it below the conversation (they may have edited it: keep what they wrote unless they ask to change it):\n' + so : '') }].concat(turnsOf(turns));
+  const messages = [{ role: 'system', content: systemPrompt(lab) + (so ? '\n\nThe draft so far (keep it, unless what they say changes it):\n' + so : '') }].concat(turnsOf(turns));
   const r = await sofyaComplete({ max_tokens: 3000, messages, chat_template_kwargs: { enable_thinking: false },
     response_format: { type: 'json_schema', json_schema: { name: 'problem_interview', schema: SCHEMA, strict: true } } });
   const v = jsonOf(said(r.message));

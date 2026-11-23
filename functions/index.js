@@ -9679,10 +9679,14 @@ exports.problemInterview = onCall({ secrets: [BOLD_LLM_KEY], timeoutSeconds: 120
   const lab = {
     objectives: (family.objectives || []).filter((o) => !o.archived).map((o) => ({ id: o.id, title: o.title, kind: o.kind })),
     problems: (family.problems || []).filter((p) => !p.archived).map((p) => ({ id: p.id, title: p.title })),
-    projects: (dir.items || []).map((p) => ({ id: p.id, title: p.title }))
+    // Stepping stones only: northstars and moonshots are objectives, above.
+    projects: (dir.items || []).filter((p) => !(family.objectives || []).some((o) => o.id === p.id)).map((p) => ({ id: p.id, title: p.title }))
   };
+  // Who's asking: the problem's definer, as on the form.
+  const meSnap = await db.collection('people').where('email', '==', email).limit(1).get();
+  const me = meSnap.empty ? null : { id: meSnap.docs[0].id, name: meSnap.docs[0].data().name || '' };
   try {
-    return await problemInterview.interview((request.data || {}).turns, lab, sofyaForProblems.complete, require('./sofya').said, require('./sofya').jsonOf, (request.data || {}).draft);
+    return Object.assign({ me }, await problemInterview.interview((request.data || {}).turns, lab, sofyaForProblems.complete, require('./sofya').said, require('./sofya').jsonOf, (request.data || {}).draft));
   } catch (err) {
     if (/^(Start again|Keep each|Say something)/.test(err.message)) throw new HttpsError('invalid-argument', err.message);
     logger.warn('Problem interview failed', { error: String(err.message).slice(0, 300) });

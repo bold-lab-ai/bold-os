@@ -4,8 +4,8 @@ title: "Add a problem | BOLD Lab"
 description: "Define a research question for the Problem Bank."
 sdk: ["firestore", "functions"]
 css: "problems"
-styles: ["problem-steps", "problem-family-picker"]
-scripts: ["people-select.js", "problem-projects.js", "problem-family-picker.js", "markdown.js", "pages/problem-new.js"]
+styles: ["problem-steps"]
+scripts: ["markdown.js", "md-field.js", "pages/problem-new.js"]
 permalink: "problem-new.html"
 nav: "problems.html"
 ---
@@ -14,38 +14,20 @@ nav: "problems.html"
   <ol class="pb-steps" aria-label="Problem onboarding">
     <li aria-current="step">Define the problem</li><li id="pbVerifierStep">Add a verifier</li><li id="pbBaselineStep">Autoresearch baseline <small>Coming soon</small></li>
   </ol>
-  <section class="pb-chat" id="pbChat" aria-label="Describe the problem with BOLD-LLM">
-    <div class="pb-chat-log" id="pbChatLog" aria-live="polite"></div>
-    <form class="pb-chat-say" id="pbChatForm">
-      <textarea class="no-tags" id="pbChatInput" aria-label="Your answer" rows="3" maxlength="4000" placeholder="Describe the problem: what you want to solve and why" disabled></textarea>
-      <div class="pb-chat-actions">
-        <button type="submit" class="btn btn-primary" id="pbChatSend" disabled>Send</button>
-        <button type="button" class="btn-text" id="pbChatRestart" hidden>Start again</button>
-        <button type="button" class="btn-text" id="pbManual">Fill in the form myself</button>
-      </div>
-      <p class="field-hint">BOLD-LLM fills in the draft below as you talk; check it and save. BOLD-LLM logs conversations to improve it.</p>
-    </form>
-  </section>
-  <form class="pb-form" id="pbCreate" hidden>
-    <h2 class="pb-draft-head" id="pbDraftHead">Draft</h2>
-    <fieldset id="pbInputs" disabled>
-      <div class="field"><label for="pbTitle">Problem title</label><input id="pbTitle" required maxlength="180"></div>
-      <div class="field"><label class="pb-purpose"><input id="pbBuildsBenchmark" type="checkbox" aria-describedby="pbPurposeHint"> This problem is building a benchmark</label>
-        <small id="pbPurposeHint">You can skip the verifier when the benchmark itself is the goal.</small></div>
-      <div class="field"><label for="pbDefiner">Problem definer</label><select id="pbDefiner" required><option value="">Choose a person</option></select></div>
-      <div class="field"><label for="pbWhy">Why it matters</label><textarea class="no-tags" id="pbWhy" required maxlength="8000"></textarea></div>
-      <div class="field"><label for="pbDifficulties">What are the difficulties?</label><textarea class="no-tags" id="pbDifficulties" required maxlength="8000"></textarea></div>
-      <div class="field"><label for="pbExisting">Where is the frontier?</label><textarea class="no-tags" id="pbExisting" required maxlength="8000" placeholder="What can current methods do, and what remains open?"></textarea></div>
-      <div class="field"><details><summary>Projects <small>(optional)</small></summary><div id="pbProjects" class="pb-project-options"></div></details>
-        <a href="projects.html" target="_blank" rel="noopener">All projects ↗</a></div>
-      <div class="field"><label for="pbCollaborators">Collaborators <small>(optional)</small></label><input id="pbCollaborators" maxlength="8000" placeholder="Names"></div>
-      <section class="field" aria-label="Research family tree">
-        <strong>Research family tree <small>(optional)</small></strong>
-        <div id="pbFamily"></div><span id="pbFamilyStatus" role="status"></span>
-        <button type="button" id="pbFamilyRetry" class="btn-text" hidden>Reload family tree</button>
-      </section>
-      <button type="submit" class="btn btn-primary" id="pbSave">Save problem</button>
-    </fieldset>
-    <p role="status" id="pbStatus">Loading…</p>
-  </form>
+  <div class="pb-talk">
+    <section class="ha-box is-open pb-talk-box" aria-label="Describe the problem to BOLD">
+      <ol class="ha-log" id="pbLog" aria-live="polite"></ol>
+      <div class="ha-fold"><form class="ha-form" id="pbChatForm" novalidate>
+        <textarea class="md-field no-tags" data-md-breaks="true" rows="2" maxlength="4000" id="pbChatInput" aria-label="Reply to BOLD" placeholder="Reply to BOLD…" disabled></textarea>
+        <div class="ha-actions"><button type="button" class="btn-text" id="pbRestart" hidden>Start again</button><button type="submit" class="btn-box is-primary" id="pbSend" disabled>Send</button></div>
+      </form></div>
+      <p class="ha-saved">BOLD-LLM logs conversations to improve it.</p>
+    </section>
+    <aside class="pb-needs" aria-labelledby="pbNeedsTitle">
+      <h2 class="home-box-title" id="pbNeedsTitle">What the Problem Bank needs</h2>
+      <ul class="pb-checks" id="pbChecks"></ul>
+      <button type="button" class="btn-box is-primary" id="pbSave" hidden>Save problem</button>
+      <p class="pb-status" role="status" id="pbStatus">Loading…</p>
+    </aside>
+  </div>
 </main>

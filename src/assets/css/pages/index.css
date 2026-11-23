@@ -179,15 +179,4 @@ body.is-home-feed{font-family:var(--sans); font-size:16px; line-height:1.55;}
 }
 .home-ask{max-width:var(--article-max, 40em); margin:18px 0 0; font-family:var(--sans);}
 .home-ask[hidden]{display:none;}
-/* The exchange: reading text; each message rises in; BOLD's set off by a rule, a caret while it writes. */
-.ha-log{list-style:none; margin:0 0 12px; padding:0; display:flex; flex-direction:column; gap:14px;}
-.ha-log[hidden]{display:none;}
-.ha-msg.is-new{animation:ha-rise .35s cubic-bezier(.22,.61,.36,1) both;}
-@keyframes ha-rise{from{opacity:0; transform:translateY(6px);}}
-.ha-who{margin:0 0 2px; font-size:10.5px; font-weight:600; letter-spacing:.12em; text-transform:uppercase; color:var(--muted);}
-.ha-text{font-family:var(--serif); font-size:16px; line-height:1.6; color:var(--ink-soft);}
-.ha-you .ha-text{color:var(--ink);}
-.ha-text > :first-child{margin-top:0;} .ha-text > :last-child{margin-bottom:0;}
-.ha-bold{padding-left:12px; border-left:2px solid var(--line);}
-.ha-text.is-streaming > :last-child::after{content:''; display:inline-block; width:1px; height:1em; margin-left:2px; vertical-align:-2px; background:currentColor; animation:ha-blink 1.1s steps(1) infinite;}
-@media (prefers-reduced-motion:reduce){ .ha-msg.is-new{animation:none;} }
+/* The exchange's messages (.ha-log, .ha-msg): bold.css, shared with problem-new.html. */

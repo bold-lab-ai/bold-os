@@ -49,7 +49,7 @@ test('one turn, thinking off, with the current draft; ready only once the requir
   assert.equal(half.reply, 'Why does it matter?');
   assert.equal(half.ready, false);
   const full = await I.interview(turns, lab, reply({reply: 'Check the draft.', ready: true,
-    draft: {title: 'T', significance: 'S', difficulties: 'D', existing_solutions: 'E', builds_benchmark: false, collaborators: '', project_ids: [], parent_ids: ['ms-co'], related_ids: []}}), said, jsonOf);
+    draft: {title: 'T', significance: 'S', difficulties: 'D', existing_solutions: 'E', builds_benchmark: false, benchmark_known: true, collaborators: '', project_ids: [], parent_ids: ['ms-co'], related_ids: []}}), said, jsonOf);
   assert.equal(full.ready, true);
   assert.deepEqual(full.draft.parent_ids, ['ms-co']);
 });
