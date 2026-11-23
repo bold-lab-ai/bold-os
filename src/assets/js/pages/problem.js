@@ -39,9 +39,11 @@
   function isOpen(){ return p && p.stage === 'open'; }
   function editableDefinition(){ return isOpen() || p.origin === 'problem_bank'; }
   function verifierLink(){
-    var url = new URL(urls.autokaggleLiteUrl);
-    if (url.protocol !== 'https:' || url.username || url.password) return '';
-    url.pathname = url.pathname.replace(/\/$/, '') + '/from-problem';
+    var url;
+    try { url = new URL(urls.autokaggleLiteUrl); } catch (e){ return ''; }
+    var localDemo = window.BOLD_TEST && url.protocol === 'http:' && ['localhost', '127.0.0.1'].includes(url.hostname);
+    if ((!localDemo && url.protocol !== 'https:') || url.username || url.password) return '';
+    url.pathname = (url.pathname.replace(/\/$/, '') || '/lite') + '/from-problem';
     url.hash = new URLSearchParams({ problem: p.id, project: p.project_id, board: p.project_board || '',
       title: p.title, question: (p.objective || '').slice(0, 4000) }).toString();
     return url.href;
