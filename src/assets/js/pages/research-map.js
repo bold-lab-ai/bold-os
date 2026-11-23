@@ -187,12 +187,18 @@
     var items = map.nodes.filter(function(n){ return n.kind === 'project'; }).map(function(n){ return Object.assign({}, n, { pid: n.id }); });
     var key = items.map(function(n){ return n.id; }).join(',');
     if (prezi && prezi.key === key) return prezi;
-    var cl = R.clusters(items), m = R.meaningMap(items, PW, PH);
+    // By meaning when the server has it (Sofya's embeddings: data.meaning), else by shared words.
+    var M = data.meaning, idx = {}, sim = null;
+    if (M && M.ids) {
+      M.ids.forEach(function(id, i){ idx[id] = i; });
+      if (items.every(function(i){ return idx[i.pid] !== undefined; })) sim = function(a, b){ return M.sim[idx[a]][idx[b]]; };
+    }
+    var cl = sim ? R.clustersBySim(items, sim) : R.clusters(items), m = R.meaningMap(items, PW, PH, sim);
     var leaves = items.map(function(i){ return { id: 'p:' + i.pid, pid: i.pid, item: i }; })
       .sort(function(a, b){ return cl.of[a.pid] - cl.of[b.pid] || String(a.item.title).localeCompare(String(b.item.title)); });
     var tree = { id: 'all', name: 'All projects', children: leaves }, parent = {}, byId = { all: tree }, hue = {}, at = { all: { x: PW / 2, y: PH / 2, r: Math.min(PW, PH) / 2 } };
     leaves.forEach(function(l){ parent[l.id] = 'all'; byId[l.id] = l; hue[l.id] = cl.of[l.pid] % HUES.length; at[l.id] = m[l.pid]; });
-    prezi = { key: key, tree: tree, cl: cl, at: at, links: R.nearLinks(items, 2, 0.12), parent: parent, byId: byId, hue: hue };
+    prezi = { key: key, tree: tree, cl: cl, at: at, links: R.nearLinks(items, 2, sim ? 0 : 0.12, sim), parent: parent, byId: byId, hue: hue, by: sim ? M.model : '' };
     if (!byId[focus]) focus = 'all';
     return prezi;
   }
@@ -219,12 +225,13 @@
           (href ? '<a class="rz-open" href="' + esc(href) + '">Open →</a>' : '') +
         '</div></foreignObject></g>';
     });
-    // How alike: a line from each to its most alike, darker the more alike.
+    // How alike: a line from each to its most alike, darker the more alike (relative to the rest: embeddings' similarities sit high).
+    var lo = Math.min.apply(null, P.links.map(function(l){ return l.s; }).concat([1])), hi = Math.max.apply(null, P.links.map(function(l){ return l.s; }).concat([0]));
     var links = P.links.map(function(l){
       var a = P.at['p:' + l.a], b = P.at['p:' + l.b];
       if (!a || !b) return '';
       var hot = on && on[l.a] && on[l.b];
-      return '<line class="rz-link' + (hot ? ' is-lit' : '') + '" x1="' + f(a.x) + '" y1="' + f(a.y) + '" x2="' + f(b.x) + '" y2="' + f(b.y) + '" style="opacity:' + Math.min(0.4, 0.04 + l.s * 0.5).toFixed(2) + '"><title>' + Math.round(l.s * 100) + '% alike</title></line>';
+      return '<line class="rz-link' + (hot ? ' is-lit' : '') + '" x1="' + f(a.x) + '" y1="' + f(a.y) + '" x2="' + f(b.x) + '" y2="' + f(b.y) + '" style="opacity:' + (0.06 + 0.34 * (hi > lo ? (l.s - lo) / (hi - lo) : 0.5)).toFixed(2) + '"><title>' + Math.round(l.s * 100) + '% alike</title></line>';
     }).join('');
     return '<div class="cx-graph rm-zoom rz"><nav class="rz-crumbs" aria-label="Where you are"></nav>' +
       '<div class="rm-zoom-ctl view-toggle" role="group" aria-label="Zoom">' +
@@ -348,7 +355,9 @@
     if (opts.view === 'topics') {
       // Topics: what each colour is.
       var P = prezi;
-      el('rmLegend').innerHTML = P ? '<div class="cx-bar cx-legend"><span class="cx-bar-row"><span class="cx-bar-label">Topics</span><span class="cx-bar-items">' + P.cl.clusters.map(function(c, j){
+      el('rmLegend').innerHTML = P ? '<div class="cx-bar cx-legend"><span class="cx-bar-row"><span class="cx-bar-label">Nearer</span><span class="cx-bar-items">' +
+        (P.by ? 'More alike in meaning (BOLD LLM, ' + esc(P.by) + ')' : 'More alike in their words (keywords, title, abstract): by meaning once BOLD LLM has an embedding model') + '</span></span>' +
+        '<span class="cx-bar-row"><span class="cx-bar-label">Topics</span><span class="cx-bar-items">' + P.cl.clusters.map(function(c, j){
         return c.size ? '<span class="cx-key rm-hue-' + HUES[j % HUES.length] + '"><svg class="cx-icon" viewBox="-7 -7 14 14" aria-hidden="true"><circle class="rm-swatch" r="5"></circle></svg><span>' + esc(c.terms.join(', ')) + ' (' + c.size + ')</span></span>' : '';
       }).join('') + '</span></span></div>' : '';
       return;

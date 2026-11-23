@@ -3707,47 +3707,6 @@ exports.getAllProjects = onCall(
   }
 );
 
-// ---------- The Map: northstars, moonshots and stepping stones (#248) ----------
-// Every project with its level, what it's part of and its people's names, and the Problem Bank's problems,
-// for the Map (research-map.html), the register form's and a project's page's "Part of" pickers.
-// Whoever sees Projects' titles sees the map's; its people only for what they see in full (as getAllProjects).
-// → { items: [{ pid, title, level, parents, problems, connection, group, projectId, cardId, boardId, people, titleOnly }],
-//     problems: [{ id, title, project, stage }] }
-exports.researchMap = onCall(
-  async (request) => {
-    const email = signedInEmail(request).toLowerCase();
-    await access.requireAccess(email, 'projects', 'list');   // Who can see what
-    const full = await access.can(email, 'projects', 'view');
-    const [boardsSnap, cardsSnap, unassignedSnap, wsSnap, peopleSnap, problemSnap] = await Promise.all([
-      db.collection('boards').get(), db.collectionGroup('cards').get(), db.collection('projects').get(),
-      db.collection('projectWorkspaces').get(), db.collection('people').get(), db.collection('problemBank').get()
-    ]);
-    const groups = allProjectsFromCards(
-      boardsSnap.docs.map((d) => ({ id: d.id, label: d.data().label, status: d.data().status || 'approved' })),
-      cardsSnap.docs.map((d) => ({ boardId: d.ref.parent.parent.id, id: d.id, data: d.data() })),
-      unassignedSnap.docs.map((d) => ({ id: d.id, data: d.data() })),
-      wsSnap.docs.filter((d) => d.data().completedAt > 0).map((d) => d.id),
-      wsSnap.docs.filter((d) => workspaceStarted(d.data())).map((d) => d.id));
-    const names = {};
-    peopleSnap.docs.forEach((d) => { const p = d.data(); if (p.email && p.name) names[String(p.email).toLowerCase()] = p.name; });
-    const members = {}, mine = {};
-    wsSnap.docs.forEach((d) => { const m = d.data().members || []; members[d.id] = m; if (m.indexOf(email) >= 0) mine[d.id] = true; });
-    const items = [];
-    Object.keys(groups).forEach((g) => (groups[g] || []).forEach((i) => {
-      if (g === 'proposed' && (!i.proposal || i.proposal.status === 'declined')) return;   // only what's proposed or decided
-      const sees = full || mine[i.pid];
-      // Its abstract and keywords, for the Map's Topics (projects clustered by what they're about).
-      items.push({ pid: i.pid, title: i.title, level: i.level, parents: i.parents, problems: i.problems, connection: sees ? i.connection : '', group: g,
-        abstract: sees ? String(i.abstract || '').slice(0, 1500) : '', keywords: sees ? i.keywords || [] : [],
-        projectId: i.projectId || null, cardId: i.cardId || null, boardId: i.boardId || null, titleOnly: !sees,
-        people: sees ? (members[i.pid] || []).map((e) => names[e] || '').filter(Boolean).sort() : [] });
-    }));
-    const problems = problemSnap.docs.map((d) => ({ id: d.id, title: d.data().title || d.id, project: d.data().project_id || '', stage: d.data().stage || 'open', archived: !!d.data().archived }))
-      .filter((p) => !p.archived).map((p) => ({ id: p.id, title: p.title, project: p.project, stage: p.stage }));
-    return { items, problems };
-  }
-);
-
 // ---------- Projects page: keyword suggestions ----------
 // Pure: every card's `keywords` → [{ name, count }], most used first (then
 // alphabetical) — what the registration form suggests as you type.
@@ -9592,6 +9551,57 @@ exports.mcpSandbox = require('./sandbox')({ onRequest, logger }).mcpSandbox;
 const ANTHROPIC_API_KEY = defineSecret('ANTHROPIC_API_KEY');
 // Sofya, BOLD's own LLM (llm.bold-lab.ai, functions/sofya.js): its key, set with firebase functions:secrets:set.
 const BOLD_LLM_KEY = defineSecret('BOLD_LLM_KEY');
+const projectMeaning = require('./meaning')({ db, logger });
+
+// ---------- The Map: northstars, moonshots and stepping stones (#248) ----------
+// Every project with its level, what it's part of and its people's names, and the Problem Bank's problems,
+// for the Map (research-map.html), the register form's and a project's page's "Part of" pickers.
+// Whoever sees Projects' titles sees the map's; its people only for what they see in full (as getAllProjects).
+// → { items: [{ pid, title, level, parents, problems, connection, group, projectId, cardId, boardId, people, titleOnly }],
+//     problems: [{ id, title, project, stage }], meaning: { model, ids, sim } | null }
+exports.researchMap = onCall(
+  { secrets: [BOLD_LLM_KEY], timeoutSeconds: 120 },
+  async (request) => {
+    const email = signedInEmail(request).toLowerCase();
+    await access.requireAccess(email, 'projects', 'list');   // Who can see what
+    const full = await access.can(email, 'projects', 'view');
+    const [boardsSnap, cardsSnap, unassignedSnap, wsSnap, peopleSnap, problemSnap] = await Promise.all([
+      db.collection('boards').get(), db.collectionGroup('cards').get(), db.collection('projects').get(),
+      db.collection('projectWorkspaces').get(), db.collection('people').get(), db.collection('problemBank').get()
+    ]);
+    const groups = allProjectsFromCards(
+      boardsSnap.docs.map((d) => ({ id: d.id, label: d.data().label, status: d.data().status || 'approved' })),
+      cardsSnap.docs.map((d) => ({ boardId: d.ref.parent.parent.id, id: d.id, data: d.data() })),
+      unassignedSnap.docs.map((d) => ({ id: d.id, data: d.data() })),
+      wsSnap.docs.filter((d) => d.data().completedAt > 0).map((d) => d.id),
+      wsSnap.docs.filter((d) => workspaceStarted(d.data())).map((d) => d.id));
+    const names = {};
+    peopleSnap.docs.forEach((d) => { const p = d.data(); if (p.email && p.name) names[String(p.email).toLowerCase()] = p.name; });
+    const members = {}, mine = {};
+    wsSnap.docs.forEach((d) => { const m = d.data().members || []; members[d.id] = m; if (m.indexOf(email) >= 0) mine[d.id] = true; });
+    const items = [];
+    Object.keys(groups).forEach((g) => (groups[g] || []).forEach((i) => {
+      if (g === 'proposed' && (!i.proposal || i.proposal.status === 'declined')) return;   // only what's proposed or decided
+      const sees = full || mine[i.pid];
+      // Its abstract and keywords, for the Map's Topics (projects clustered by what they're about).
+      items.push({ pid: i.pid, title: i.title, level: i.level, parents: i.parents, problems: i.problems, connection: sees ? i.connection : '', group: g,
+        abstract: sees ? String(i.abstract || '').slice(0, 1500) : '', keywords: sees ? i.keywords || [] : [],
+        projectId: i.projectId || null, cardId: i.cardId || null, boardId: i.boardId || null, titleOnly: !sees,
+        people: sees ? (members[i.pid] || []).map((e) => names[e] || '').filter(Boolean).sort() : [] });
+    }));
+    // What the stepping stones mean (Sofya's embeddings, functions/meaning.js): how alike each pair is, for Topics'
+    // distances; null until Sofya serves an embedding model (the map then goes by shared words).
+    const steps = [];
+    Object.keys(groups).forEach((g) => (groups[g] || []).forEach((i) => {
+      if (i.level === 'project' && !(g === 'proposed' && (!i.proposal || i.proposal.status === 'declined'))) steps.push({ pid: i.pid, title: i.title, keywords: i.keywords, abstract: i.abstract });
+    }));
+    const meaning = await projectMeaning.meaningOf(steps, BOLD_LLM_KEY.value()).catch((err) => { logger.warn('Project meaning failed', { error: String(err.message) }); return null; });
+    const problems = problemSnap.docs.map((d) => ({ id: d.id, title: d.data().title || d.id, project: d.data().project_id || '', stage: d.data().stage || 'open', archived: !!d.data().archived }))
+      .filter((p) => !p.archived).map((p) => ({ id: p.id, title: p.title, project: p.project, stage: p.stage }));
+    return { items, problems, meaning };
+  }
+);
+
 exports.reviewMcpChange = require('./reviewer')({ db, onDocumentWritten, logger, ANTHROPIC_API_KEY, SLACK_BOT_TOKEN, slackText, linkedTitle, SITE_URL,
   tellStaff }).reviewMcpChange;
 // BOLD LLM, the home letter and Talking to BOLD (functions/bold-llm.js): Claude until Sofya runs, reading as

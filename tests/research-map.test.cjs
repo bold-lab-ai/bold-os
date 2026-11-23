@@ -112,10 +112,24 @@ test('Topics: the meaning map puts alike projects nearer, none overlapping, insi
   const same = [], other = [];
   items.forEach((a, i) => items.forEach((b, j) => { if (i < j) (a.keywords[0] === b.keywords[0] ? same : other).push(d(a.pid, b.pid)); }));
   assert.ok(mean(same) < mean(other));
-  // Given what each means (vectors), it uses them: the same vector, the same place (but for the nudge apart).
-  const vecs = {}; items.forEach((i) => { vecs[i.pid] = { [i.pid.startsWith('e') ? 'a' : 'b']: 1 }; });
-  const m2 = R.meaningMap(items, 1600, 1000, vecs);
+  // Given how alike they mean (sim, Sofya's), it uses that: alike in meaning, near, whatever their words.
+  const sim = (a, b) => (a[0] === 'e') === (b[0] === 'e') ? 1 : 0;
+  const m2 = R.meaningMap(items, 1600, 1000, sim);
   assert.ok(Math.hypot(m2.eggroll0.x - m2.robotics0.x, m2.eggroll0.y - m2.robotics0.y) > Math.hypot(m2.robotics0.x - m2['co-scientist0'].x, m2.robotics0.y - m2['co-scientist0'].y));
   const links = R.nearLinks(items, 2, 0.12);
   assert.ok(links.length && links.every((l) => l.s >= 0.12 && l.a !== l.b));
+  // Topics by meaning: the eggroll ones together, the rest together; named by their words.
+  const byMeaning = R.clustersBySim(items, sim, 2);
+  assert.strictEqual(new Set(items.filter((i) => i.pid[0] === 'e').map((i) => byMeaning.of[i.pid])).size, 1);
+  assert.notStrictEqual(byMeaning.of.eggroll0, byMeaning.of.robotics0);
+  assert.strictEqual(byMeaning.clusters[byMeaning.of.eggroll0].terms[0], 'eggroll');
+});
+
+test('Meaning: what a project is read from, and Sofya’s embedding model picked from its list', () => {
+  const M = require('../functions/meaning.js')._internal;
+  assert.strictEqual(M.textOf({ title: 'AutoKaggle [AMAZE]', keywords: ['co-scientist', 'evaluation'], abstract: ' Evals  for BOLD. ' }), 'AutoKaggle\nco-scientist, evaluation\nEvals for BOLD.');
+  assert.strictEqual(M.embedModelOf([{ id: 'Qwen/Qwen3.8-27B-FP8' }]), '');
+  assert.strictEqual(M.embedModelOf([{ id: 'Qwen/Qwen3.8-27B-FP8' }, { id: 'Qwen/Qwen3-Embedding-8B' }]), 'Qwen/Qwen3-Embedding-8B');
+  const t = M.simTable(['a', 'b'], { a: [1, 0], b: [1, 1] });
+  assert.deepStrictEqual(t, { ids: ['a', 'b'], sim: [[1, 0.707], [0.707, 1]] });
 });

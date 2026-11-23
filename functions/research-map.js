@@ -139,6 +139,20 @@
   // → { of: { pid: cluster }, clusters: [{ terms: [3 words], size }] }: k clusters (about √(1.2n), 3 to 12) by
   // spherical k-means (the best of several fixed starts); each named by its terms
   // that weigh most in it, keywords first.
+  // A cluster's name: the three terms that weigh most in its (summed) vector `c`, keywords first, none inside another,
+  // none of `exclude`.
+  function nameOf(c, exclude){
+    var terms = Object.keys(c).sort(function(a, b){ return c[b] - c[a]; });
+    var skip = function(w){ return (exclude || []).some(function(x){ return x === w || x.indexOf(w) >= 0 || w.indexOf(x) >= 0; }); };
+    terms = terms.filter(function(t){ return !skip(t.charAt(0) === '#' ? t.slice(1) : t); });
+    var kw = terms.filter(function(t){ return t.charAt(0) === '#'; }).map(function(t){ return t.slice(1); });
+    var named = kw.slice(0, 2);
+    terms.forEach(function(t){
+      var w = t.charAt(0) === '#' ? t.slice(1) : t;
+      if (named.length < 3 && !named.some(function(x){ return x.indexOf(w) >= 0 || w.indexOf(x) >= 0; })) named.push(w);
+    });
+    return named;
+  }
   // `exclude`: words not to name a cluster by (its parent's, for a sub-topic).
   function clusters(items, k, exclude){
     var n = items.length, vs = vectors(items);
@@ -183,21 +197,46 @@
     var best = null;
     for (var tries = 0; tries < 12; tries++) { var r = once(); if (!best || r.score > best.score) best = r; }
     var of = best.of, cents = best.cents;
-    var out = { of: {}, clusters: cents.map(function(c){
-      var terms = Object.keys(c).sort(function(a, b){ return c[b] - c[a]; });
-      var skip = function(w){ return (exclude || []).some(function(x){ return x === w || x.indexOf(w) >= 0 || w.indexOf(x) >= 0; }); };
-      terms = terms.filter(function(t){ return !skip(t.charAt(0) === '#' ? t.slice(1) : t); });
-      var kw = terms.filter(function(t){ return t.charAt(0) === '#'; }).map(function(t){ return t.slice(1); });
-      var named = kw.slice(0, 2);
-      terms.forEach(function(t){
-        var w = t.charAt(0) === '#' ? t.slice(1) : t;
-        if (named.length < 3 && !named.some(function(x){ return x.indexOf(w) >= 0 || w.indexOf(x) >= 0; })) named.push(w);
+    var out = { of: {}, clusters: cents.map(function(c){ return { terms: nameOf(c, exclude), size: 0 }; }) };
+    items.forEach(function(i, x){ out.of[i.pid] = of[x]; out.clusters[of[x]].size++; });
+    return out;
+  }
+  // Topics by meaning: k groups (as many as clusters would make) of items alike by `sim` (k-medoids from the items
+  // farthest apart, the same every time), each named by the words that weigh most in it, as clusters' are.
+  function clustersBySim(items, sim, k){
+    var n = items.length, at = simOver(items, sim);
+    if (!n) return { of: {}, clusters: [] };
+    k = Math.max(1, Math.min(n, k || Math.max(3, Math.min(12, Math.round(Math.sqrt(n * 1.2))))));
+    var meds = [0], near = items.map(function(x, i){ return at(i, 0); });
+    while (meds.length < k) {
+      var far = -1, low = Infinity;
+      near.forEach(function(s, i){ if (meds.indexOf(i) < 0 && s < low) { low = s; far = i; } });
+      if (far < 0) break;
+      meds.push(far); near = near.map(function(s, i){ return Math.max(s, at(i, far)); });
+    }
+    var of = new Array(n);
+    for (var it = 0; it < 30; it++) {
+      var moved = false;
+      items.forEach(function(x, i){ var bj = 0; meds.forEach(function(m, j){ if (at(i, m) > at(i, meds[bj])) bj = j; }); if (of[i] !== bj) { of[i] = bj; moved = true; } });
+      meds = meds.map(function(m, j){
+        var mine = []; of.forEach(function(c, i){ if (c === j) mine.push(i); });
+        if (!mine.length) return m;
+        var best = m, score = -Infinity;
+        mine.forEach(function(i){ var t = mine.reduce(function(s, o){ return s + at(i, o); }, 0); if (t > score) { score = t; best = i; } });
+        return best;
       });
-      return { terms: named, size: 0 };
+      if (!moved) break;
+    }
+    // Names: the words of each group (its members' word vectors added up), as clusters names its own.
+    var vs = vectors(items), out = { of: {}, clusters: meds.map(function(m, j){
+      var c = {};
+      of.forEach(function(g, i){ if (g === j) for (var t in vs[i]) c[t] = (c[t] || 0) + vs[i][t]; });
+      return { terms: nameOf(c), size: 0 };
     }) };
     items.forEach(function(i, x){ out.of[i.pid] = of[x]; out.clusters[of[x]].size++; });
     return out;
   }
+
   // A stable number in [0, 1) for a string, so the same every time.
   function seed(s){ var h = 2166136261; for (var i = 0; i < s.length; i++) { h ^= s.charCodeAt(i); h = Math.imul(h, 16777619); } return ((h >>> 0) % 100000) / 100000; }
 
@@ -258,10 +297,11 @@
   // ---------- Topics: the meaning map ----------
   // Classical multidimensional scaling into two dimensions: the top two eigenvectors of the doubly-centred squared
   // distances (cosine: 2 − 2·similarity), by power iteration from fixed starts (the same every time). → [[x, y]].
-  function mds(list){
-    var n = list.length;
+  // `n` items, `simAt(i, j)` their cosine similarity.
+  function mds(n, simAt){
+    var list = []; for (var q = 0; q < n; q++) list.push(q);
     if (n === 1) return [[0, 0]];
-    var D = list.map(function(a){ return list.map(function(b){ return Math.max(0, 2 - 2 * dot(a, b)); }); });
+    var D = list.map(function(a){ return list.map(function(b){ return Math.max(0, 2 - 2 * simAt(a, b)); }); });
     var rm = D.map(function(r){ return r.reduce(function(x, y){ return x + y; }, 0) / n; }), gm = rm.reduce(function(x, y){ return x + y; }, 0) / n;
     var B = D.map(function(r, a){ return r.map(function(d, b){ return -0.5 * (d - rm[a] - rm[b] + gm); }); });
     var comps = [];
@@ -281,15 +321,20 @@
     if (!(spread > 1e-6)) pts = list.map(function(x, k){ return [Math.cos(k * 2 * Math.PI / n), Math.sin(k * 2 * Math.PI / n)]; });
     return pts;
   }
+  // How alike two items are: `sim(pidA, pidB)` when given (what they mean: Sofya's embeddings), else by their words
+  // (vectors: keywords, title, abstract). → simAt(i, j) over `items`' indices.
+  function simOver(items, sim){
+    if (sim) return function(i, j){ return i === j ? 1 : sim(items[i].pid, items[j].pid); };
+    var vs = vectors(items);
+    return function(i, j){ return dot(vs[i], vs[j]); };
+  }
   // The meaning map: every stepping stone a point, the distance between two as near as two dimensions allow to how
-  // different they are (mds), scaled to fill w × h, then nudged apart just enough that none overlap. `vecs` (pid → a
-  // vector) says what each means; without it, its words (vectors: keywords, title, abstract). → { pid: { x, y, r } }
-  // (r: the room each has).
-  function meaningMap(items, w, h, vecs){
+  // different they are (mds), scaled to fill w × h, then nudged apart just enough that none overlap. `sim` as
+  // simOver's. → { pid: { x, y, r } } (r: the room each has).
+  function meaningMap(items, w, h, sim){
     var out = {}, n = items.length;
     if (!n) return out;
-    var vs = vecs ? items.map(function(i){ return vecs[i.pid] || {}; }) : vectors(items);
-    var pts = mds(vs);
+    var pts = mds(n, simOver(items, sim));
     var mx = pts.reduce(function(s, p){ return s + p[0]; }, 0) / n, my = pts.reduce(function(s, p){ return s + p[1]; }, 0) / n;
     // Scaled by most of them (the 90th percentile of how far out they are), so one outlier doesn't squeeze the rest;
     // the room each has small, so nudging them apart barely moves them.
@@ -311,11 +356,11 @@
     items.forEach(function(i, k){ out[i.pid] = { x: w / 2 + P[k].x, y: h / 2 + P[k].y, r: r }; });
     return out;
   }
-  // Each stepping stone's `k` most alike others (cosine similarity over `min`; `vecs` as meaningMap's), each pair once: { a, b, s }.
-  function nearLinks(items, k, min, vecs){
-    var vs = vecs ? items.map(function(i){ return vecs[i.pid] || {}; }) : vectors(items), seen = {}, out = [];
+  // Each stepping stone's `k` most alike others (cosine similarity over `min`; `sim` as simOver's), each pair once: { a, b, s }.
+  function nearLinks(items, k, min, sim){
+    var at = simOver(items, sim), seen = {}, out = [];
     items.forEach(function(i, x){
-      items.map(function(j, y){ return { y: y, s: y === x ? -1 : dot(vs[x], vs[y]) }; }).sort(function(p, q){ return q.s - p.s; }).slice(0, k || 2)
+      items.map(function(j, y){ return { y: y, s: y === x ? -1 : at(x, y) }; }).sort(function(p, q){ return q.s - p.s; }).slice(0, k || 2)
         .forEach(function(o){
           if (o.s < (min || 0.12)) return;
           var a = items[x].pid, b = items[o.y].pid, key = a < b ? a + '|' + b : b + '|' + a;
@@ -325,6 +370,6 @@
     return out;
   }
 
-  return { words: words, clusters: clusters, topicBoard: topicBoard, mds: mds, meaningMap: meaningMap, nearLinks: nearLinks, LEVELS: LEVELS, NAMES: NAMES, PLURAL: PLURAL, MAX_LINKS: MAX_LINKS, levelOf: levelOf, parentLevel: parentLevel, childLevel: childLevel,
+  return { words: words, clusters: clusters, topicBoard: topicBoard, mds: mds, meaningMap: meaningMap, nearLinks: nearLinks, clustersBySim: clustersBySim, LEVELS: LEVELS, NAMES: NAMES, PLURAL: PLURAL, MAX_LINKS: MAX_LINKS, levelOf: levelOf, parentLevel: parentLevel, childLevel: childLevel,
     normalizeLinks: normalizeLinks, linkIssue: linkIssue, linked: linked, buildMap: buildMap, lineage: lineage };
 });
