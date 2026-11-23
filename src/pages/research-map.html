@@ -6,17 +6,18 @@ description: "BOLD's northstars, the moonshots that serve them, and the stepping
 sdk: ["functions"]
 css: "research-map"
 nav: "research-map.html"
-scripts: ["research-map.js", "pages/research-map.js"]
+scripts: ["connections.js", "research-map.js", "pages/research-map.js"]
 permalink: "research-map.html"
 ---
 <div class="hero">
   <h1>Map</h1>
-  <p class="hero-note">BOLD&rsquo;s northstars, the moonshots that serve them, the stepping stones toward each, and who is on what. Click anything to follow its links; double-click to open it.</p>
+  <p class="hero-note">BOLD&rsquo;s northstars, the moonshots that serve them, the stepping stones toward each, and who is on what: as a lineage, or clustered by topic. Click anything to light its path; double-click to open it.</p>
 </div>
 
 <main>
-  <div class="rm-controls" id="rmControls"></div>
+  <div class="cx-controls" id="rmControls"></div>
   <p class="proj-msg" id="rmMsg">Loading&hellip;</p>
   <div class="rm-graph" id="rmGraph" hidden></div>
+  <div id="rmLegend"></div>
   <div class="rm-detail" id="rmDetail"></div>
 </main>

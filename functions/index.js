@@ -3736,7 +3736,9 @@ exports.researchMap = onCall(
     Object.keys(groups).forEach((g) => (groups[g] || []).forEach((i) => {
       if (g === 'proposed' && (!i.proposal || i.proposal.status === 'declined')) return;   // only what's proposed or decided
       const sees = full || mine[i.pid];
+      // Its abstract and keywords, for the Map's Topics (projects clustered by what they're about).
       items.push({ pid: i.pid, title: i.title, level: i.level, parents: i.parents, problems: i.problems, connection: sees ? i.connection : '', group: g,
+        abstract: sees ? String(i.abstract || '').slice(0, 1500) : '', keywords: sees ? i.keywords || [] : [],
         projectId: i.projectId || null, cardId: i.cardId || null, boardId: i.boardId || null, titleOnly: !sees,
         people: sees ? (members[i.pid] || []).map((e) => names[e] || '').filter(Boolean).sort() : [] });
     }));

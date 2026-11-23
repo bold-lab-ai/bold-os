@@ -71,3 +71,25 @@ test('a northstar or moonshot isn’t joined: its announcement has no Join link'
   assert.doesNotMatch(m, /Join the project/);
   assert.match(m, /a new moonshot/);
 });
+
+test('Topics: projects about the same thing cluster together, the same way every time', () => {
+  const items = [
+    { pid: 'a', title: 'Evolution strategies for RL post-training [AMAZE]', keywords: ['eggroll', 'evolution strategies'] },
+    { pid: 'b', title: 'EGGROLL theory', keywords: ['eggroll'] },
+    { pid: 'c', title: 'Robots recover from damage [PAUSED]', keywords: ['robotics'] },
+    { pid: 'd', title: 'Quadruped robots discover skills', keywords: ['robotics', 'open-endedness'] },
+    { pid: 'e', title: 'Co-scientist agents', keywords: ['co-scientist'] },
+    { pid: 'f', title: 'AutoKaggle co-scientist evaluation', keywords: ['co-scientist', 'evaluation'] },
+  ];
+  const c = R.clusters(items, 3);
+  assert.strictEqual(c.of.a, c.of.b); assert.strictEqual(c.of.c, c.of.d); assert.strictEqual(c.of.e, c.of.f);
+  assert.notStrictEqual(c.of.a, c.of.c); assert.notStrictEqual(c.of.c, c.of.e);
+  assert.deepStrictEqual(R.clusters(items, 3), c);
+  // A title's [tags] name no topic.
+  assert.ok(!c.clusters.some((x) => x.terms.some((t) => /paused|amaze/.test(t))));
+  const pos = R.topicLayout(items.concat([{ pid: 'm' }]), [{ from: 'a', to: 'm' }, { from: 'b', to: 'm' }], c, 1000, 700);
+  Object.values(pos).forEach((p) => { assert.ok(p.x >= 20 && p.x <= 980 && p.y >= 20 && p.y <= 680); });
+  // The moonshot sits nearer its stepping stones than the others.
+  const d = (p, q) => Math.hypot(pos[p].x - pos[q].x, pos[p].y - pos[q].y);
+  assert.ok(d('m', 'a') < d('m', 'c') && d('m', 'a') < d('m', 'e'));
+});
