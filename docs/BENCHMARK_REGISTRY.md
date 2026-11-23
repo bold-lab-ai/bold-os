@@ -28,7 +28,7 @@ On **Add problem**, select any broader objectives or problems and, separately, a
 
 1. Select **Add problem**. Enter the title, select the person who defined it, and describe its significance, difficulties and current frontier. Link existing projects and name collaborators if applicable. Save the problem. To propose a new project, follow **All projects**, select **Propose a project**, and choose the open problem. If the problem is missing, follow **here** below the project form’s **Open problem** field. The bank opens in a separate tab. Save the problem and return to the proposal to select it. **Refresh list** reloads the choices if needed. The project then appears on the problem page.
 2. Select **Add verifier**. If several projects are linked, choose the one that will own this verifier. Confirm the transfer to AutoKaggle Lite. The handoff includes the problem and project IDs, title, and a research brief of up to 4,000 characters in the URL fragment. Lite asks for storage consent. Each verifier has its own session, releases, data and assets, repository, metrics and score format, submission format, and constraints. Open **Verifiers** to compare releases. Older releases can lack recorded contract details.
-3. **Autoresearch baseline** is planned. This release does not start a baseline run or send a result email.
+3. Open **Verifiers** and select **Request AutoAstra baseline** on the version you want. The original problem submitter, a PI or an admin can request one baseline per release. The problem must be active and the release must be validated on the actual research task and approved in BOLD.OS. Confirm that results will appear here and the original submitter will receive the report. A pending request waits for a lab operator to assign compute.
 
 The submitter can accept or decline reminders when saving. People who submitted older problems can turn reminders on in their problem. The first reminder on a new problem is due at creation. It repeats every seven days until a verifier is registered. Opening Lite does not count. Archiving pauses delivery. Restoring resumes it when the submitter has reminders enabled. The submitter can change this choice on the problem.
 
@@ -98,3 +98,17 @@ npx bombadil browser test --headless --time-limit 65s --exit-on-violation http:/
 ```
 
 The reminder test uses the emulator Slack outbox. It checks the intended recipient, concurrent delivery, the next weekly notice, and the stop condition. The Bombadil test signs in with a demo account, completes the form, and checks the saved problem and verifier action.
+
+## AutoAstra worker handoff
+
+The server stores requests in the private `autoastraBaselineJobs` collection. A request captures the original problem submitter's address from the server. The website shows the status on the selected release. A worker can claim a request after an operator assigns compute. On completion, the website shows the development and final scores, metric, direction, run ID and frozen candidate digest. The AutoAstra worker delivers the detailed report by email. The displayed scores describe the measured baseline. Email delivery has its own status in AutoAstra.
+
+Workers use the existing `benchmarkRegistry` Firebase callable with a Slack-signed-in PI or admin identity. The operator runs the separate AutoAstra CLI. No worker credential belongs in the browser or the evaluator repo.
+
+| Action | Fields | Result |
+| --- | --- | --- |
+| `request_baseline` | `benchmark_id` | Request status. Retrying uses the existing request. |
+| `claim_baseline` | `benchmark_id`, `claim_key` | The pinned release and private recipient. A claim takes a new random 32-byte key as lowercase hex. Reuse the same key and operator account to resume. |
+| `finish_baseline` | `benchmark_id`, `claim_key`, `summary` | Completed status. Repeating the same result succeeds. Another worker or a different result is rejected. |
+
+The finite-score summary requires `run_id` (32 lowercase hex characters), `candidate_sha256` (64 lowercase hex characters), `development_fitness`, `final_fitness`, `metric` and `direction` (`minimize` or `maximize`). The worker owns compute assignment and email delivery. The OS checks roles and release eligibility before a request, claim or first result. The owning worker can acknowledge an identical saved result after archival. A request alone spends no compute. Keep the claim key in private worker storage across restarts.
