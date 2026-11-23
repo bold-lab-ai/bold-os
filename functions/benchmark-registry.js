@@ -171,12 +171,13 @@ module.exports = function({ db, onCall, callerEmail, isFullWrite, access, HttpsE
 
   async function run(request){
     const email = callerEmail(request), d = request.data || {}, action = d.action || 'list';
-    const permission = action === 'open_choices' ? 'list' : ['list', 'get', 'projects', 'search'].includes(action) ? 'view' : 'change';
+    const permission = action === 'open_choices' ? 'list' : ['list', 'get', 'projects', 'search', 'benchmark_catalogue'].includes(action) ? 'view' : 'change';
     await access.requireAccess(email, 'projects', permission);
     const full = await isFullWrite(email);
     const mayEdit = full || await access.can(email, 'projects', 'change');
     const canEdit = (doc) => mayEdit && (full || doc.data().createdBy === email);
 
+    if (action === 'benchmark_catalogue') return require('./benchmark-catalogue').listBenchmarkReleases(db,d,error);
     if (action === 'projects') return { items: await projectChoices() };
 
     if (action === 'open_choices') {

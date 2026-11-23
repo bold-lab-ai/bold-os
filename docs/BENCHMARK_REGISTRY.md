@@ -4,6 +4,8 @@ The Research menu has one Problem Bank page. It holds research problems and thei
 
 For a benchmark you already use, open **Research → Benchmarks** and select **Onboard a benchmark in AutoKaggle Lite**. Start a session and share the benchmark paper, repository, or scoring instructions. This link opens the Lite service configured under **Settings → Problem Bank**. It sends no problem, project, or account details. To attach a verifier to an existing BOLD OS problem, open that problem in the Problem Bank and use **Add verifier**.
 
+The same page lists verifier releases for active problems, newest first. Select a version to open its evidence, pinned code and download on the problem page. The catalogue shows the stage AutoKaggle reported for that version. BOLD OS approval appears separately in the release details.
+
 ## Project and evidence requirements
 
 An open problem can exist before a project starts. It can link to several BOLD OS projects. Every new project proposal must select an open, unarchived problem. Each verifier release must name one linked project. The server checks that project during registration.

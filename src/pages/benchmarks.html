@@ -4,7 +4,9 @@ title: "Benchmarks | BOLD Lab"
 description: "Onboard an existing research benchmark in AutoKaggle Lite."
 css: "problems"
 nav: "benchmarks.html"
-scripts: ["registry-links.js", "pages/benchmarks.js"]
+sdk: ["firestore", "functions"]
+styles: ["benchmark-catalogue"]
+scripts: ["registry-links.js", "pages/benchmarks.js", "pages/benchmark-catalogue.js"]
 permalink: "benchmarks.html"
 ---
 <div class="hero"><h1>Benchmarks</h1></div>
@@ -13,5 +15,12 @@ permalink: "benchmarks.html"
   <p><a class="btn btn-primary" id="openBenchmarkLite" target="_blank" rel="noopener noreferrer" aria-disabled="true">Onboard a benchmark in AutoKaggle Lite <span aria-hidden="true">↗</span></a></p>
   <p id="benchmarkStatus" role="status"></p>
   <p>To attach a verifier to an existing lab problem, open it in the <a href="problems.html">Problem Bank</a> and select <strong>Add verifier</strong>.</p>
+  <section class="bench-catalogue" aria-labelledby="releaseHeading">
+    <h2 id="releaseHeading">Registered verifier releases</h2>
+    <p class="proj-meta">Open a release to see its pinned code, checks and approval. AutoKaggle reports the stage.</p>
+    <ul id="benchmarkReleases"></ul>
+    <p id="catalogueStatus" role="status"></p>
+    <button type="button" id="olderReleases" class="btn" hidden>Load older releases</button>
+  </section>
   <p class="proj-meta">For project registration and research records, see the BOLDiquette’s <a href="boldiquette.html#research-project-lifecycle">Research Project Lifecycle</a>.</p>
 </main>
