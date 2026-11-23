@@ -15,14 +15,14 @@ main{max-width:var(--content-max); margin:0 auto; padding:8px var(--gutter) 24px
 .cx-icon.rm-project{color:var(--ink-soft);}
 .cx-icon .cx-mark{stroke:currentColor;}
 .rm-svg .cx-node.rm-northstar .cx-mark, .rm-svg .cx-node.rm-moonshot .cx-mark{fill:currentColor;}
-.rm-svg .cx-node.rm-northstar > .cx-label{font-weight:700; font-size:15px;}
-.rm-svg .cx-node.rm-moonshot > .cx-label{font-weight:600;}
+.rm-svg .cx-node.rm-northstar .cx-label{font-weight:700; font-size:15px;}
+.rm-svg .cx-node.rm-moonshot .cx-label{font-weight:600;}
 .rm-svg .cx-node.is-proposed .cx-mark{stroke-dasharray:2 2; fill:var(--paper);}
 .rm-svg .cx-node.is-completed .cx-label{fill:var(--muted);}
-.rm-svg .cx-node.is-unlinked > .cx-label, .rm-key-unlinked{fill:var(--danger-text); color:var(--danger-text);}
+.rm-key-unlinked{color:var(--danger-text);}
 .rm-svg .cx-node.is-again{opacity:.6;}
 .cx-lineage.rm-svg .cx-node.rm-project .cx-mark{fill:var(--paper);}
-.cx-lineage.rm-svg .cx-node.rm-northstar > .cx-label{font-size:16px;}
+.cx-lineage.rm-svg .cx-node.rm-northstar .cx-label{font-size:16px;}
 .cx-lineage.rm-svg .cx-elbow{stroke:var(--ink-soft);}
 .rm-head-label{font-family:var(--sans); font-size:11px; letter-spacing:.1em; text-transform:uppercase; fill:var(--muted);}
 .rm-svg.has-selected .cx-edge:not(.is-lit){opacity:.08;}
@@ -43,13 +43,15 @@ main{max-width:var(--content-max); margin:0 auto; padding:8px var(--gutter) 24px
 .rm-topics .cx-edge{opacity:.22; stroke-width:1;}
 .rm-topics .rm-e-member{display:none;}
 .rm-topics .cx-label{font-family:var(--sans); font-size:12px;}
-.rm-topics .rm-northstar > .cx-label{font-family:var(--serif); font-size:16px;}
-.rm-topics .rm-moonshot > .cx-label{font-size:12.5px;}
-.rm-topics.is-near .cx-label.is-quiet{opacity:1;}
+.rm-topics .rm-northstar .cx-label{font-family:var(--serif); font-size:16px;}
+.rm-topics .rm-moonshot .cx-label{font-size:12.5px;}
+.rm-topics .cx-label.is-culled, .rm-topics .rm-cluster-label.is-culled{opacity:0; transition:opacity .12s;}
+.rm-topics .cx-node:hover .cx-label.is-culled, .rm-topics .cx-node:focus .cx-label.is-culled{opacity:1;}
+.rm-topics .cx-node:hover{isolation:isolate;}
 .rm-topics .cx-node.rm-project .cx-mark, .rm-topics .cx-node.rm-problem .cx-mark{fill:color-mix(in srgb, currentColor 22%, var(--paper)); stroke-width:1.4;}
 .rm-topics .cx-node:hover .cx-mark{fill:currentColor;}
 .rm-cluster circle{fill:color-mix(in srgb, currentColor 6%, transparent); stroke:color-mix(in srgb, currentColor 28%, transparent); stroke-width:1;}
-.rm-cluster text{font-family:var(--sans); font-size:11px; font-weight:600; letter-spacing:.1em; text-transform:uppercase; fill:currentColor; paint-order:stroke; stroke:var(--paper); stroke-width:4px; stroke-linejoin:round;}
+.rm-cluster-label{font-family:var(--sans); font-size:11px; font-weight:600; letter-spacing:.1em; text-transform:uppercase; fill:currentColor; paint-order:stroke; stroke:var(--paper); stroke-width:4px; stroke-linejoin:round;}
 .rm-swatch{fill:color-mix(in srgb, currentColor 22%, transparent); stroke:currentColor; stroke-width:1.2;}
 .rm-hue-accent{color:var(--accent);} .rm-hue-teal{color:var(--teal);} .rm-hue-plum{color:var(--plum);} .rm-hue-amber{color:var(--amber);}
 .rm-hue-green{color:var(--green);} .rm-hue-brown{color:var(--brown);} .rm-hue-danger-text{color:var(--danger-text);}
@@ -60,5 +62,3 @@ main{max-width:var(--content-max); margin:0 auto; padding:8px var(--gutter) 24px
 .rm-dl{display:grid; grid-template-columns:max-content 1fr; gap:4px 16px; margin:0; font-size:14.5px;}
 .rm-dl dt{color:var(--muted);}
 .rm-dl dd{margin:0;}
-/* Under Not linked yet, the heading says it: no red as well. */
-.cx-lineage.rm-svg .cx-node.is-unlinked > .cx-label{fill:var(--ink-soft);}

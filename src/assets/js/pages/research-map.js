@@ -149,8 +149,9 @@
     var t = topicData(), on = lit(), pos = t.pos;
     var hulls = t.cl.clusters.map(function(c, j){
       if (!c.size) return '';
-      return '<g class="rm-cluster rm-hue-' + HUES[j % HUES.length] + '"><circle cx="' + c.x.toFixed(1) + '" cy="' + c.y.toFixed(1) + '" r="' + c.r.toFixed(1) + '"></circle>' +
-        '<text x="' + c.x.toFixed(1) + '" y="' + (c.y - c.r - 8).toFixed(1) + '" text-anchor="middle">' + esc(c.terms.join(' · ')) + '</text></g>';
+      // Its name above it, as large on screen however far it's zoomed (rm-s: fitLabels).
+      return '<g class="rm-cluster rm-hue-' + HUES[j % HUES.length] + '"><circle vector-effect="non-scaling-stroke" cx="' + c.x.toFixed(1) + '" cy="' + c.y.toFixed(1) + '" r="' + c.r.toFixed(1) + '"></circle>' +
+        '<g transform="translate(' + c.x.toFixed(1) + ',' + (c.y - c.r).toFixed(1) + ')"><g class="rm-s"><text class="rm-cluster-label" y="-8" text-anchor="middle">' + esc(c.terms.join(' \u00b7 ')) + '</text></g></g></g>';
     }).join('');
     var lines = map.edges.map(function(e){
       var p = pos[e.from], q = pos[e.to];
@@ -158,7 +159,7 @@
       var hot = on && on[e.from] && on[e.to];
       // Bowed a little, always to the same side for a pair (as Network's).
       var mx = (p.x + q.x) / 2, my = (p.y + q.y) / 2, b = 0.12;
-      return '<path class="cx-edge rm-e-' + e.kind + (hot ? ' is-lit' : '') + '" d="M' + p.x.toFixed(1) + ' ' + p.y.toFixed(1) + 'Q' + (mx - (q.y - p.y) * b).toFixed(1) + ' ' + (my + (q.x - p.x) * b).toFixed(1) + ' ' + q.x.toFixed(1) + ' ' + q.y.toFixed(1) + '"></path>';
+      return '<path vector-effect="non-scaling-stroke" class="cx-edge rm-e-' + e.kind + (hot ? ' is-lit' : '') + '" d="M' + p.x.toFixed(1) + ' ' + p.y.toFixed(1) + 'Q' + (mx - (q.y - p.y) * b).toFixed(1) + ' ' + (my + (q.x - p.x) * b).toFixed(1) + ' ' + q.x.toFixed(1) + ' ' + q.y.toFixed(1) + '"></path>';
     }).join('');
     var nodes = map.nodes.map(function(n){
       var p = pos[n.id];
@@ -166,14 +167,14 @@
       var j = t.cl.of[n.id], loud = n.kind === 'northstar' || n.kind === 'moonshot';
       var r = n.kind === 'northstar' ? 9 : n.kind === 'moonshot' ? 6.5 : 5.5;
       return '<g class="' + nodeCls(n, on) + (j !== undefined ? ' rm-hue-' + HUES[j % HUES.length] : '') + '" data-id="' + esc(n.id) + '" transform="translate(' + p.x.toFixed(1) + ',' + p.y.toFixed(1) + ')" tabindex="0" role="button">' +
-        mark(n.kind, r) + '<text class="cx-label' + (loud ? ' rm-loud' : ' is-quiet') + '" x="' + (r + 5) + '" y="4">' + esc(short(n.title, loud ? 34 : 44)) + '</text>' +
+        '<g class="rm-s">' + mark(n.kind, r) + '<text class="cx-label' + (loud ? ' rm-loud' : '') + '" x="' + (r + 5) + '" y="4">' + esc(short(n.title, loud ? 34 : 40)) + '</text></g>' +
         '<title>' + tip(n) + '</title></g>';
     }).join('');
     return '<div class="cx-graph rm-zoom"><div class="rm-zoom-ctl view-toggle" role="group" aria-label="Zoom">' +
       '<button type="button" class="view-btn" data-zoom="in" aria-label="Zoom in">+</button><button type="button" class="view-btn" data-zoom="out" aria-label="Zoom out">−</button>' +
       '<button type="button" class="view-btn" data-zoom="fit" aria-label="Fit it all in">\u2922</button></div>' +
       '<p class="rm-zoom-hint">Scroll to zoom \u00b7 drag to move</p>' +
-      '<svg class="cx-svg rm-svg rm-topics' + (on ? ' has-selected' : '') + (TW / vb.w > 1.6 ? ' is-near' : '') + '" viewBox="' + box() +
+      '<svg class="cx-svg rm-svg rm-topics' + (on ? ' has-selected' : '') + '" viewBox="' + box() +
       '" preserveAspectRatio="xMidYMid meet" role="img" aria-label="Everything, clustered by what it’s about">' +
       '<g>' + hulls + '</g><g>' + lines + '</g><g>' + nodes + '</g></svg></div>';
   }
@@ -184,8 +185,42 @@
     var svg = graph.querySelector('.rm-topics');
     if (!svg) return;
     svg.setAttribute('viewBox', box());
-    // Close enough in, every label shows.
-    svg.classList.toggle('is-near', TW / vb.w > 1.6);
+    fitLabels(svg);
+  }
+  // Marks and labels stay the same size on screen however far it's zoomed (each node's rm-s, scaled back), so
+  // zooming in gives them room; and only the labels with room show, the most telling first: what's chosen and
+  // lit, the topics' names, northstars, moonshots, then the rest. A hidden one shows on hover.
+  function fitLabels(svg){
+    var k = vb.w / TW, sc = 'scale(' + k.toFixed(4) + ')', taken = [];
+    var groups = svg.querySelectorAll('.rm-s');
+    for (var i = 0; i < groups.length; i++) groups[i].setAttribute('transform', sc);
+    var all = [];
+    svg.querySelectorAll('.rm-cluster-label, .cx-node .cx-label').forEach(function(t){
+      var g = t.closest('.cx-node'), at = t.parentNode.parentNode.getAttribute('transform') || '';
+      var m = at.match(/translate\(([-\d.]+),([-\d.]+)\)/);
+      if (!m) return;
+      var len = 0;
+      try { len = t.getComputedTextLength(); } catch (e){}
+      if (!len) len = t.textContent.length * 6.6;
+      var cls = g ? g.getAttribute('class') : '', x = +m[1], y = +m[2];
+      var rank = !g ? 1 : /is-selected/.test(cls) ? 0 : /is-lit/.test(cls) ? 0.5 : /rm-northstar/.test(cls) ? 2 : /rm-moonshot/.test(cls) ? 3 : 4;
+      var lx = !g ? x - len / 2 * k : x + (+t.getAttribute('x')) * k, ly = !g ? y - 20 * k : y - 9 * k;
+      all.push({ t: t, rank: rank, id: g ? g.getAttribute('data-id') : '', box: [lx - 3 * k, ly - 2 * k, lx + len * k + 3 * k, ly + 16 * k] });
+    });
+    // Every mark is in the way of every label but its own.
+    var marks = [];
+    svg.querySelectorAll('.cx-node[data-id]').forEach(function(g){
+      var m = (g.getAttribute('transform') || '').match(/translate\(([-\d.]+),([-\d.]+)\)/);
+      if (m) marks.push({ id: g.getAttribute('data-id'), box: [+m[1] - 8 * k, +m[2] - 8 * k, +m[1] + 8 * k, +m[2] + 8 * k] });
+    });
+    all.sort(function(a, b){ return a.rank - b.rank; });
+    var inView = function(b){ return b[2] > vb.x && b[0] < vb.x + vb.w && b[3] > vb.y && b[1] < vb.y + vb.h; };
+    all.forEach(function(a){
+      var b = a.box, hit = function(o){ return b[0] < o[2] && b[2] > o[0] && b[1] < o[3] && b[3] > o[1]; };
+      var free = a.rank === 0 || (!taken.some(hit) && !marks.some(function(m){ return m.id !== a.id && hit(m.box); }));
+      a.t.classList.toggle('is-culled', !free);
+      if (free && inView(b)) taken.push(b);
+    });
   }
   // Zooms by `f` around a point in the map's units (its middle when none).
   function zoomBy(f, px, py){
@@ -228,6 +263,7 @@
     build();
     graph.innerHTML = opts.view === 'topics' ? topicsSvg() : lineageSvg();
     graph.hidden = false;
+    if (graph.querySelector('.rm-topics')) fitLabels(graph.querySelector('.rm-topics'));
     el('rmMsg').hidden = true;
     legend();
     detail();
@@ -245,7 +281,7 @@
     var key = function(kind, text){ return '<span class="cx-key"><svg class="cx-icon rm-' + kind + '" viewBox="-8 -8 16 16" aria-hidden="true">' + mark(kind, 5) + '</svg><span>' + text + '</span></span>'; };
     var html = '<div class="cx-bar cx-legend"><span class="cx-bar-row"><span class="cx-bar-label">Key</span><span class="cx-bar-items">' +
       key('northstar', 'Northstar') + key('moonshot', 'Moonshot') + key('project', 'Stepping stone') + (opts.problems ? key('problem', 'Problem') : '') +
-      '<span class="cx-key rm-key-unlinked">Not linked yet</span></span></span>';
+      '</span></span>';
     if (opts.view === 'topics' && topic) html += '<span class="cx-bar-row"><span class="cx-bar-label">Topics</span><span class="cx-bar-items">' + topic.cl.clusters.map(function(c, j){
       return c.size ? '<span class="cx-key rm-hue-' + HUES[j % HUES.length] + '"><svg class="cx-icon" viewBox="-7 -7 14 14" aria-hidden="true"><circle class="rm-swatch" r="5"></circle></svg><span>' + esc(c.terms.join(', ')) + ' (' + c.size + ')</span></span>' : '';
     }).join('') + '</span></span>';
