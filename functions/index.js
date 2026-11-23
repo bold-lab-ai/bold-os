@@ -1478,6 +1478,7 @@ const PILOTS = {
   'group-eligible': 'Telling PIs someone meets the next group’s requirements',
   'project-setup': 'An ongoing project’s setup still missing (once)',
   'problem-verifier': 'Remind problem submitters to add a verifier',
+  'verifier-session': 'Telling a member AutoKaggle Lite linked a session to their problem',
   'channel-join': 'BOLD OS joins new public channels',
   'conversation-sent': 'A thread sent to Conversations: a reply in it saying so',
   'conversation-moved': 'A reply in Slack to a thread moved to Conversations: a note, to them alone, to reply there',
@@ -9551,7 +9552,16 @@ exports.remindProblemVerifiers = onSchedule({ schedule: 'every 15 minutes', secr
 // Validated problems and benchmark releases; the same callable serves the pages and acting API.
 // Projects and registered papers share board cards. Read only the fields used for
 // grouping and public links, once per request, regardless of the number of problems.
-const problemBank = require('./benchmark-registry')({ db, onCall, callerEmail, isFullWrite, access, HttpsError, readDirectory: async function(includePapers){
+// A member is told when Lite links a session to their problem (#43), so a link they didn't make stands out.
+async function tellVerifierSessionLinked({ email, problem_id }) {
+  const p = await db.collection('problemBank').doc(problem_id).get();
+  const title = String((p.exists && p.data().title) || 'your problem').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  const href = SITE_URL + 'problem.html?problem=' + encodeURIComponent(problem_id) + '#tab=releases';
+  await pilotSlack(SLACK_BOT_TOKEN.value(), 'verifier-session', PILOTS['verifier-session'], {
+    emails: [email], text: 'AutoKaggle Lite linked a session to “' + title + '” for you. Not you? <' + href + '|Unlink it on the problem’s page>.'
+  });
+}
+const problemBank = require('./benchmark-registry')({ db, onCall, callerEmail, isFullWrite, access, HttpsError, onSessionLinked: tellVerifierSessionLinked, readDirectory: async function(includePapers){
   const fields = ['title','openProblemId','projectId','registrationKind','createdAt','updatedAt','status','outcome','proposal.status'];
   const [boardsSnap,cardsSnap,unassignedSnap] = await Promise.all([
     db.collection('boards').select('label','status','archived').get(),

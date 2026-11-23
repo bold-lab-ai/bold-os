@@ -183,14 +183,18 @@ module.exports = function(deps){
       const snap = await tx.get(ref);
       if (!snap.exists) return null;
       const x = snap.data(), count = x.minute === minute ? (x.count || 0) + 1 : 1;
-      if (count > RATE_PER_MINUTE) return Object.assign({ limited: true }, x);
+      // The Lite service token carries every member's handoffs: it has ten times the limit, and each member
+      // has their own (verifier-handoff.js, countFor).
+      if (count > (currentLiteService ? RATE_PER_MINUTE * 10 : RATE_PER_MINUTE)) return Object.assign({ limited: true }, x);
       // A rotated service credential must never fall back to the owner's general tools.
       tx.update(ref, { minute, count, lastUsedAt: Date.now(), ...(currentLiteService ? {liteVerifierOnly:true} : {}) });
       return x;
     });
     if (!t || t.revoked) throw httpError(401, 'That token isn’t valid: it may have been revoked.');
-    if (t.limited) throw httpError(429, 'At most ' + RATE_PER_MINUTE + ' requests a minute: wait a moment.');
-    if (!(await personByEmail(t.email))) throw httpError(403, 'Only people in the BOLD Slack can use BOLD.OS.');
+    if (t.limited) throw httpError(429, 'At most ' + (currentLiteService ? RATE_PER_MINUTE * 10 : RATE_PER_MINUTE) + ' requests a minute: wait a moment.');
+    // The Lite service token acts only on members' handoffs, each checked as that member: it doesn't
+    // depend on whoever made it still being in the BOLD Slack.
+    if (!currentLiteService && !(await personByEmail(t.email))) throw httpError(403, 'Only people in the BOLD Slack can use BOLD.OS.');
     return { liteService: currentLiteService || t.liteVerifierOnly === true, currentLiteService, email: t.email, prefix: t.prefix, name: t.name || '', label: t.label || '', write: !!t.write };
   }
   // Someone using BOLD.OS through Sofya's chat: their access is an entry among their tokens (apiTokens/<sha of
@@ -213,7 +217,9 @@ module.exports = function(deps){
       const x = snap.data();
       if (x.revoked) return x;
       const count = x.minute === minute ? (x.count || 0) + 1 : 1;
-      if (count > RATE_PER_MINUTE) return Object.assign({ limited: true }, x);
+      // The Lite service token carries every member's handoffs: it has ten times the limit, and each member
+      // has their own (verifier-handoff.js, countFor).
+      if (count > (currentLiteService ? RATE_PER_MINUTE * 10 : RATE_PER_MINUTE)) return Object.assign({ limited: true }, x);
       tx.update(ref, { minute, count, lastUsedAt: Date.now() });
       return x;
     });

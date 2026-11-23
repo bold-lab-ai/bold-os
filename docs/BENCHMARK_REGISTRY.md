@@ -105,11 +105,16 @@ A problem that builds a benchmark skips verifier reminders. If its purpose chang
 
 A member can authorize Lite to return an approved verifier to one open problem. The member signs in to BOLD OS, opens the problem, and confirms the handoff. They use the same email address in Lite. The project is optional. If they select a project, it must belong to the selected problem.
 
-This integration is off by default. To enable it after review:
+This integration is off by default. To turn it on, in this order:
 
-1. Create a dedicated BOLD OS token and obtain acting approval. Put the raw token in the private Lite backend configuration. BOLD OS needs its lowercase SHA-256 digest in `BOLD_LINKED_VERIFIER_SERVICE_TOKEN_SHA256`. This digest reserves the credential for the two REST operations below. Keep the existing credential for general BOLD OS reads separate. Revoke the old service credential when you rotate it.
-2. Set `BOLD_LINKED_VERIFIER_HANDOFF_ENABLED=true` for both BOLD OS Functions (`benchmarkRegistry` and `boldApi`). Deploy the reviewed Functions and the Firestore TTL policy on `verifierHandoffs.expireAt`. Configure the reviewed Lite client and its Problem Bank link on the same release.
-3. Verify one transfer using a test problem before inviting members. Existing sessions that use each member's own acting token continue through `register_benchmark`.
+1. Deploy the TTL policy that deletes unused codes: `firebase deploy --only firestore:indexes` (`verifierHandoffs.expireAt`).
+2. Make a dedicated BOLD OS token for Lite, with acting approved by a PI or admin. Give the raw token only to whoever runs Lite's backend, for its private configuration; never in a chat or a repository. Keep Lite's credential for general reads separate. When you rotate it, revoke the old one.
+3. Put `BOLD_LINKED_VERIFIER_HANDOFF_ENABLED=true` and `BOLD_LINKED_VERIFIER_SERVICE_TOKEN_SHA256` (the token's lowercase SHA-256 digest; not a secret) in `functions/.env.bold-d7ff2`.
+4. Deploy `firebase deploy --only functions:benchmarkRegistry,functions:boldApi`.
+5. Release the matching Lite version with the token in its backend configuration.
+6. Test one transfer on a test problem, then archive it. Existing sessions that use each member's own acting token continue through `register_benchmark`.
+
+Once a session is linked, the member gets a Slack message (`verifier-session`, in pilot until switched live in Settings › Features), and the problem page lists its linked sessions. Whoever linked one, a PI or an admin can unlink it; Lite then can't return a verifier through it. The service token is limited to 600 requests a minute and each member to 60. It doesn't depend on whoever made it still being in the BOLD Slack, as it acts only as the member who claimed each session.
 
 | Operation | Request | Result |
 | --- | --- | --- |

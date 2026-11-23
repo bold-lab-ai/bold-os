@@ -126,7 +126,7 @@ function primary(links){
 // Pure: what makes a release itself; registering it again must match exactly.
 const releaseFingerprint = (data) => sha(canonical({ evaluator: data.evaluator, validation: data.validation, research: data.research, reported_approval: data.reported_approval, stage: data.stage }));
 
-module.exports = function({ db, onCall, callerEmail, isFullWrite, access, HttpsError, readDirectory }){
+module.exports = function({ db, onCall, callerEmail, isFullWrite, access, HttpsError, readDirectory, onSessionLinked }){
   const error = (code, message) => new HttpsError(code, message);
   const family = require('./problem-family')(db,error);
   // What a page or agent sees of a document: no emails.
@@ -148,7 +148,7 @@ module.exports = function({ db, onCall, callerEmail, isFullWrite, access, HttpsE
         (!storedProjects(problem.data()).some(link=>sameProject(link,{id:target.project_id,board:target.project_board,stable_id:project.data().projectId || target.project_id})) &&
          project.data().openProblemId !== target.problem_id)))
       throw error('failed-precondition','Choose a project linked to this problem.');
-  });
+  }, onSessionLinked);
   async function projectRecord(id, board){
     const p = await projectRef(id, board).get();
     if (!p.exists || isPastPaper(p.data())) throw error('failed-precondition', 'The linked BOLD OS project does not exist.');
@@ -218,6 +218,11 @@ module.exports = function({ db, onCall, callerEmail, isFullWrite, access, HttpsE
       if (typeof target.project_id !== 'string' || (target.project_board && !target.project_id))
         throw error('invalid-argument','A project board needs a linked project.');
       return handoffs.issue(target,email);
+    }
+    if (action === 'unlink_verifier_session') {
+      let pid;
+      try { pid = problemId(d.problem_id); } catch(e) { throw error('invalid-argument',e.message); }
+      return handoffs.unlink(pid,d.session_id,email,full);
     }
     if (action === 'create_project_proposal') {
       return require('./project-verification-plan').createProposal({db,error,fingerprint:value=>sha(canonical(value))},d,email,request.auth?.token?.name);
@@ -314,6 +319,9 @@ module.exports = function({ db, onCall, callerEmail, isFullWrite, access, HttpsE
         if (!linkedVerifier.configured()) problem.handoff_unavailable_reason = 'A BOLD OS administrator must finish configuring the AutoKaggle Lite connection.';
         else if (!mayEdit) problem.handoff_unavailable_reason = 'You need permission to edit projects to start a verifier in Lite.';
       }
+      // Lite sessions linked to it (#43): each can be unlinked by whoever linked it, a PI or an admin.
+      if (linkedVerifier.configured() && mayEdit)
+        problem.linked_sessions = (await handoffs.linkedTo(problem.id,email)).map(x => ({...x,can_unlink:x.mine || full}));
       return { handoff_enabled: handoffRequired, can_manage_reminders: !problem.builds_benchmark && mayEdit && doc.data().createdBy === email, history: history.docs.map((x) => publicRow(x)), problem, can_approve: full,
         versions: releases.docs.map((x) => publicRow(x)).sort((a, b) => b.createdAt - a.createdAt || b.evaluator.version - a.evaluator.version) };
     }
@@ -547,7 +555,9 @@ module.exports = function({ db, onCall, callerEmail, isFullWrite, access, HttpsE
     handoffs.requireConfigured();
     if (action === 'claim_verifier_handoff') {
       if (typeof args.email !== 'string') throw error('invalid-argument','Supply the verified Lite email.');
-      await access.requireAccess(args.email.trim().toLowerCase(),'projects','change');
+      const member = args.email.trim().toLowerCase();
+      await handoffs.countFor(member);
+      await access.requireAccess(member,'projects','change');
       return handoffs.claim(args);
     }
     if (action !== 'register_linked_verifier') throw error('invalid-argument','Unknown linked verifier operation.');
@@ -556,6 +566,7 @@ module.exports = function({ db, onCall, callerEmail, isFullWrite, access, HttpsE
       throw error('invalid-argument','Use the same Lite session throughout the registration.');
     const bound = await session.get();
     if (!bound.exists) throw error('permission-denied','This Lite session has no BOLD OS handoff.');
+    await handoffs.countFor(bound.data().email);
     return run({data:{action:'register',registration:args.registration}},bound.data().email);
   }
   return { benchmarkRegistry: onCall({}, request => run(request)), run, runLinkedService };

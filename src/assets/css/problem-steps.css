@@ -21,3 +21,8 @@
 .pb-papers .pb-paper-list{border-left:2px solid var(--line); margin:6px 0 0 4px; padding-left:12px;}
 .pb-papers .pb-paper-list > li{padding:4px 0; border:0;}
 .pb-paper-venue{display:block; color:var(--muted); font:13px/1.45 var(--sans);}
+/* Lite sessions linked to the problem (#43). */
+.pb-sessions{margin:0 0 20px; font:14px var(--sans);}
+.pb-sessions h3{margin:0 0 6px; font:600 14px var(--sans);}
+.pb-sessions ul{margin:0; padding-left:18px;}
+.pb-sessions li{margin:2px 0;}

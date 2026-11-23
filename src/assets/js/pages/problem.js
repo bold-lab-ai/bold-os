@@ -63,7 +63,8 @@
     launching = true; this.disabled = true;
     try {
       var effects = ['Share the problem ID, title, and research question' + (project ? ', plus the selected project ID' : '') + ' with AutoKaggle Lite.'];
-      if (scoped) effects.push('Sign in to Lite with your BOLD OS email so the session can return its verifier to this problem.');
+      if (scoped) effects.push('Sign in to Lite with your BOLD OS email so the session can return its verifier to this problem.',
+        'BOLD OS sends you a Slack message when Lite links the session, so you can unlink one you didn\u2019t make.');
       var ok = await BOLD.confirmAction({ title: 'Open AutoKaggle Lite?', always: true, go: 'Open Lite', effects: effects });
       if (!ok || epoch !== userEpoch) return;
       if (scoped) {
@@ -207,6 +208,13 @@
       if (blocked && handoffRequired) html += ' <small>' + esc(blocked) + '</small>';
       html += '</li><li>Autoresearch baseline <small>Coming soon</small></li></ol>';
     }
+    // Lite sessions linked to it (#43), newest first: each can be unlinked.
+    if ((p.linked_sessions || []).length) html += '<div class="pb-sessions"><h3>Linked AutoKaggle Lite sessions</h3><ul>' + p.linked_sessions.map(function(x){
+      var project = x.project_id ? (p.projects || []).filter(function(l){ return l.id === x.project_id && (l.board || '') === (x.project_board || ''); })[0] : null;
+      return '<li>' + (x.mine ? 'Yours' : 'A member\u2019s') + ', linked ' + esc(new Date(x.claimed_at).toLocaleString('en-GB', {dateStyle:'medium', timeStyle:'short'})) +
+        (x.project_id ? ', for ' + esc(project ? project.title : x.project_id) : '') +
+        (x.can_unlink ? ' <button type="button" class="btn-text" data-unlink="' + esc(x.session_id) + '">Unlink</button>' : '') + '</li>';
+    }).join('') + '</ul></div>';
     if (canRemind && !p.archived && !p.evaluator && !p.builds_benchmark) html += '<p><button type="button" class="btn-text" id="toggleReminder">' +
       (p.reminders ? 'Turn off my weekly reminders' : 'Remind me to add a verifier') + '</button></p>';
     html += '<div class="tabs" role="tablist" aria-label="Problem">' + TABS.map(function(t){
@@ -311,6 +319,16 @@
       } catch (e){ alertLine(e); } finally { button.disabled = false; }
     };
     if (el('addVerifier')) el('addVerifier').onclick = openVerifier;
+    document.querySelectorAll('[data-unlink]').forEach(function(button){
+      button.onclick = async function(){
+        var ok = await BOLD.confirmAction({ title: 'Unlink this Lite session?', always: true, go: 'Unlink',
+          effects: ['AutoKaggle Lite can no longer return a verifier to this problem through it. Releases already registered stay.'] });
+        if (!ok) return;
+        button.disabled = true;
+        try { await call({ action: 'unlink_verifier_session', problem_id: id, session_id: button.getAttribute('data-unlink') }); await load(); }
+        catch (e){ button.disabled = false; alertLine(e); }
+      };
+    });
     if (!editing) return;
     var input = el('fieldInput'), fail = failer();
     el('editCancel').addEventListener('click', function(){ editing = false; render(); });
