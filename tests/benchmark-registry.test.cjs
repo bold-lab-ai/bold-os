@@ -526,3 +526,13 @@ test('a project can explicitly build a benchmark or inherit that purpose from it
   problem.archived = true;
   await assert.rejects(h.call({...inherited,project_id:'card-closed'}),{code:'failed-precondition'});
 });
+
+test('a disabled handoff never issues a credential or accepts a service release', {skip:process.env.BOLD_LINKED_VERIFIER_HANDOFF_ENABLED === 'true'}, async () => {
+  const h=harness(), {problem_id}=await h.call(openProblem);
+  // The default config omits both the enable flag and service token digest.
+  const view=await h.call({action:'get',problem_id});
+  assert.equal(view.handoff_enabled,false);assert.equal(view.problem.handoff_enabled,false);
+  await assert.rejects(h.call({action:'issue_verifier_handoff',problem_id}),{code:'failed-precondition'});
+  await assert.rejects(h.registry.runLinkedService('register_linked_verifier',{registration:record()}),{code:'failed-precondition'});
+  assert.ok([...h.data.keys()].every(key=>!key.startsWith('verifierHandoffs/')));
+});

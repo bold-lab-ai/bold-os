@@ -98,3 +98,23 @@ npx bombadil browser test --headless --time-limit 65s --exit-on-violation http:/
 ```
 
 The reminder test uses the emulator Slack outbox. It checks the intended recipient, concurrent delivery, the next weekly notice, and the stop condition. The Bombadil test signs in with a demo account, completes the form, and checks the saved problem and verifier action.
+
+### Returning a verifier from email sign-in in AutoKaggle Lite
+
+A member can authorize Lite to return an approved verifier to one open problem. The member signs in to BOLD OS, opens the problem, and confirms the handoff. They use the same email address in Lite. The project is optional. If they select a project, it must belong to the selected problem.
+
+This integration is off by default. To enable it after review:
+
+1. Create a dedicated BOLD OS token and obtain acting approval. Put the raw token in the private Lite backend configuration. BOLD OS needs its lowercase SHA-256 digest in `BOLD_LINKED_VERIFIER_SERVICE_TOKEN_SHA256`. This digest reserves the credential for the two REST operations below. Keep the existing credential for general BOLD OS reads separate. Revoke the old service credential when you rotate it.
+2. Set `BOLD_LINKED_VERIFIER_HANDOFF_ENABLED=true` for both BOLD OS Functions (`benchmarkRegistry` and `boldApi`). Deploy the reviewed Functions and the Firestore TTL policy on `verifierHandoffs.expireAt`. Configure the reviewed Lite client and its Problem Bank link on the same release.
+3. Verify one transfer using a test problem before inviting members. Existing sessions that use each member's own acting token continue through `register_benchmark`.
+
+| Operation | Request | Result |
+| --- | --- | --- |
+| Callable `benchmarkRegistry` | `{action:"issue_verifier_handoff", problem_id, project_id?, project_board?}` with a member’s Slack sign-in | `{handoff, expires_at}`. Lite receives the one-time code in the URL fragment. The member has ten minutes to claim it. |
+| `POST /v1/claim_verifier_handoff` | `{handoff, email, session_id}` from the Lite backend after email verification | `{problem_id, project_id, project_board, session_id}`. Empty project fields mean no project was selected. A retry with the same code, verified email and session returns the same destination. |
+| `POST /v1/register_linked_verifier` | `{registration}` from the Lite backend, with the claimed session, problem and optional project | The registry checks the declared research data validation and human approval for that exact release, then returns its receipt. A duplicate request returns the original receipt. BOLD OS records the initiating member. |
+
+Both REST routes use the dedicated token in the Authorization header. Neither route logs the submitted code or request body. The server stores the code digest and a private binding for the session. An expired unused code can be replaced by reopening Lite from the problem. Marking a problem as building a benchmark or archiving it stops new verifier releases. Existing release receipts remain available.
+
+The `tests/verifier-handoff.emulator.cjs` integration test needs the local demo project's Firestore and Functions emulator addresses and `BOLD_TEST_LITE_TOKEN_FILE`, a local file containing a disposable credential with the prefix `bold_local_verifier_`. Approve the fixture credential in the emulator and configure its digest as above. Use `GCLOUD_PROJECT=demo-bold-os`.

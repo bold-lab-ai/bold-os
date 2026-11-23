@@ -21,6 +21,7 @@
 // (prefix), tool, args, at, expireAt } (expireAt: for a Firestore TTL policy, 90 days).
 const crypto = require('crypto');
 const keycloak = require('./keycloak');
+const verifierHandoff = require('./verifier-handoff');
 const { isPastPaper } = require('./past-paper');
 const { seesEvent, rank: groupRank } = require('./access');
 // Search ranking, shared with the site: copied here at deploy (firebase.json's predeploy),
@@ -176,19 +177,21 @@ module.exports = function(deps){
     const m = /^Bearer\s+(bold_[A-Za-z0-9_-]{20,})\s*$/.exec(req.get('authorization') || '');
     if (!m) throw httpError(401, 'Send your BOLD.OS token: Authorization: Bearer bold_…  Make one on your BOLD.OS profile, in its Agents tab.');
     const ref = db.collection('apiTokens').doc(sha(m[1]));
+    const currentLiteService = ref.id === verifierHandoff.serviceHash();
     const minute = Math.floor(Date.now() / 60000);
     const t = await db.runTransaction(async (tx) => {
       const snap = await tx.get(ref);
       if (!snap.exists) return null;
       const x = snap.data(), count = x.minute === minute ? (x.count || 0) + 1 : 1;
       if (count > RATE_PER_MINUTE) return Object.assign({ limited: true }, x);
-      tx.update(ref, { minute, count, lastUsedAt: Date.now() });
+      // A rotated service credential must never fall back to the owner's general tools.
+      tx.update(ref, { minute, count, lastUsedAt: Date.now(), ...(currentLiteService ? {liteVerifierOnly:true} : {}) });
       return x;
     });
-    if (!t) throw httpError(401, 'That token isn’t valid: it may have been revoked.');
+    if (!t || t.revoked) throw httpError(401, 'That token isn’t valid: it may have been revoked.');
     if (t.limited) throw httpError(429, 'At most ' + RATE_PER_MINUTE + ' requests a minute: wait a moment.');
     if (!(await personByEmail(t.email))) throw httpError(403, 'Only people in the BOLD Slack can use BOLD.OS.');
-    return { email: t.email, prefix: t.prefix, name: t.name || '', label: t.label || '', write: !!t.write };
+    return { liteService: currentLiteService || t.liteVerifierOnly === true, currentLiteService, email: t.email, prefix: t.prefix, name: t.name || '', label: t.label || '', write: !!t.write };
   }
   // Someone using BOLD.OS through Sofya's chat: their access is an entry among their tokens (apiTokens/<sha of
   // 'sofya:' + email>, kind 'sofya', made the first time), so their profile's Agents tab shows it and its activity, and
@@ -984,6 +987,22 @@ module.exports = function(deps){
       if (!err.status) { logger.error('boldApi auth failed', { error: String(err.stack || err) }); return res.status(500).json({ error: 'Something went wrong.' }); }
       if (err.status === 401) res.set('WWW-Authenticate', 'Bearer realm="BOLD.OS"');
       return res.status(err.status).json(path === '/mcp' ? { jsonrpc: '2.0', id: null, error: { code: -32001, message: err.message } } : { error: err.message });
+    }
+    // This service credential can act only on member-authorized Lite handoffs.
+    const linked = /^\/v1\/(claim_verifier_handoff|register_linked_verifier)$/.exec(path);
+    if (linked || who.liteService) {
+      if (!linked || !who.currentLiteService || !who.write)
+        return res.status(403).json({error:'Use a dedicated approved Lite handoff credential for this operation.'});
+      if (req.method !== 'POST') return res.status(405).set('Allow','POST').json({error:'Send a POST with a JSON body.'});
+      if (!verifierHandoff.configured()) return res.status(409).json({error:'Linked verifier handoffs are disabled.'});
+      // Handoffs are bearer secrets. Store the operation name only in the audit log.
+      log(who,linked[1],{});
+      try { return res.json(await deps.runLinkedService(linked[1],req.body || {})); }
+      catch (err) {
+        const status = CODE_STATUS[err.code] || 500;
+        if (status === 500) logger.error('Linked verifier request failed',{operation:linked[1]});
+        return res.status(status).json({error:status === 500 ? 'Linked verifier request failed.' : err.message});
+      }
     }
     if (path === '/mcp') {
       const body = req.body;

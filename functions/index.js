@@ -9500,7 +9500,7 @@ exports.remindProblemVerifiers = onSchedule({ schedule: 'every 15 minutes', secr
 // Validated problems and benchmark releases; the same callable serves the pages and acting API.
 // Projects and registered papers share board cards. Read only the fields used for
 // grouping and public links, once per request, regardless of the number of problems.
-exports.benchmarkRegistry = require('./benchmark-registry')({ db, onCall, callerEmail, isFullWrite, access, HttpsError, readDirectory: async function(includePapers){
+const problemBank = require('./benchmark-registry')({ db, onCall, callerEmail, isFullWrite, access, HttpsError, readDirectory: async function(includePapers){
   const fields = ['title','openProblemId','projectId','registrationKind','createdAt','updatedAt','status','outcome','proposal.status'];
   const [boardsSnap,cardsSnap,unassignedSnap] = await Promise.all([
     db.collection('boards').select('label','status','archived').get(),
@@ -9515,11 +9515,12 @@ exports.benchmarkRegistry = require('./benchmark-registry')({ db, onCall, caller
     .map(function(i){ return { id:i.cardId || i.projectId, stable_id:i.pid, board:i.boardId || '', title:i.title, venue:i.boardLabel || '', openProblemId:i.openProblemId || '' }; })
     .sort(function(a, b){ return a.title.localeCompare(b.title); });
   return {projects, papers:includePapers ? papersByProblem(boards,cards) : null};
-} }).benchmarkRegistry;
+} });
+exports.benchmarkRegistry = problemBank.benchmarkRegistry;
 
 // BOLD.OS for agents: personal tokens (apiTokens) and the read-only API and MCP
 // endpoint (boldApi), in functions/api.js.
-const agentApi = require('./api')({ access, db, admin, onRequest, onCall, HttpsError, logger, callerEmail, isFullWrite, allProjectsFromCards, projectGroupForCards, workspaceStarted, groupOf, SITE_URL,
+const agentApi = require('./api')({ runLinkedService:problemBank.runLinkedService, access, db, admin, onRequest, onCall, HttpsError, logger, callerEmail, isFullWrite, allProjectsFromCards, projectGroupForCards, workspaceStarted, groupOf, SITE_URL,
   SIGN_IN_PROVIDER, secrets: [SLACK_BOT_TOKEN, GOOGLE_OAUTH, GITHUB_APP], SLACK_BOT_TOKEN,
   // Asking to act, and the decision: the PIs and admins hear of a request, its owner of the decision.
   tellStaff,

@@ -18,6 +18,7 @@
 // the site's Slack-signed-in callable and, for agents, boldApi's acting tokens; each
 // registration is recorded as whoever's token sent it (docs/BENCHMARK_REGISTRY.md).
 const crypto = require('crypto');
+const linkedVerifier = require('./verifier-handoff');
 const {isPastPaper, registerPastPaper} = require('./past-paper');
 
 const sha = (value) => crypto.createHash('sha256').update(value).digest('hex');
@@ -138,6 +139,16 @@ module.exports = function({ db, onCall, callerEmail, isFullWrite, access, HttpsE
     try { board = boardId(board); } catch (e) { throw error('invalid-argument', e.message); }
     return board ? db.collection('boards').doc(board).collection('cards').doc(id) : db.collection('projects').doc(id);
   }
+  const handoffs = linkedVerifier.verifierHandoffs(db,error,async (tx,target) => {
+    const [problem,project] = await Promise.all([tx.get(db.collection('problemBank').doc(target.problem_id)),
+      target.project_id ? tx.get(projectRef(target.project_id,target.project_board)) : null]);
+    if (!problem.exists || problem.data().archived || problem.data().builds_benchmark === true)
+      throw error('failed-precondition','Choose an active problem that needs a verifier.');
+    if (project && (!project.exists || isPastPaper(project.data()) ||
+        (!storedProjects(problem.data()).some(link=>sameProject(link,{id:target.project_id,board:target.project_board,stable_id:project.data().projectId || target.project_id})) &&
+         project.data().openProblemId !== target.problem_id)))
+      throw error('failed-precondition','Choose a project linked to this problem.');
+  });
   async function projectRecord(id, board){
     const p = await projectRef(id, board).get();
     if (!p.exists || isPastPaper(p.data())) throw error('failed-precondition', 'The linked BOLD OS project does not exist.');
@@ -179,8 +190,8 @@ module.exports = function({ db, onCall, callerEmail, isFullWrite, access, HttpsE
     return {items};
   }
 
-  async function run(request){
-    const email = callerEmail(request), d = request.data || {}, action = d.action || 'list';
+  async function run(request, serviceMember){
+    const email = serviceMember || callerEmail(request), d = request.data || {}, action = d.action || 'list';
     if (action === 'register_past_paper' || action === 'past_paper_problem_choices') {
       if (!(await access.can(email,'ml-cycle','edit'))) await access.requireAccess(email,'projects','edit');
       if (action === 'past_paper_problem_choices') return activeProblemChoices(false);
@@ -199,6 +210,15 @@ module.exports = function({ db, onCall, callerEmail, isFullWrite, access, HttpsE
       return {...p,builds_benchmark:p.builds_benchmark === true,projects:linkedProjects(p,directory.projects),papers:directory.papers ? (directory.papers.get(p.id) || []) : null};
     }
 
+    if (action === 'issue_verifier_handoff') {
+      let target;
+      try {
+        target = {problem_id:problemId(d.problem_id),project_id:d.project_id ?? '',project_board:boardId(d.project_board)};
+      } catch(e) { throw error('invalid-argument',e.message); }
+      if (typeof target.project_id !== 'string' || (target.project_board && !target.project_id))
+        throw error('invalid-argument','A project board needs a linked project.');
+      return handoffs.issue(target,email);
+    }
     if (action === 'create_project_proposal') {
       return require('./project-verification-plan').createProposal({db,error,fingerprint:value=>sha(canonical(value))},d,email,request.auth?.token?.name);
     }
@@ -289,7 +309,8 @@ module.exports = function({ db, onCall, callerEmail, isFullWrite, access, HttpsE
       ]);
       const problem = withLinks(doc,directory);
       problem.selected_projects = storedProjects(doc.data());
-      return { can_manage_reminders: !problem.builds_benchmark && mayEdit && doc.data().createdBy === email, history: history.docs.map((x) => publicRow(x)), problem, can_approve: full,
+      problem.handoff_enabled = linkedVerifier.configured() && mayEdit && !problem.archived && !problem.builds_benchmark;
+      return { handoff_enabled: linkedVerifier.enabled(), can_manage_reminders: !problem.builds_benchmark && mayEdit && doc.data().createdBy === email, history: history.docs.map((x) => publicRow(x)), problem, can_approve: full,
         versions: releases.docs.map((x) => publicRow(x)).sort((a, b) => b.createdAt - a.createdAt || b.evaluator.version - a.evaluator.version) };
     }
 
@@ -303,9 +324,20 @@ module.exports = function({ db, onCall, callerEmail, isFullWrite, access, HttpsE
       const fingerprint = sha(canonical(data)), release = releaseFingerprint(data), at = Date.now();
       const out = { problem_id: pid, benchmark_id: bid, commit: data.evaluator.commit, idempotency_key: data.idempotency_key };
       return db.runTransaction(async (tx) => {
-        const [p, b, r, project, streamDoc, legacy] = await Promise.all([tx.get(problem), tx.get(benchmark), tx.get(receipt),
+        const [p, b, r, project, streamDoc, legacy, claim] = await Promise.all([tx.get(problem), tx.get(benchmark), tx.get(receipt),
           data.project_id ? tx.get(projectRef(data.project_id, data.project_board)) : null, tx.get(stream),
-          pid !== sourceKey ? tx.get(db.collection('problemBank').doc(sourceKey)) : null]);
+          pid !== sourceKey ? tx.get(db.collection('problemBank').doc(sourceKey)) : null,
+          tx.get(db.collection('verifierSessionClaims').doc(data.session.project_id))]);
+        if (serviceMember) {
+          const bound = claim.data();
+          if (!bound || bound.email !== serviceMember || bound.problem_id !== data.problem_id ||
+              bound.project_id !== data.project_id || bound.project_board !== data.project_board)
+            throw error('permission-denied','The release must return to the problem and project selected in BOLD OS.');
+          if (data.stage !== 'validated' || !data.reported_approval)
+            throw error('failed-precondition','Validate this release on the declared research data and record its human approval.');
+        } else if (claim.exists) {
+          throw error('permission-denied','Register this session through the linked verifier service.');
+        }
         if (project && (!project.exists || isPastPaper(project.data()))) throw error('failed-precondition', 'The linked BOLD OS project does not exist.');
         const prior = p.exists ? p.data() : {};
         const linked = !!data.problem_id;
@@ -507,7 +539,22 @@ module.exports = function({ db, onCall, callerEmail, isFullWrite, access, HttpsE
 
     throw error('invalid-argument', 'Unknown registry action.');
   }
-  return { benchmarkRegistry: onCall({}, run), run };
+  async function runLinkedService(action, args) {
+    handoffs.requireConfigured();
+    if (action === 'claim_verifier_handoff') {
+      if (typeof args.email !== 'string') throw error('invalid-argument','Supply the verified Lite email.');
+      await access.requireAccess(args.email.trim().toLowerCase(),'projects','change');
+      return handoffs.claim(args);
+    }
+    if (action !== 'register_linked_verifier') throw error('invalid-argument','Unknown linked verifier operation.');
+    const session = handoffs.sourceSession(args.registration?.source_id);
+    if (args.registration?.session?.project_id !== undefined && args.registration.session.project_id !== session.id)
+      throw error('invalid-argument','Use the same Lite session throughout the registration.');
+    const bound = await session.get();
+    if (!bound.exists) throw error('permission-denied','This Lite session has no BOLD OS handoff.');
+    return run({data:{action:'register',registration:args.registration}},bound.data().email);
+  }
+  return { benchmarkRegistry: onCall({}, request => run(request)), run, runLinkedService };
 };
 module.exports.normalize = normalize;
 module.exports.canonical = canonical;
