@@ -54,7 +54,7 @@
     return on;
   }
 
-  // A node's mark: a northstar a star, a moonshot a diamond, a stepping stone a square, a problem a triangle.
+  // A node's mark: a northstar a star, a moonshot a diamond, a stepping stone a circle, a problem a triangle.
   function mark(kind, r){
     var f = function(n){ return n.toFixed(1); };
     if (kind === 'northstar') {
@@ -64,7 +64,7 @@
     }
     if (kind === 'moonshot') return '<path class="cx-mark" d="M0 ' + f(-r * 1.3) + 'L' + f(r * 1.3) + ' 0L0 ' + f(r * 1.3) + 'L' + f(-r * 1.3) + ' 0Z"></path>';
     if (kind === 'problem') return '<path class="cx-mark" d="M0 ' + f(-r * 1.2) + 'L' + f(r * 1.15) + ' ' + f(r * 0.85) + 'H' + f(-r * 1.15) + 'Z"></path>';
-    return '<rect class="cx-mark" x="' + f(-r * 0.9) + '" y="' + f(-r * 0.9) + '" width="' + f(r * 1.8) + '" height="' + f(r * 1.8) + '"></rect>';
+    return '<circle class="cx-mark" r="' + f(r) + '"></circle>';
   }
   function nodeCls(n, on){
     return 'cx-node rm-' + n.kind + (n.group === 'proposed' ? ' is-proposed' : '') + (n.group === 'completed' ? ' is-completed' : '') +
@@ -156,20 +156,23 @@
       var p = pos[e.from], q = pos[e.to];
       if (!p || !q) return '';
       var hot = on && on[e.from] && on[e.to];
-      return '<path class="cx-edge rm-e-' + e.kind + (hot ? ' is-lit' : '') + '" d="M' + p.x.toFixed(1) + ' ' + p.y.toFixed(1) + 'L' + q.x.toFixed(1) + ' ' + q.y.toFixed(1) + '"></path>';
+      // Bowed a little, always to the same side for a pair (as Network's).
+      var mx = (p.x + q.x) / 2, my = (p.y + q.y) / 2, b = 0.12;
+      return '<path class="cx-edge rm-e-' + e.kind + (hot ? ' is-lit' : '') + '" d="M' + p.x.toFixed(1) + ' ' + p.y.toFixed(1) + 'Q' + (mx - (q.y - p.y) * b).toFixed(1) + ' ' + (my + (q.x - p.x) * b).toFixed(1) + ' ' + q.x.toFixed(1) + ' ' + q.y.toFixed(1) + '"></path>';
     }).join('');
     var nodes = map.nodes.map(function(n){
       var p = pos[n.id];
       if (!p) return '';
       var j = t.cl.of[n.id], loud = n.kind === 'northstar' || n.kind === 'moonshot';
-      var r = n.kind === 'northstar' ? 9 : n.kind === 'moonshot' ? 7 : 5;
+      var r = n.kind === 'northstar' ? 9 : n.kind === 'moonshot' ? 6.5 : 5.5;
       return '<g class="' + nodeCls(n, on) + (j !== undefined ? ' rm-hue-' + HUES[j % HUES.length] : '') + '" data-id="' + esc(n.id) + '" transform="translate(' + p.x.toFixed(1) + ',' + p.y.toFixed(1) + ')" tabindex="0" role="button">' +
         mark(n.kind, r) + '<text class="cx-label' + (loud ? ' rm-loud' : ' is-quiet') + '" x="' + (r + 5) + '" y="4">' + esc(short(n.title, loud ? 34 : 44)) + '</text>' +
         '<title>' + tip(n) + '</title></g>';
     }).join('');
     return '<div class="cx-graph rm-zoom"><div class="rm-zoom-ctl view-toggle" role="group" aria-label="Zoom">' +
       '<button type="button" class="view-btn" data-zoom="in" aria-label="Zoom in">+</button><button type="button" class="view-btn" data-zoom="out" aria-label="Zoom out">−</button>' +
-      '<button type="button" class="view-btn" data-zoom="fit">Fit</button></div>' +
+      '<button type="button" class="view-btn" data-zoom="fit" aria-label="Fit it all in">\u2922</button></div>' +
+      '<p class="rm-zoom-hint">Scroll to zoom \u00b7 drag to move</p>' +
       '<svg class="cx-svg rm-svg rm-topics' + (on ? ' has-selected' : '') + (TW / vb.w > 1.6 ? ' is-near' : '') + '" viewBox="' + box() +
       '" preserveAspectRatio="xMidYMid meet" role="img" aria-label="Everything, clustered by what it’s about">' +
       '<g>' + hulls + '</g><g>' + lines + '</g><g>' + nodes + '</g></svg></div>';

@@ -21,31 +21,44 @@ main{max-width:var(--content-max); margin:0 auto; padding:8px var(--gutter) 24px
 .rm-svg .cx-node.is-completed .cx-label{fill:var(--muted);}
 .rm-svg .cx-node.is-unlinked > .cx-label, .rm-key-unlinked{fill:var(--danger-text); color:var(--danger-text);}
 .rm-svg .cx-node.is-again{opacity:.6;}
+.cx-lineage.rm-svg .cx-node.rm-project .cx-mark{fill:var(--paper);}
+.cx-lineage.rm-svg .cx-node.rm-northstar > .cx-label{font-size:16px;}
+.cx-lineage.rm-svg .cx-elbow{stroke:var(--ink-soft);}
 .rm-head-label{font-family:var(--sans); font-size:11px; letter-spacing:.1em; text-transform:uppercase; fill:var(--muted);}
 .rm-svg.has-selected .cx-edge:not(.is-lit){opacity:.08;}
 .rm-svg.has-selected .cx-edge.is-lit{opacity:.85; stroke:var(--accent); stroke-width:1.6;}
 .rm-svg.has-selected .cx-node:not(.is-lit){opacity:.25;}
 
-/* Topics: wider than the column, a fixed height, zoomed with the wheel or the buttons and dragged around. */
-.rm-zoom{position:relative; margin-left:calc(50% - min(50vw - var(--gutter), 640px)); margin-right:calc(50% - min(50vw - var(--gutter), 640px)); touch-action:none;}
-.rm-topics{width:100%; height:min(72vh, 760px); cursor:grab; user-select:none;}
+/* Topics: wider than the column, in a frame of its own (nothing drawn outside it, however far it's zoomed),
+   zoomed with the wheel or the buttons and dragged around. */
+.rm-zoom{position:relative; margin:6px calc(50% - min(50vw - var(--gutter), 640px)) 0; border:1px solid var(--line); border-radius:var(--radius);
+  background:var(--surface); overflow:hidden; touch-action:none; isolation:isolate;}
+.cx-svg.rm-topics{display:block; width:100%; height:min(72vh, 760px); overflow:hidden; cursor:grab; user-select:none;}
 .is-dragging .rm-topics{cursor:grabbing;}
-.rm-zoom-ctl{position:absolute; top:10px; right:10px; background:var(--surface); z-index:1;}
-.rm-zoom-ctl .view-btn{min-width:34px;}
-.rm-topics .cx-edge{opacity:.18; stroke-width:1;}
+.rm-zoom-ctl{position:absolute; top:12px; right:12px; z-index:1; display:flex; flex-direction:column; background:var(--paper);
+  border:1px solid var(--line); border-radius:var(--radius); box-shadow:0 1px 4px color-mix(in srgb, var(--shade) 18%, transparent); overflow:hidden;}
+.rm-zoom-ctl .view-btn{width:34px; height:32px; padding:0; font-size:17px; line-height:1;}
+.rm-zoom-ctl .view-btn + .view-btn{border-left:none; border-top:1px solid var(--line);}
+.rm-zoom-hint{position:absolute; left:14px; bottom:10px; margin:0; font-family:var(--sans); font-size:11.5px; color:var(--muted); pointer-events:none;}
+.rm-topics .cx-edge{opacity:.22; stroke-width:1;}
 .rm-topics .rm-e-member{display:none;}
-.rm-topics .cx-label{font-size:12.5px;}
-.rm-topics .cx-label.rm-loud{font-family:var(--sans);}
+.rm-topics .cx-label{font-family:var(--sans); font-size:12px; stroke:var(--surface);}
+.rm-topics .rm-northstar > .cx-label{font-family:var(--serif); font-size:16px;}
+.rm-topics .rm-moonshot > .cx-label{font-size:12.5px;}
 .rm-topics.is-near .cx-label.is-quiet{opacity:1;}
-.rm-cluster circle{fill:color-mix(in srgb, currentColor 7%, transparent); stroke:color-mix(in srgb, currentColor 35%, transparent); stroke-width:1; stroke-dasharray:3 4;}
-.rm-cluster text{font-family:var(--sans); font-size:12px; letter-spacing:.08em; text-transform:uppercase; fill:currentColor; paint-order:stroke; stroke:var(--paper); stroke-width:4px;}
-.rm-swatch{fill:color-mix(in srgb, currentColor 25%, transparent); stroke:currentColor; stroke-width:1.2;}
+.rm-topics .cx-node.rm-project .cx-mark, .rm-topics .cx-node.rm-problem .cx-mark{fill:color-mix(in srgb, currentColor 22%, var(--surface)); stroke-width:1.4;}
+.rm-topics .cx-node:hover .cx-mark{fill:currentColor;}
+.rm-cluster circle{fill:color-mix(in srgb, currentColor 6%, transparent); stroke:color-mix(in srgb, currentColor 28%, transparent); stroke-width:1;}
+.rm-cluster text{font-family:var(--sans); font-size:11px; font-weight:600; letter-spacing:.1em; text-transform:uppercase; fill:currentColor; paint-order:stroke; stroke:var(--surface); stroke-width:4px; stroke-linejoin:round;}
+.rm-swatch{fill:color-mix(in srgb, currentColor 22%, transparent); stroke:currentColor; stroke-width:1.2;}
 .rm-hue-accent{color:var(--accent);} .rm-hue-teal{color:var(--teal);} .rm-hue-plum{color:var(--plum);} .rm-hue-amber{color:var(--amber);}
 .rm-hue-green{color:var(--green);} .rm-hue-brown{color:var(--brown);} .rm-hue-danger-text{color:var(--danger-text);}
 /* In Topics a stepping stone takes its topic's hue. */
-.rm-topics .cx-node.rm-project.rm-hue-accent, .rm-topics .cx-node.rm-problem.rm-hue-accent{color:var(--accent);} .rm-topics .cx-node.rm-project.rm-hue-teal, .rm-topics .cx-node.rm-problem.rm-hue-teal{color:var(--teal);} .rm-topics .cx-node.rm-project.rm-hue-plum, .rm-topics .cx-node.rm-problem.rm-hue-plum{color:var(--plum);} .rm-topics .cx-node.rm-project.rm-hue-amber, .rm-topics .cx-node.rm-problem.rm-hue-amber{color:var(--amber);} .rm-topics .cx-node.rm-project.rm-hue-green, .rm-topics .cx-node.rm-problem.rm-hue-green{color:var(--green);} .rm-topics .cx-node.rm-project.rm-hue-brown, .rm-topics .cx-node.rm-problem.rm-hue-brown{color:var(--brown);} .rm-topics .cx-node.rm-project.rm-hue-danger-text, .rm-topics .cx-node.rm-problem.rm-hue-danger-text{color:var(--danger-text);}
+.rm-topics .cx-node.rm-project.rm-hue-accent{color:var(--accent);} .rm-topics .cx-node.rm-project.rm-hue-teal{color:var(--teal);} .rm-topics .cx-node.rm-project.rm-hue-plum{color:var(--plum);} .rm-topics .cx-node.rm-project.rm-hue-amber{color:var(--amber);} .rm-topics .cx-node.rm-project.rm-hue-green{color:var(--green);} .rm-topics .cx-node.rm-project.rm-hue-brown{color:var(--brown);} .rm-topics .cx-node.rm-project.rm-hue-danger-text{color:var(--danger-text);}
 
 .rm-detail h2{font-family:var(--serif); font-size:22px; margin:22px 0 8px;}
 .rm-dl{display:grid; grid-template-columns:max-content 1fr; gap:4px 16px; margin:0; font-size:14.5px;}
 .rm-dl dt{color:var(--muted);}
 .rm-dl dd{margin:0;}
+/* Under Not linked yet, the heading says it: no red as well. */
+.cx-lineage.rm-svg .cx-node.is-unlinked > .cx-label{fill:var(--ink-soft);}
