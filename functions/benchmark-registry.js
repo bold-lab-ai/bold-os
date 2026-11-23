@@ -196,6 +196,9 @@ module.exports = function({ db, onCall, callerEmail, isFullWrite, access, HttpsE
       return {...p,projects:linkedProjects(p,directory.projects),papers:directory.papers ? (directory.papers.get(p.id) || []) : null};
     }
 
+    if (['request_baseline', 'claim_baseline', 'finish_baseline'].includes(action)) {
+      return require('./autoastra-baseline').changeBaseline({db, error, publicRow, full, canEdit, email}, d);
+    }
     if (action === 'create_project_proposal') {
       return require('./project-verification-plan').createProposal({db,error,fingerprint:value=>sha(canonical(value))},d,email,request.auth?.token?.name);
     }
