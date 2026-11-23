@@ -810,7 +810,10 @@ async function noteFor(emails, n){
     const base = { source: n.source || 'slack', feature: n.feature || '', text: p.text, href: n.href || p.href || '', about: n.about || '', at: Date.now(), read: false };
     // A meeting about to start (meetingReminders): its link, offered as Join until it ends.
     if (n.join) { base.join = n.join; base.endsAt = n.endsAt || 0; }
-    for (let i = 0; i < list.length; i += 400) {
+    if (n.noticeId && list.length === 1) {
+      try { await db.collection('notifications').doc(n.noticeId).create({ ...base, to: list[0] }); }
+      catch (err) { if (err.code === 6) return; throw err; }
+    } else for (let i = 0; i < list.length; i += 400) {
       const b = db.batch();
       list.slice(i, i + 400).forEach((to) => b.set(db.collection('notifications').doc(), Object.assign({ to }, base)));
       await b.commit();
@@ -1471,6 +1474,7 @@ const PILOTS = {
   'group-trial': 'A new group’s first week: the reminder, and its end',
   'group-eligible': 'Telling PIs someone meets the next group’s requirements',
   'project-setup': 'An ongoing project’s setup still missing (once)',
+  'problem-verifier': 'Remind problem submitters to add a verifier',
   'channel-join': 'BOLD OS joins new public channels',
   'conversation-sent': 'A thread sent to Conversations: a reply in it saying so',
   'conversation-moved': 'A reply in Slack to a thread moved to Conversations: a note, to them alone, to reply there',
@@ -1601,11 +1605,11 @@ async function pilotSlack(token, key, label, m){
   // Whoever turned the feature off gets neither; with requireDelivery, that's a refusal.
   const emails = [];
   for (const e of Array.from(new Set((m.emails || []).map((x) => String(x).toLowerCase())))) {
-    if (st.live || !m.suppressPilotInbox) await noteFor([e], { text: m.text, feature: key, source: 'slack' });
-    const way = await slackWayFor(e, key);
+    if (st.live || !m.suppressPilotInbox) await noteFor([e], { text: m.text, feature: key, source: 'slack', noticeId: m.noticeId });
+    const way = !st.live && m.suppressPilotInbox && m.respectOptOut ? 'all' : await slackWayFor(e, key);
     if (way === 'all' || (m.actionsRequired && way === 'pings')) emails.push(e);
     else if (way === 'pings') await queuePing(e);
-    else if (st.live && m.requireDelivery) throw refused('They have these Slack messages turned off');
+    else if (st.live && m.requireDelivery && !m.respectOptOut) throw refused('They have these Slack messages turned off');
   }
   m = Object.assign({}, m, { emails });
   if (!emails.length && !m.channel) return { pilot: !st.live, pinged: true };
@@ -1934,7 +1938,7 @@ function newTags(before, after){
 // Where a tag is: { title, url } for a document's path, or null where tags tell
 // nobody here: bookkeeping and private collections, and guides and the
 // BOLDiquette (their comments and proposed changes tell, above). Pure.
-const TAG_SILENT = ['problemBank', 'benchmarks', 'benchmarkReceipts', 'roles', 'people', 'meta', 'settings', 'readPoints', 'changelog', 'commentQueue', 'venueCalls', 'githubLinks', 'googleLinks',
+const TAG_SILENT = ['problemBank', 'benchmarks', 'benchmarkReceipts', 'benchmarkSources', 'roles', 'people', 'meta', 'settings', 'readPoints', 'changelog', 'commentQueue', 'venueCalls', 'githubLinks', 'googleLinks',
   'letterRequests', 'introRequests', 'joinRequests', 'members', 'hackathonJoins', 'projectWorkspaces', 'guides', 'handbook', 'interactions', 'privateInteractions',
   // Conversations (Experimental, 2026-11-04): no Slack messages from it while it's an experiment.
   'conversations', 'conversationImports', 'cardImageImports', 'notifications'];
@@ -9449,6 +9453,28 @@ async function tellStaff(text, except, key){
   const emails = Array.from(new Set((await rolesEmails('pis')).concat(await rolesEmails('admins')).map((e) => String(e).toLowerCase()))).filter((e) => e !== skip);
   if (emails.length) await sendEvent(SLACK_BOT_TOKEN.value(), { key, emails, headline: text });
 }
+
+// The first notice is due at creation. The sweep also picks up missed triggers and retries.
+const problemReminders = require('./problem-reminders');
+async function sendProblemNotice(ref) {
+  return problemReminders.sendDue(db, ref, async ({ email, title, id, cycle }) => {
+    const href = SITE_URL + 'problem.html?problem=' + encodeURIComponent(id) + '#tab=releases';
+    const label = title.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    await pilotSlack(SLACK_BOT_TOKEN.value(), 'problem-verifier', PILOTS['problem-verifier'], {
+      emails: [email], text: 'Your problem “' + label + '” has no verifier. <' + href + '|Add a verifier in AutoKaggle Lite>.',
+      suppressPilotInbox: true, requireDelivery: true, respectOptOut: true, noticeId: 'verifier-' + id + '-' + cycle
+    });
+  });
+}
+exports.onProblemDefined = onDocumentCreated({ document: 'problemBank/{id}', secrets: [SLACK_BOT_TOKEN] },
+  event => event.data && sendProblemNotice(event.data.ref));
+exports.remindProblemVerifiers = onSchedule({ schedule: 'every 15 minutes', secrets: [SLACK_BOT_TOKEN] }, async () => {
+  const due = await db.collection('problemBank').where('verifierNoticeDue', '>=', 0).where('verifierNoticeDue', '<=', Date.now()).limit(100).get();
+  for (const row of due.docs) {
+    try { await sendProblemNotice(row.ref); }
+    catch (error) { logger.warn('Problem verifier reminder failed', { problem: row.id, error: error.message }); }
+  }
+});
 
 // Validated problems and benchmark releases; the same callable serves the pages and acting API.
 // projectChoices: the Problem Bank's project picker, one row per project as Projects lists them.
