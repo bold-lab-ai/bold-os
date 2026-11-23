@@ -51,6 +51,8 @@
     if (k === 'links') return !!(draft.parent_ids.length || draft.related_ids.length || draft.project_ids.length);
     return !!draft[k];
   }
+  // Everything the Problem Bank needs is there (as the server's problem-interview.js complete()).
+  function complete(d){ return !!(d.title && d.significance && d.difficulties && d.existing_solutions && d.benchmark_known); }
   function drawNeeds(){
     el('pbChecks').innerHTML = NEEDS.map(function(n){
       return '<li class="' + (has(n[0]) ? 'is-done' : '') + '"><span>' + n[1] + '</span></li>';
@@ -150,7 +152,7 @@
   function open(d){
     if (!d || talking || saving) return;
     start();
-    draftId = d.id; turns = (d.turns || []).slice(); draft = Object.assign({}, EMPTY, d.draft || {}); done = !!d.done; me = d.me || me;
+    draftId = d.id; turns = (d.turns || []).slice(); draft = Object.assign({}, EMPTY, d.draft || {}); done = !!d.done || complete(draft); me = d.me || me;
     log.innerHTML = turns.map(function(t){ return item(t.role === 'user' ? 'you' : 'bold', t.content); }).join('');
     el('pbSavedNote').hidden = false; setAddress();
     drawNeeds(); controls(); drawDrafts();
@@ -184,8 +186,8 @@
     call('problemInterview', { turns: turns, draft: draft }).then(function(r){
       if (generation !== epoch) return;
       if (r.me) me = r.me;
-      var first = !done && !!r.ready;
-      draft = r.draft; done = done || !!r.ready;
+      var now = !!r.ready || complete(r.draft), first = !done && now;
+      draft = r.draft; done = done || now;
       turns.push({ role: 'assistant', content: r.reply });
       var p = log.querySelector('.ha-pending'); if (p) p.remove();
       stream(r.reply); drawNeeds();

@@ -51,5 +51,8 @@ test('one turn, thinking off, with the current draft; ready only once the requir
   const full = await I.interview(turns, lab, reply({reply: 'Check the draft.', ready: true,
     draft: {title: 'T', significance: 'S', difficulties: 'D', existing_solutions: 'E', builds_benchmark: false, benchmark_known: true, collaborators: '', project_ids: [], parent_ids: ['ms-co'], related_ids: []}}), said, jsonOf);
   assert.equal(full.ready, true);
+  const unsaid = await I.interview(turns, lab, reply({reply: 'Drafted below.', ready: false,
+    draft: {title: 'T', significance: 'S', difficulties: 'D', existing_solutions: 'E', builds_benchmark: false, benchmark_known: true, collaborators: '', project_ids: [], parent_ids: [], related_ids: []}}), said, jsonOf);
+  assert.equal(unsaid.ready, true, 'ready once the fields are there, even if the model forgets to say so');
   assert.deepEqual(full.draft.parent_ids, ['ms-co']);
 });

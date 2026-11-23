@@ -50,7 +50,7 @@ function systemPrompt({ objectives, problems, projects }){
     '- collaborators: names of people working on it with them.',
     '',
     'Write each text field in the researcher’s voice, from what they said, concise and concrete (a few sentences). Keep every field you already have unless they change it; use "" or [] for what you don’t know yet.',
-    'Set ready to true once title, significance, difficulties and existing_solutions are filled and benchmark_known is true; then sum up the problem in two or three sentences, and tell them to save it with Save problem (beside the conversation), or to keep talking to change anything.',
+    'Set ready to true once title, significance, difficulties and existing_solutions are filled and benchmark_known is true; then sum up the problem in two or three sentences, and tell them it’s ready to check in Check and edit, under the conversation, where they can change any field and save it, or that they can keep talking to change anything.',
     'Answer with JSON only: { "reply": what you say to them next, "ready": …, "draft": { … } }.',
     '',
     'Northstars and moonshots (id: title):', list(objectives, (o) => o.id + ': ' + o.title + ' (' + o.kind + ')'),
@@ -101,7 +101,8 @@ async function interview(turns, lab, sofyaComplete, said, jsonOf, current){
     parents: new Set(lab.objectives.map((o) => o.id).concat(lab.problems.map((p) => p.id))) };
   const draft = cleanDraft(v && v.draft, known);
   const reply = typeof (v && v.reply) === 'string' && v.reply.trim() ? v.reply.trim().slice(0, MAX_CHARS) : 'Tell me more about it.';
-  return { reply, draft, ready: !!(v && v.ready) && complete(draft) };
+  // Ready once what's needed is there, whatever the model's own `ready` says (it often drafts it all and forgets to say).
+  return { reply, draft, ready: complete(draft) };
 }
 
 module.exports = { interview, systemPrompt, turnsOf, cleanDraft, SCHEMA, MAX_TURNS };
