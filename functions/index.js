@@ -39,6 +39,7 @@ const { defineSecret } = require('firebase-functions/params');
 const accessLib = require('./access');
 // Three-way merges for proposals (#177): shared with the pages (assets/js/merge.js).
 const merge = require('./merge');
+const guideAnchors = require('./guide-anchors');
 const { setGlobalOptions } = require('firebase-functions/v2');
 const logger = require('firebase-functions/logger');
 const admin = require('firebase-admin');
@@ -1355,7 +1356,7 @@ async function handleMeetingCommand(token, body){
   const u = await (await fetch('https://slack.com/api/users.info?' + new URLSearchParams({ user: body.user_id }), { headers: { Authorization: 'Bearer ' + token } })).json().catch(() => null);
   const typed = slackMeeting.parseText(body.text, Date.now(), (u && u.ok && u.user && u.user.tz) || slackMeeting.TZ);
   const tz = (u && u.ok && u.user && u.user.tz) || slackMeeting.TZ;
-  const opened = await slackFetch(token, 'views.open', slackMeeting.formView({ triggerId: body.trigger_id, title: typed.title, start: typed.start, minutes: typed.minutes, tz,
+  const opened = await slackFetch(token, 'views.open', slackMeeting.formView({ triggerId: body.trigger_id, title: slackMeeting.defaultTitle(typed.title, name), start: typed.start, minutes: typed.minutes, tz,
     channelId: body.channel_id, channelName: shown, names: who.names, others: who.others, now: Date.now() }));
   if (!opened.ok) { logger.warn('Opening the meeting form failed', { error: opened.error, details: opened.response_metadata }); return say('Couldn’t open the form — try again.'); }
   return {};
@@ -2285,6 +2286,11 @@ function mergedEdit(p, before, after){
 
 // The document with proposal q applied: pure, so it's testable on its own. → { title, description, parts } changed.
 function appliedProposal(doc, q, ctx){
+  const fields = appliedProposalFields(doc, q, ctx);
+  if (fields.parts && q.kind !== 'batch') fields.headingAnchors = guideAnchors.update(doc.parts || [], fields.parts, doc.headingAnchors);
+  return fields;
+}
+function appliedProposalFields(doc, q, ctx){
   // Several changes proposed together (a draft): each in turn, on the result of the last.
   if (q.kind === 'batch') {
     const changes = Array.isArray(q.changes) ? q.changes : [];
@@ -2405,6 +2411,9 @@ async function acceptedOps(collection, slug, snap, q, ctx){
     return [{ op: 'update', ref, data: stamp }, { op: 'delete', ref }];
   }
   let fields = appliedProposal(snap.exists ? snap.data() : {}, q, { pages: ctx.pages });
+  if (fields.headingAnchors && Buffer.byteLength(JSON.stringify(Object.assign({}, snap.exists ? snap.data() : {}, fields)), 'utf8') > 900000) {
+    throw new HttpsError('failed-precondition', 'This guide and its saved links are too large to save. Split it into smaller guides.');
+  }
   // A tool is checked as agents get it (name, inputs, code that compiles: functions/api-tools.js).
   if (collection === 'agentTools') {
     try { fields = agentApi.checkTool(slug, Object.assign({}, snap.exists ? snap.data() : {}, fields)); }

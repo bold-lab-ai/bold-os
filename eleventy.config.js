@@ -7,6 +7,7 @@ import path from 'node:path';
 export default function (eleventyConfig) {
   // Static files served as-is.
   eleventyConfig.addPassthroughCopy({ 'src/assets': 'assets' });
+  eleventyConfig.addPassthroughCopy({ 'functions/guide-anchors.js': 'assets/js/guide-anchors.js' });
   // The three-way merge proposals use: one file for the server and the pages (#177).
   eleventyConfig.addPassthroughCopy({ 'functions/merge.js': 'assets/js/merge.js' });
   // When the home letters are due, and which is current: the server's and the home page's (letter-due.js).

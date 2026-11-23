@@ -121,3 +121,11 @@ test('Suggest a time: the button, what it found, and picking one', () => {
   assert.strictEqual(M.minutesOf(vals), 30);
   assert.strictEqual(M.minutesOf({}), 60);
 });
+
+test('defaultTitle: what was typed, else the channel\'s name, never for a group DM', () => {
+  assert.strictEqual(M.defaultTitle('Reading group', 'proj-x'), 'Reading group');
+  assert.strictEqual(M.defaultTitle('', 'proj-x'), 'proj-x meeting');
+  assert.strictEqual(M.defaultTitle('  ', 'proj-x'), 'proj-x meeting');
+  assert.strictEqual(M.defaultTitle('', 'privategroup'), '');
+  assert.strictEqual(M.defaultTitle(undefined, ''), '');
+});
