@@ -426,3 +426,61 @@ test('a standalone review paper cannot stand in for the project sponsoring a ben
   const registration={...record(),project_id:card_id,project_board:board};
   await assert.rejects(h.call({action:'register',registration}),{code:'failed-precondition'});
 });
+
+test('AutoAstra binds request and recipient to the original submitter and hides private job data',async()=>{
+ const h=harness(), r=record();
+ const {problem_id,benchmark_id}=await h.call({action:'register',registration:r});
+ const admin='admin@example.invalid', alias='another@example.invalid';
+ const owner='owner@example.invalid', claim_key='a'.repeat(64);
+ const ask=(user,extra={})=>h.call({action:'request_baseline',benchmark_id,...extra},user);
+ const claim=(key=claim_key,user=admin)=>h.call({action:'claim_baseline',benchmark_id,claim_key:key},user);
+ const finish=summary=>h.call({action:'finish_baseline',benchmark_id,claim_key,summary},admin);
+ const summary={run_id:'f'.repeat(32),candidate_sha256:'3'.repeat(64),development_fitness:0,final_fitness:-0.42,metric:'Return',direction:'maximize'};
+ await assert.rejects(ask(owner),{code:'failed-precondition'});
+ await h.call({action:'approve',benchmark_id},admin);
+ await assert.rejects(claim(),{code:'failed-precondition'});
+ await assert.rejects(ask(alias),{code:'permission-denied'});
+ // The requesting PI and a forged client email must never receive the report.
+ assert.deepEqual(await ask(admin,{recipient:alias}),{status:'pending'});
+ assert.deepEqual(await ask(owner),{status:'pending'});
+ await assert.rejects(claim(claim_key,owner),{code:'permission-denied'});
+ await assert.rejects(claim('short'),{code:'invalid-argument'});
+ await assert.rejects(finish(summary),{code:'failed-precondition'});
+ const handoff=await claim();
+ assert.equal(handoff.recipient,owner);
+ assert.equal(handoff.release.id,benchmark_id);
+ assert.equal(handoff.release.evaluator.commit,r.evaluator.commit);
+ assert.deepEqual(await claim(),handoff);
+ await assert.rejects(claim('b'.repeat(64)),{code:'permission-denied'});
+ await assert.rejects(finish({...summary,final_fitness:NaN}),{code:'invalid-argument'});
+ await assert.rejects(finish({...summary,recipient:alias}),{code:'invalid-argument'});
+ assert.deepEqual(await finish(summary),{status:'completed'});
+ assert.deepEqual(await finish({...summary}),{status:'completed'});
+ await assert.rejects(finish({...summary,final_fitness:7}),{code:'already-exists'});
+ assert.deepEqual(await claim(),handoff);
+ h.data.get('problemBank/'+problem_id).archived=true;
+ assert.deepEqual(await finish(summary),{status:'completed'});
+ await assert.rejects(claim(),{code:'failed-precondition'});
+ const view=await h.call({action:'get',problem_id},alias);
+ assert.deepEqual(view.versions[0].baseline,{status:'completed',summary});
+ const viewJson=JSON.stringify(view);
+ assert.doesNotMatch(viewJson,/@example|claimHash|claimedBy|requestedBy|recipient/);
+ assert.ok(!viewJson.includes(claim_key));
+ const privateJob=h.data.get('autoastraBaselineJobs/'+benchmark_id);
+ assert.notEqual(privateJob.claimHash,claim_key);
+ assert.equal(privateJob.recipient,owner);
+});
+
+test('AutoAstra rechecks active problem and release approval before exposing the recipient',async()=>{
+ const h=harness(), {problem_id,benchmark_id}=await h.call({action:'register',registration:record()});
+ const admin='admin@example.invalid';
+ await h.call({action:'approve',benchmark_id},admin);
+ await h.call({action:'request_baseline',benchmark_id});
+ const claim=()=>h.call({action:'claim_baseline',benchmark_id,claim_key:'9'.repeat(64)},admin);
+ h.data.get('problemBank/'+problem_id).archived=true;
+ await assert.rejects(claim(),{code:'failed-precondition'});
+ h.data.get('problemBank/'+problem_id).archived=false;
+ h.data.get('benchmarks/'+benchmark_id).approval=null;
+ await assert.rejects(claim(),{code:'failed-precondition'});
+ assert.equal(h.data.get('autoastraBaselineJobs/'+benchmark_id).status,'pending');
+});

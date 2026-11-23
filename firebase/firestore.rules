@@ -483,6 +483,8 @@ service cloud.firestore {
       match /validations/{version} { allow read, write: if false; }
     }
     match /benchmarkSources/{id} { allow read, write: if false; }
+    // Contains private recipients and worker claim fingerprints. Only the callable handles these.
+    match /autoastraBaselineJobs/{id} { allow read, write: if false; }
     match /benchmarkReceipts/{id} { allow read, write: if false; }
     // The registry validates both endpoints and serializes hierarchy changes.
     match /problemObjectives/{id} { allow read, write: if false; }

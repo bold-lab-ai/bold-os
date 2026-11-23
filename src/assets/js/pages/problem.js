@@ -76,6 +76,24 @@
       '<button class="btn-text" data-edit="family" type="button"' + (why ? ' disabled title="' + esc(why) + '"' : '') + '>Edit family links</button></section>';
   }
 
+  function baselinePanel(release){
+    var baseline = release.baseline || {}, status = baseline.status;
+    if (status === 'completed') {
+      var s = baseline.summary;
+      return '<p><strong>AutoAstra baseline</strong> · ' + esc(s.metric) + ' (' + esc(s.direction) + ')' +
+        ' · Development ' + esc(String(s.development_fitness)) + ' · Final ' + esc(String(s.final_fitness)) + '</p>' +
+        '<details><summary>Baseline provenance</summary><dl class="detail-grid">' +
+        row('Run ID',esc(s.run_id)) + row('Candidate SHA-256',esc(s.candidate_sha256)) + '</dl></details>';
+    }
+    if (status === 'pending') return '<p role="status">AutoAstra baseline requested. Awaiting compute assignment.</p>';
+    if (status === 'claimed') return '<p role="status">An AutoAstra worker has claimed the request. Results are pending.</p>';
+    var reason = p.archived ? 'Restore this problem first.' : release.stage !== 'validated' || !release.approval ?
+      'Validate this release on the research task and approve it in BOLD.OS first.' : !p.can_edit ?
+      'Only the problem submitter, a PI or an admin can request a baseline.' : '';
+    return '<button type="button" class="btn" data-request-baseline="' + esc(release.id) + '"' +
+      (reason ? ' disabled title="' + esc(reason) + '"' : '') + '>Request AutoAstra baseline</button>';
+  }
+
   /* ---------- the tabs ---------- */
   var PANELS = {
     overview: function(){
@@ -115,7 +133,7 @@
           '<div class="talk-when">' + (a ? 'Approved by ' + esc(a.name) + ', ' + esc(when(a.at)) + (a.note ? ': ' + esc(a.note) : '') : 'Not approved in BOLD.OS') + '</div>' +
           '<dl class="detail-grid">' + contract.map(function(f){return row(f[0],f[0]==='Verifier repository' ? f[1] : text(f[1]));}).join('') + '</dl>' +
           '<div class="talk-actions">' + external(e.repository + '/tree/' + e.commit, 'Pinned code') + external(e.zip_url, 'ZIP') + external(urls.autokaggleLiteUrl + '?project=' + encodeURIComponent(r.source_id.slice(11)), 'Lite session') + external(urls.autokaggleLiteUrl + '?project=' + encodeURIComponent(r.source_id.slice(11)) + '&review=handoff', 'Manage handoff access') + approve + '</div>' +
-          '<details><summary class="detail-muted">Checks and evidence</summary><dl class="detail-grid">' +
+          baselinePanel(r) + '<details><summary class="detail-muted">Checks and evidence</summary><dl class="detail-grid">' +
           [['Commit', e.commit], ['Contract SHA-256', e.contract_sha256], ['Run command', details.run_command], ['Dependencies', details.dependencies]].concat(checks).map(function(x){ return row(x[0], text(x[1] == null ? '' : x[1])); }).join('') +
           '</dl></details></li>';
       }).join('') + '</ul>';
@@ -155,7 +173,8 @@
     var blocked = p.archived ? 'Restore this problem first.' : !BOLD.can('projects','edit') ? BOLD.cannotReason('projects','edit') : !links.length ? 'Link a project first.' : '';
     html += '<button type="button" class="btn-primary btn-box" id="addVerifier"' + (blocked ? ' disabled title="'+esc(blocked)+'"' : '')+'>' + (p.evaluator?'Add another verifier':'Add verifier') + '</button>';
     if(!links.length) html += ' Link a project in Overview or <a href="projects.html">open All projects</a>.';
-    html += '</li><li>Autoresearch baseline <small>Coming soon</small></li></ol>';
+    html += '</li><li>' + (releases.length ? '<button type="button" id="baselineReleases" class="btn-text">AutoAstra baseline</button>' :
+      'AutoAstra baseline <small>Add a validated verifier first</small>') + '</li></ol>';
     if (canRemind && !p.archived && !p.evaluator) html += '<p><button type="button" class="btn-text" id="toggleReminder">' +
       (p.reminders ? 'Turn off my weekly reminders' : 'Remind me to add a verifier') + '</button></p>';
     html += '<div class="tabs" role="tablist" aria-label="Problem">' + TABS.map(function(t){
@@ -227,6 +246,21 @@
   }
 
   function wire(){
+    if (el('baselineReleases')) el('baselineReleases').onclick = function(){setTab('releases',true);};
+    Array.prototype.forEach.call(document.querySelectorAll('[data-request-baseline]'), function(button){
+      button.addEventListener('click', async function(){
+        var epoch = userEpoch;
+        button.disabled = true;
+        try {
+          var ok = await BOLD.confirmAction({title:'Request an AutoAstra baseline?', always:true, go:'Request baseline',
+            effects:['Queue a run for this verifier version. A lab operator must assign compute.',
+              'When the run finishes, show the scores on this release and email the baseline report to the original problem submitter.']});
+          if (!ok || epoch !== userEpoch) return;
+          await call({action:'request_baseline',benchmark_id:button.getAttribute('data-request-baseline')});
+          if (epoch === userEpoch) await load();
+        } catch(e){ if (epoch === userEpoch) alertLine(e); } finally { button.disabled = false; }
+      });
+    });
     if (el('retryFamily')) el('retryFamily').onclick = loadFamily;
     Array.prototype.forEach.call(el('problemBody').querySelectorAll('.tab:not(:disabled)'), function(t, i, all){
       t.addEventListener('click', function(){ setTab(t.getAttribute('data-tab')); });
