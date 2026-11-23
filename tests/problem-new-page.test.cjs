@@ -14,7 +14,7 @@ const projects = [{id: 'world-models', board: '', title: 'World models'}, {id: n
 const gathered = {title: 'Divergence', significance: 'Wasted compute', difficulties: 'Shows up late', existing_solutions: 'Restarts',
   builds_benchmark: false, benchmark_known: true, collaborators: '', project_ids: ['world-models'], parent_ids: [moon], related_ids: []};
 
-async function setup(){
+async function setup(search = '', stored = {}){
   const {document, window} = parseHTML('<html><body>' + page.slice(page.indexOf('<div class="hero">')) + '</body></html>');
   const calls = [];
   // Not in linkedom: scrolling and focus are no-ops here.
@@ -32,11 +32,17 @@ async function setup(){
       : {me: {id: 'UME', name: 'Me'}, reply: 'All there: check it below.', ready: true, draft: gathered});
   };
   const visits = [];
+  // problemDrafts in memory, as Firestore would keep them for this person.
+  const drafts = new Map(Object.entries(stored));
+  let n = 0;
+  const doc = (id) => ({ id, set: async (v, o) => { drafts.set(id, o && o.merge ? {...(drafts.get(id) || {}), ...JSON.parse(JSON.stringify(v))} : v); }, delete: async () => { drafts.delete(id); } });
+  const firestore = () => ({ collection: () => ({ doc: (id) => doc(id || 'd' + (++n)),
+    where: (f, op, v) => ({ limit: () => ({ get: async () => ({ docs: [...drafts].filter(([, d]) => d[f] === v).map(([id, d]) => ({ id, data: () => d })) }) }) }) }) });
   let onUser;
-  const ctx = {document, window, console, crypto: {randomUUID: () => '11111111-2222-3333-4444-555555555555'}, setInterval, clearInterval, Event: window.Event,
-    location: {assign: (u) => visits.push(u)}, localStorage: {setItem(){}},
+  const ctx = {document, window, console, crypto: {randomUUID: () => '11111111-2222-3333-4444-555555555555'}, setInterval, clearInterval, setTimeout, clearTimeout, Event: window.Event,
+    location: {assign: (u) => visits.push(u), search, pathname: '/problem-new.html'}, history: {replaceState(){}}, localStorage: {setItem(){}},
     matchMedia: () => ({matches: true}),
-    firebase: {app: () => ({functions: () => ({httpsCallable: callable})})},
+    firebase: {app: () => ({functions: () => ({httpsCallable: callable})}), firestore},
     BoldMarkdown: {render: (t) => '<p>' + t + '</p>'},
     BOLD: {escapeHtml: String, can: () => true, cannotReason: () => '', onAccess: (f) => f(), onUser: (f) => { onUser = f; },
       confirmAction: async () => ({skip: {}})}};
@@ -47,11 +53,11 @@ async function setup(){
   ctx.BoldProblemProjects = ctx.BoldProblemProjects || window.BoldProblemProjects;
   ctx.BoldProblemFamily = ctx.BoldProblemFamily || window.BoldProblemFamily;
   vm.runInContext(read('assets/js/pages/problem-new.js'), ctx);
-  onUser({uid: 'u1'});
+  onUser({uid: 'u1', email: 'Me@Example.com'});
   await new Promise((r) => setTimeout(r, 0)); await new Promise((r) => setTimeout(r, 0));
   const $ = (id) => document.getElementById(id);
   const say = async (text) => { $('pbChatInput').value = text; $('pbChatForm').dispatchEvent(new window.Event('submit', {cancelable: true})); for (let i = 0; i < 4; i++) await new Promise((r) => setTimeout(r, 0)); };
-  return {document, window, $, say, calls, visits};
+  return {document, window, $, say, calls, visits, drafts};
 }
 
 test('ticks fill in as BOLD gathers them; Check and edit appears once it has all it needs', async () => {
@@ -89,4 +95,28 @@ test('edits are sent with the next message and are what is saved', async () => {
   assert.deepEqual(create.data.family, {parents: [moon], related: []});
   assert.equal(create.data.reminders, true);
   assert.equal(visits.length, 1);
+});
+
+test('the conversation is kept as their draft, picked up later, and gone once saved', async () => {
+  const a = await setup();
+  await a.say('Runs diverge');
+  const [[id, kept]] = [...a.drafts];
+  assert.equal(kept.email, 'me@example.com');
+  assert.equal(kept.turns.length, 3);
+  assert.equal(kept.title, 'Runs diverge');
+  assert.equal(a.$('pbDrafts').hidden, false);
+  await a.say('More');
+  assert.equal(a.drafts.get(id).done, true);
+  assert.equal(a.drafts.get(id).title, 'Divergence');
+  // Later: ?draft=<id> opens it where they left it, Check and edit included.
+  const b = await setup('?draft=' + id, {[id]: a.drafts.get(id)});
+  for (let i = 0; i < 4; i++) await new Promise((r) => setTimeout(r, 0));
+  assert.equal(b.document.querySelectorAll('#pbLog .ha-msg').length, 5);
+  assert.equal(b.$('pbReview').hidden, false);
+  assert.equal(b.$('pbTitle').value, 'Divergence');
+  b.$('pbReview').dispatchEvent(new b.window.Event('submit', {cancelable: true}));
+  for (let i = 0; i < 6; i++) await new Promise((r) => setTimeout(r, 0));
+  assert.equal(b.calls.find((c) => c.data.action === 'create').data.owner_id, 'UME');
+  assert.equal(b.drafts.has(id), false);
+  assert.equal(b.visits.length, 1);
 });

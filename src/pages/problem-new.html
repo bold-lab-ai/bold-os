@@ -21,7 +21,7 @@ nav: "problems.html"
         <textarea class="md-field no-tags" data-md-breaks="true" rows="2" maxlength="4000" id="pbChatInput" aria-label="Reply to BOLD" placeholder="Reply to BOLD…" disabled></textarea>
         <div class="ha-actions"><button type="button" class="btn-text" id="pbRestart" hidden>Start again</button><button type="submit" class="btn-box is-primary" id="pbSend" disabled>Send</button></div>
       </form></div>
-      <p class="ha-saved">BOLD-LLM logs conversations to improve it.</p>
+      <p class="ha-saved"><span id="pbSavedNote" hidden>Saved as a draft: only you see it. </span>BOLD-LLM logs conversations to improve it.</p>
       <!-- Once BOLD has what's needed: what it gathered, to check, edit and save. -->
       <form class="pb-form pb-review" id="pbReview" hidden novalidate>
         <h2 class="pb-review-head">Check and edit</h2>
@@ -42,6 +42,11 @@ nav: "problems.html"
       <ul class="pb-checks" id="pbChecks"></ul>
       <button type="button" class="btn-text" id="pbToReview" hidden>Check and edit &darr;</button>
       <p class="pb-status" role="status" id="pbStatus">Loading…</p>
+      <section class="pb-drafts" id="pbDrafts" aria-labelledby="pbDraftsTitle" hidden>
+        <h2 class="home-box-title" id="pbDraftsTitle">Your drafts</h2>
+        <ul class="pb-draft-list" id="pbDraftList"></ul>
+        <button type="button" class="btn-text" id="pbNew" hidden>+ New problem</button>
+      </section>
     </aside>
   </div>
 </main>

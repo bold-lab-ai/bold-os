@@ -106,6 +106,16 @@ a.btn{display:inline-block; text-decoration:none;}
 .pb-status{margin:10px 0 0; font-size:12px; color:var(--muted);}
 .pb-status:empty{display:none;}
 .pb-needs #pbToReview[hidden]{display:none;}
+.pb-drafts{margin-top:22px; padding-top:14px; border-top:1px solid var(--line);}
+.pb-drafts[hidden], .pb-drafts #pbNew[hidden]{display:none;}
+.pb-draft-list{list-style:none; margin:0 0 8px; padding:0; display:flex; flex-direction:column; gap:7px;}
+.pb-draft-list li{display:flex; align-items:baseline; gap:6px;}
+.pb-draft-list a{flex:1; min-width:0; color:var(--ink-soft); text-decoration:none; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;}
+.pb-draft-list a:hover{color:var(--link);}
+.pb-draft-list li.is-current a{color:var(--ink); font-weight:600;}
+.pb-draft-list small{color:var(--muted); font-size:11px; white-space:nowrap;}
+.pb-draft-list .btn-text{font-size:11px; color:var(--muted); padding:0;}
+.pb-draft-list .btn-text:hover{color:var(--danger-text);}
 .pb-review{margin-top:28px; padding-top:20px; border-top:1px solid var(--line);}
 .pb-review[hidden]{display:none;}
 .pb-review-head{margin:0 0 4px; font:600 15px var(--sans);}
