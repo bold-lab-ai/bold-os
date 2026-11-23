@@ -1351,7 +1351,7 @@ async function handleMeetingCommand(token, body){
   const u = await (await fetch('https://slack.com/api/users.info?' + new URLSearchParams({ user: body.user_id }), { headers: { Authorization: 'Bearer ' + token } })).json().catch(() => null);
   const typed = slackMeeting.parseText(body.text, Date.now(), (u && u.ok && u.user && u.user.tz) || slackMeeting.TZ);
   const tz = (u && u.ok && u.user && u.user.tz) || slackMeeting.TZ;
-  const opened = await slackFetch(token, 'views.open', slackMeeting.formView({ triggerId: body.trigger_id, title: typed.title || shown + ' meeting', start: typed.start, minutes: typed.minutes, tz,
+  const opened = await slackFetch(token, 'views.open', slackMeeting.formView({ triggerId: body.trigger_id, title: slackMeeting.defaultTitle(typed.title, name), start: typed.start, minutes: typed.minutes, tz,
     channelId: body.channel_id, channelName: shown, names: who.names, others: who.others, now: Date.now() }));
   if (!opened.ok) { logger.warn('Opening the meeting form failed', { error: opened.error, details: opened.response_metadata }); return say('Couldn’t open the form — try again.'); }
   return {};
