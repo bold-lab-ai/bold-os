@@ -50,8 +50,6 @@ function escapeHtml(s){ return BOLD.escapeHtml(s); }
   if (projectId) projectId = decodeURIComponent(projectId);
   var boardId = (location.hash.match(/[#&]board=([^&]+)/) || [])[1];
   if (boardId) boardId = decodeURIComponent(boardId);
-  var requestedVenue = new URLSearchParams(location.hash.slice(1)).get('submitVenue');
-  var venueRequestOpened = false;
   try { db = firebase.firestore(BOLD.getApp()); } catch (e){}
 
   // Back to the Projects tab and filters you came from (projects.js keeps them).
@@ -324,13 +322,6 @@ function escapeHtml(s){ return BOLD.escapeHtml(s); }
     if (tab === 'work' && wsLoaded && !hasBoard()) tab = 'overview';
     if (tab === 'work' && !wsLoaded) tab = 'overview', workWanted = true;
     if (workWanted && wsLoaded) { workWanted = false; if (hasBoard()) tab = 'work'; }
-    var pending = card.proposal && card.proposal.status !== 'approved';
-    if (requestedVenue && !venueRequestOpened && wsLoaded && canEdit() && !pending && !editing) {
-      venueRequestOpened = true;
-      tab = 'overview';
-      editing = 'submit';
-      loadVenues();
-    }
     // The title, edited in place (Edit beside it).
     var html = '<div class="detail-head">' + (editing === 'title'
       ? '<div class="detail-title-edit"><input type="text" id="fieldInput" maxlength="300" value="' + esc(card.title || '') + '" aria-label="Title">' + saveCancelHtml('fieldSave') + '</div>'
@@ -341,12 +332,12 @@ function escapeHtml(s){ return BOLD.escapeHtml(s); }
       html += '<span class="badge">' + OUTCOME_LABELS[card.outcome] + '</span>';
     }
     // Proposed (#226): nothing else until a PI or admin decides; the decision, or sending it again, below.
+    var pending = card.proposal && card.proposal.status !== 'approved';
     if (pending) {
       html += '<span class="badge">' + (card.proposal.status === 'declined' ? 'Declined' : 'Proposed') + '</span>';
       html += proposalActionsHtml();
       html += '<button class="btn-box danger" type="button" id="removeProject"' + (canRemove() ? '' : ' disabled title="' + NOT_SUBMITTER + '"') + '>Remove project</button>';
       html += '</div></div>' + proposalStatusHtml();
-      if (requestedVenue) html += '<p role="status">The project needs approval before you can file a paper at this venue.</p>';
       html += '<div class="tab-panel" id="projectPanel">' + PANELS.overview() + '<div class="proposal-talk" id="proposalTalk"></div></div>';
       el('projectBody').innerHTML = html; el('projectBody').hidden = false; el('detailMsg').hidden = true;
       document.title = card.title + ' | BOLD Lab';
@@ -375,7 +366,6 @@ function escapeHtml(s){ return BOLD.escapeHtml(s); }
       (done ? 'Reopen project' : 'Mark as completed') + '</button>';
     html += '<button class="btn-box danger" type="button" id="removeProject"' + (canRemove() ? '' : ' disabled title="' + NOT_SUBMITTER + '"') + '>Remove project</button>';
     html += '</div></div>';
-    if (requestedVenue && wsLoaded && !canEdit()) html += '<p role="status">Ask a project editor to file the paper at this venue.</p>';
     html += setupPanelHtml();
     html += '<div class="tabs" role="tablist" aria-label="Project">' + tabs().map(function(t){
       var on = t[0] === tab;
@@ -565,16 +555,11 @@ function escapeHtml(s){ return BOLD.escapeHtml(s); }
     }).join('') + '</ul>';
     if (editing === 'submit') {
       var taken = list.map(function(v){ return v.boardId; });
-      var options = venues ? venues.filter(function(v){ return taken.indexOf(v.id) < 0 && (!requestedVenue || v.id === requestedVenue); }) : null;
-      var noVenue = requestedVenue
-        ? (taken.indexOf(requestedVenue) >= 0 ? 'This project already has a paper at this venue.' : 'This venue is unavailable for submission.')
-        : 'No other venue on the board yet.';
+      var options = venues ? venues.filter(function(v){ return taken.indexOf(v.id) < 0; }) : null;
       html += !options ? '<span class="detail-muted">Loading venues\u2026</span>'
-        : !options.length ? '<span role="status" class="detail-muted">' + noVenue + '</span>'
+        : !options.length ? '<span class="detail-muted">No other venue on the board yet.</span>'
         : '<select id="submitVenue" aria-label="Venue">' + options.map(function(v){ return '<option value="' + esc(v.id) + '">' + esc(v.label) + '</option>'; }).join('') + '</select>' +
-          '<div class="detail-hint">The paper will use this project’s title, abstract, authors and links.</div>' +
-          '<div class="field"><label for="venueCompute">Compute estimate</label><input id="venueCompute" type="text" value="' + esc(card.computeEstimate || '') + '"></div>' +
-          '<div class="field"><label for="venueNote">Note for the reviewers (optional)</label><textarea id="venueNote"></textarea></div>';
+          '<div class="detail-hint">A new card there, registered by you, with this project\u2019s title, abstract, authors and links; its meeting, repository and people stay as they are.</div>';
       html += saveCancelHtml('submitSave');
     } else {
       // The Venues row's action, on its right with the others (detail-act).
@@ -584,13 +569,6 @@ function escapeHtml(s){ return BOLD.escapeHtml(s); }
   }
 
   var venues = null;   // the approved venues, loaded when submitting
-  function clearVenueRequest(){
-    if (!requestedVenue) return;
-    requestedVenue = null;
-    var params = new URLSearchParams(location.hash.slice(1));
-    params.delete('submitVenue');
-    history.replaceState(null, '', location.pathname + location.search + '#' + params.toString());
-  }
   function loadVenues(){
     if (venues) return;
     callWorkspace({ action: 'venues' }).then(function(r){
@@ -607,7 +585,7 @@ function escapeHtml(s){ return BOLD.escapeHtml(s); }
     if (!venue) return fail('Choose a venue.');
     var next = makeRegisteredCard({ name: me.displayName, email: me.email }, {
       title: card.title, abstractText: card.abstractText, keywords: card.keywords, slackChannel: card.slackChannel,
-      computeEstimate: el('venueCompute').value.trim(), note: el('venueNote').value.trim()
+      computeEstimate: card.computeEstimate
     });
     ['authors', 'authorEmails', 'overleafLink', 'arxivLink', 'pitchLink'].forEach(function(k){ if (card[k]) next[k] = card[k]; });
     el('submitSave').disabled = true;
@@ -1098,8 +1076,7 @@ function escapeHtml(s){ return BOLD.escapeHtml(s); }
       // An earlier venue's card: the project page is its latest one's.
       if (ws && ws.cardId && (ws.cardId !== projectId || (ws.boardId || null) !== (boardId || null))) {
         location.replace('project.html#id=' + encodeURIComponent(ws.cardId) + (ws.boardId ? '&board=' + encodeURIComponent(ws.boardId) : '') +
-          (tab !== 'overview' ? '&tab=' + tab : '') + (joinRequested ? '&join=1' : '') + (presWanted ? '&pres=' + presWanted : '') +
-          (requestedVenue ? '&submitVenue=' + encodeURIComponent(requestedVenue) : ''));
+          (tab !== 'overview' ? '&tab=' + tab : '') + (joinRequested ? '&join=1' : '') + (presWanted ? '&pres=' + presWanted : ''));
         location.reload();
         return;
       }
@@ -1148,7 +1125,7 @@ function escapeHtml(s){ return BOLD.escapeHtml(s); }
         if (!canEdit()) return;
         var what = btn.getAttribute('data-edit');
         if (what === 'authors' && authorsLocked()) return;
-        if (what === 'submit') { clearVenueRequest(); loadVenues(); }
+        if (what === 'submit') loadVenues();
         if (what !== 'authors') { editing = what; return render(); }
         loadPeople().then(function(){
           // Same rows as the board's Edit fields: a saved author with no match in the roster
@@ -1161,7 +1138,7 @@ function escapeHtml(s){ return BOLD.escapeHtml(s); }
       });
     });
     if (!editing) return;
-    el('editCancel').addEventListener('click', function(){ if (editing === 'submit') clearVenueRequest(); editing = false; render(); });
+    el('editCancel').addEventListener('click', function(){ editing = false; render(); });
     if (editing === 'authors') {
       renderAuthorRows('authorsWrap', authorRows, null, false);
       el('authorsAdd').addEventListener('click', function(){
@@ -1177,10 +1154,7 @@ function escapeHtml(s){ return BOLD.escapeHtml(s); }
       keywordField = wireKeywordField(card.keywords, failer(), function(){ errorEl.hidden = true; });
       el('keywordsSave').addEventListener('click', saveKeywords);
     } else if (editing === 'submit') {
-      if (el('submitSave')) {
-        el('submitSave').disabled = !el('submitVenue');
-        el('submitSave').addEventListener('click', submitToVenue);
-      }
+      if (el('submitSave')) el('submitSave').addEventListener('click', submitToVenue);
     } else if (editing.indexOf('talk:') === 0) {
       el('talkSave').addEventListener('click', saveTalk);
       BoldPresentationUpload.wire(document.querySelector('.talk-form .pu-line'), { input: el('talkSlides'),
@@ -1440,6 +1414,11 @@ function escapeHtml(s){ return BOLD.escapeHtml(s); }
         return show('This project isn\u2019t here \u2014 it may have been removed. Find it under Projects.');
       }
       var fresh = doc.data();
+      if (boardId && fresh.registrationKind === 'past_paper') {
+        cacheDrop(projectId);
+        location.replace('audit-board.html#board=' + encodeURIComponent(boardId) + '&card=' + encodeURIComponent(projectId));
+        return;
+      }
       // Readable means they may see it (the rules: Projects' View, or one of its people), whatever
       // the page's own level says (#148: someone invited to it).
       if (BOLD.allowPage) BOLD.allowPage();

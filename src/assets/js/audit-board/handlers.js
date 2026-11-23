@@ -393,6 +393,7 @@
         state.cards = cards;
         state.loadingCards = false;
         renderBoard();
+        openRegisteredPaper();
         resolve();
       }, function(err){
         logError('loadCurrentBoardCards', err);
@@ -463,10 +464,14 @@
       } catch (e){}
     }
 
+    BOLD.onAccess(function(){
+      if (state.view === 'venue') renderBoard();
+      if (document.getElementById('paperForm') && paperRegistrationReason()) closeModal();
+    });
     if (auth){
       BOLD.onUser(function(user){
         bootMark('auth resolved (' + (user ? 'signed in' : 'signed out') + ')');
-        if (document.getElementById('paperProjectForm') && (!user || !state.currentUser || state.currentUser.email !== user.email)) closeModal();
+        if (document.getElementById('paperForm') && (!user || !state.currentUser || state.currentUser.email !== user.email)) closeModal();
         state.currentUser = user ? { email: user.email, name: user.displayName } : null;
         updateNewVenueButtonState();
         loadInitialData();

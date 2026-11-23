@@ -18,6 +18,7 @@
 // the site's Slack-signed-in callable and, for agents, boldApi's acting tokens; each
 // registration is recorded as whoever's token sent it (docs/BENCHMARK_REGISTRY.md).
 const crypto = require('crypto');
+const {isPastPaper, registerPastPaper} = require('./past-paper');
 
 const sha = (value) => crypto.createHash('sha256').update(value).digest('hex');
 const hex = (value, n) => typeof value === 'string' && new RegExp('^[a-f0-9]{' + n + '}$').test(value);
@@ -139,7 +140,7 @@ module.exports = function({ db, onCall, callerEmail, isFullWrite, access, HttpsE
   }
   async function projectRecord(id, board){
     const p = await projectRef(id, board).get();
-    if (!p.exists) throw error('failed-precondition', 'The linked BOLD OS project does not exist.');
+    if (!p.exists || isPastPaper(p.data())) throw error('failed-precondition', 'The linked BOLD OS project does not exist.');
     return { id: p.id, title: p.data().title || p.id, board: boardId(board) };
   }
   // The research owner, chosen from the lab's people (the Slack roster) by Slack ID: the
@@ -159,7 +160,7 @@ module.exports = function({ db, onCall, callerEmail, isFullWrite, access, HttpsE
     const docs = await Promise.all(refs.map(ref => tx.get(ref)));
     const links = [];
     docs.forEach((doc, i) => {
-      if (!doc.exists) throw error('failed-precondition','A selected project no longer exists.');
+      if (!doc.exists || isPastPaper(doc.data())) throw error('failed-precondition','A selected project no longer exists.');
       const link = { id: doc.id, board: list[i].board || '', title: doc.data().title || doc.id, stable_id: doc.data().projectId || doc.id };
       if (!links.some(x => sameProject(x,link))) links.push(link);
     });
@@ -170,8 +171,20 @@ module.exports = function({ db, onCall, callerEmail, isFullWrite, access, HttpsE
     return (m.exists && m.data().name) || 'A PI or admin';
   }
 
+  async function activeProblemChoices(){
+    const snap = await db.collection('problemBank').select('title','archived').get();
+    const items = snap.docs.filter(doc => /^ak-[a-f0-9]{24}$/.test(doc.id) && !doc.data().archived && typeof doc.data().title === 'string' && doc.data().title)
+      .map(doc => ({id:doc.id,title:doc.data().title})).sort((a,b)=>a.title.localeCompare(b.title) || a.id.localeCompare(b.id));
+    return {items};
+  }
+
   async function run(request){
     const email = callerEmail(request), d = request.data || {}, action = d.action || 'list';
+    if (action === 'register_past_paper' || action === 'past_paper_problem_choices') {
+      if (!(await access.can(email,'ml-cycle','edit'))) await access.requireAccess(email,'projects','edit');
+      if (action === 'past_paper_problem_choices') return activeProblemChoices();
+      return registerPastPaper({db,error,fingerprint:value=>sha(canonical(value))},d,email,request.auth?.token?.name);
+    }
     const permission = ['open_choices','benchmark_catalogue'].includes(action) ? 'list' : ['list', 'get', 'projects', 'search', 'family'].includes(action) ? 'view' : 'change';
     await access.requireAccess(email, 'projects', permission);
     const full = await isFullWrite(email);
@@ -187,10 +200,7 @@ module.exports = function({ db, onCall, callerEmail, isFullWrite, access, HttpsE
     if (action === 'benchmark_catalogue') return require('./benchmark-catalogue').listBenchmarkReleases(db,d,error);
     if (action === 'projects') return { items: await projectChoices() };
 
-    if (action === 'open_choices') {
-      const snap = await db.collection('problemBank').select('title','archived').get();
-      return {items:snap.docs.filter(x => !x.data().archived).map(x => ({id:x.id,title:x.data().title})).sort((a,b)=>a.title.localeCompare(b.title))};
-    }
+    if (action === 'open_choices') return activeProblemChoices();
     if (action === 'search') {
       // For search.js and agents' search: problems not archived, and their releases.
       const [problems, releases] = await Promise.all([db.collection('problemBank').get(), db.collection('benchmarks').get()]);
@@ -287,7 +297,7 @@ module.exports = function({ db, onCall, callerEmail, isFullWrite, access, HttpsE
         const [p, b, r, project, streamDoc, legacy] = await Promise.all([tx.get(problem), tx.get(benchmark), tx.get(receipt),
           tx.get(projectRef(data.project_id, data.project_board)), tx.get(stream),
           pid !== sourceKey ? tx.get(db.collection('problemBank').doc(sourceKey)) : null]);
-        if (!project.exists) throw error('failed-precondition', 'The linked BOLD OS project does not exist.');
+        if (!project.exists || isPastPaper(project.data())) throw error('failed-precondition', 'The linked BOLD OS project does not exist.');
         const prior = p.exists ? p.data() : {};
         const linked = !!data.problem_id;
         if (linked && !p.exists) throw error('not-found', 'The open problem no longer exists.');
@@ -445,7 +455,7 @@ module.exports = function({ db, onCall, callerEmail, isFullWrite, access, HttpsE
       const ref = db.collection('problemBank').doc(d.problem_id);
       await db.runTransaction(async (tx) => {
         const [doc, linked] = await Promise.all([tx.get(ref), tx.get(projectRef(d.project_id, d.project_board))]);
-        if (!linked.exists) throw error('failed-precondition', 'The linked project no longer exists.');
+        if (!linked.exists || isPastPaper(linked.data())) throw error('failed-precondition', 'The linked project no longer exists.');
         if (!doc.exists) throw error('not-found', 'This problem is not registered.');
         if (doc.data().createdBy !== email && !full) throw error('permission-denied', 'Only its registering account or a PI/admin can edit this problem.');
         // The owner: chosen from the roster (owner_id), or else kept as it was.

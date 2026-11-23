@@ -42,7 +42,7 @@ async function req(path, method, token, body, mask) {
       if (!(await ref.get()).exists) { await ref.create(i===2 ? {category:'internal'} : {emails:[]}); seeded.push(ref); }
     }
     assert.equal(await req('projects?documentId='+dbid,'POST',auth,{...owned,proposal}),403,'a proposal requires the registry');
-    assert.equal(await req('boards/demo-venue/cards?documentId='+dbid,'POST',auth,core),403,'a standalone paper cannot bypass the project proposal');
+    assert.equal(await req('boards/demo-venue/cards?documentId='+dbid,'POST',auth,core),403,'a venue card must use the appropriate registration callable');
     assert.equal(await req('projectProposalReceipts?documentId='+dbid,'POST',auth,{by:member}),403,'receipts are private');
     await db.doc(project).set({...owned,proposal:{...proposal,status:'approved'}});
     await db.doc(card).set(owned);await db.doc(legacy).set(core);

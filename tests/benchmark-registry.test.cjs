@@ -4,7 +4,7 @@ function record(){return {schema:'bold.autokaggle.registration.v1',source_id:'au
  evaluator:{repository:'https://github.com/example/evaluator',commit:'a'.repeat(40),version:1,contract_sha256:'b'.repeat(64),zip_url:'https://github.com/example/evaluator/archive/'+'a'.repeat(40)+'.zip'},
  validation:{build:'passed',contract_coverage:'passed',code_review:'passed',synthetic:'passed',known_score:'passed',invalid_submission:'passed',clean_clone:'passed',research_data:'validated',research_evidence:{passed:true,mode:'research',commit:'a'.repeat(40),contract_sha256:'b'.repeat(64),reference_sha256:'c'.repeat(64),artifact_sha256:'d'.repeat(64),report_sha256:'e'.repeat(64),checked_by:'controlled-runtime:1234567890abcdef',checked_at:'2026-11-12T20:00:00Z',expected_fitness:1,observed_fitness:1,tolerance:1e-6,expected_basis:'Independent calculation on declared input.'}},
  human_approval:{commit:'a'.repeat(40),contract_sha256:'b'.repeat(64),research_report_sha256:'e'.repeat(64),approved_by:'f'.repeat(64),approved_at:'2026-11-12T20:01:00Z',note:'I reviewed the code and research evidence.'}};}
-function harness(){
+function harness(allowed = () => true){
  const data=new Map([['projects/diverging-runs',{title:'Diverging runs'}],['people/UDEFINER',{name:'Demo Researcher'}]]);
  const snap=p=>({id:p.split('/').pop(),exists:data.has(p),data:()=>structuredClone(data.get(p))});
  const doc=p=>({id:p.split('/').pop(),path:p,get:async()=>snap(p),collection:n=>col(p+'/'+n)});
@@ -13,7 +13,7 @@ function harness(){
  const db={collection:col,runTransaction:async fn=>{const writes=[];const result=await fn({get:async ref=>ref.path?snap(ref.path):ref.get(),set:(ref,x)=>writes.push(()=>data.set(ref.path,structuredClone(x))),delete:ref=>writes.push(()=>data.delete(ref.path)),update:(ref,x)=>writes.push(()=>data.set(ref.path,{...data.get(ref.path),...structuredClone(x)}))});writes.forEach(f=>f());return result;}};
  class ErrorWithCode extends Error{constructor(code,message){super(message);this.code=code;}}
  let denied=false;
- const registry=factory({db,onCall:(_,fn)=>fn,callerEmail:r=>{if(!r.auth?.slack)throw new ErrorWithCode('unauthenticated','Slack required');return r.auth.email;},isFullWrite:async e=>e==='admin@example.invalid',access:{requireAccess:async()=>{if(denied)throw new ErrorWithCode('permission-denied','Access denied');},can:async()=>true},HttpsError:ErrorWithCode});
+ const registry=factory({db,onCall:(_,fn)=>fn,callerEmail:r=>{if(!r.auth?.slack)throw new ErrorWithCode('unauthenticated','Slack required');return r.auth.email;},isFullWrite:async e=>e==='admin@example.invalid',access:{requireAccess:async(email,page,op)=>{if(denied || !allowed(page,op))throw new ErrorWithCode('permission-denied','Access denied');},can:async(email,page,op)=>!denied && allowed(page,op)},HttpsError:ErrorWithCode});
  const call=(value,email='owner@example.invalid')=>registry.run({auth:{slack:true,email},data:value});
  return {call,data,db,registry,deny:()=>{denied=true;}};
 }
@@ -340,4 +340,63 @@ test('missing or archived source, forged summaries, duplicate release IDs and ar
  }
  h.data.delete('benchmarks/'+ids[0]);await assert.rejects(h.call(req),{code:'failed-precondition'});
  assert.equal(h.data.has('projects/'+req.project_id),false);assert.equal(h.data.has('projectProposalReceipts/'+req.project_id),false);
+});
+
+const paperProblem = 'ak-'+'3'.repeat(24);
+function paperRequest(){
+  return {action:'register_past_paper', board:'venue-1', problem_id:paperProblem,
+    request_id:require('node:crypto').randomUUID(), title:'  Forecasting tidal power ', compute_estimate:'6 CPU hours', note:'Archived experiment.'};
+}
+function paperFixture(h) {
+  h.data.set('boards/venue-1',{status:'approved'});
+  h.data.set('problemBank/'+paperProblem,{title:'Predict tidal generation',stage:'validated',createdBy:'private@example.invalid',notes:'private'});
+}
+test('Internal Review and Projects editors can register existing work without a project or a verifier',async()=>{
+  for (const area of ['ml-cycle','projects']){
+    const h=harness((page,op)=>page===area && op==='edit');paperFixture(h);
+    h.data.set('problemBank/ak-'+'4'.repeat(24),{title:'Old question',archived:true});
+    h.data.set('problemBank/bad-id',{title:'Malformed import'});
+    const expected={items:[{id:paperProblem,title:'Predict tidal generation'}]};
+    assert.deepEqual(await h.call({action:'past_paper_problem_choices'}),expected);
+    await assert.rejects(h.call({action:'get',problem_id:paperProblem}),{code:'permission-denied'});
+    const before=[...h.data.keys()], req=paperRequest(), result=await h.call(req), key='boards/venue-1/cards/'+result.card_id;
+    assert.deepEqual(result,{board:'venue-1',card_id:result.card_id});
+    assert.match(result.card_id,/^paper-[a-f0-9]{24}$/);
+    const paper = h.data.get(key);
+    assert.equal(paper.title,'Forecasting tidal power');assert.equal(paper.openProblemId,paperProblem);
+    assert.equal(paper.openProblemTitle,'Predict tidal generation');assert.equal(paper.registrationKind,'past_paper');
+    assert.equal(paper.submittedBy.email,'owner@example.invalid');assert.equal(paper.status,'register');
+    assert.equal(paper.history[0].note,req.note);assert.equal(paper.computeEstimate,req.compute_estimate);
+    for(const field of ['projectId','proposal','verificationPlan','setUpRepo']) assert.equal(paper[field],undefined);
+    assert.deepEqual([...h.data.keys()].filter(k=>!before.includes(k)).sort(),[key,'paperRegistrationReceipts/'+result.card_id]);
+    assert.deepEqual(await h.call(req),result);
+    for(const changes of [{title:'A different paper'},{board:'another-venue'}])
+      await assert.rejects(h.call({...req,...changes}),{code:'already-exists'});
+    h.data.delete(key);await assert.rejects(h.call(req),{code:'not-found'});
+  }
+});
+test('paper registration checks scientific problem and venue and rejects forged project or review fields',async()=>{
+  const h=harness(), req=paperRequest();paperFixture(h);
+  for (const change of [{title:' '},{request_id:'1'},{board:'venue/1'},{problem_id:'bad'},{note:'x'.repeat(4001)},
+    {openProblemTitle:'Injected'},{submittedBy:{email:'other@example.invalid'}},{proposal:{status:'approved'}},
+    {verificationPlan:{mode:'deferred'}},{projectId:'project'},{registrationKind:'something_else'},{status:'conference'}])
+    await assert.rejects(h.call({...req,...change}),{code:'invalid-argument'});
+  for(const patch of [{status:'pending'},{archived:true},{status:'rejected'}]){
+    h.data.set('boards/venue-1',patch);await assert.rejects(h.call(req),{code:'failed-precondition'});
+  }
+  h.data.delete('boards/venue-1');await assert.rejects(h.call(req),{code:'failed-precondition'});
+  h.data.set('boards/venue-1',{});h.data.get('problemBank/'+paperProblem).archived=true;
+  await assert.rejects(h.call(req),{code:'failed-precondition'});
+  h.data.delete('problemBank/'+paperProblem);await assert.rejects(h.call(req),{code:'failed-precondition'});
+  assert.equal([...h.data.keys()].some(k=>k.startsWith('paperRegistrationReceipts/')),false);
+  const denied=harness((page,op)=>op==='view');
+  await assert.rejects(denied.call({action:'past_paper_problem_choices'}),{code:'permission-denied'});
+  await assert.rejects(denied.call(req),{code:'permission-denied'});
+  await assert.rejects(h.registry.run({data:req}),{code:'unauthenticated'});
+});
+test('a standalone review paper cannot stand in for the project sponsoring a benchmark',async()=>{
+  const h=harness();paperFixture(h);
+  const {card_id,board}=await h.call(paperRequest());
+  const registration={...record(),project_id:card_id,project_board:board};
+  await assert.rejects(h.call({action:'register',registration}),{code:'failed-precondition'});
 });

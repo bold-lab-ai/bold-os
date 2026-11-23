@@ -423,12 +423,12 @@ service cloud.firestore {
       // ask a PI/admin to approve or delete it.
       allow update, delete: if hasFullWrite();
 
-      // A paper on the board is also a project (project.html#board=…).
+      // A venue card records a project submission or past work registered for internal review.
       match /cards/{cardId} {
         allow read: if may('ml-cycle', 'view') || seesProject(resource.data.get('projectId', cardId));
         // Only the server (projectWorkspace 'submit') files a card under another
         // card's project (`projectId`); nobody changes it afterwards.
-        allow create: if false; // projectWorkspace submits a registered project to its venue.
+        allow create: if false; // Only register_past_paper and projectWorkspace submit venue cards.
         // A card can be changed only by whoever created it, a reviewer
         // assigned to it, or a PI/admin — same base condition as before.
         //
@@ -452,7 +452,9 @@ service cloud.firestore {
           request.resource.data.reviewers == resource.data.reviewers ||
           email() == resource.data.submittedBy.email ||
           hasFullWrite()
-        ) && request.resource.data.get('verificationPlan',null) == resource.data.get('verificationPlan',null) && request.resource.data.get('openProblemId','') == resource.data.get('openProblemId','') && request.resource.data.get('projectId', '') == resource.data.get('projectId', '');
+        ) && !request.resource.data.diff(resource.data).affectedKeys().hasAny(
+          ['verificationPlan', 'openProblemId', 'openProblemTitle', 'projectId', 'registrationKind']
+        ) && (resource.data.get('registrationKind','') != 'past_paper' || !request.resource.data.keys().hasAny(['proposal']));
         allow delete: if (may('ml-cycle', 'edit') || may('projects', 'edit')) && (
           email() == resource.data.submittedBy.email ||
           email() == resource.data.reviewers.junior ||
@@ -488,6 +490,7 @@ service cloud.firestore {
     match /problemFamilyState/{id} { allow read, write: if false; }
 
     match /projectProposalReceipts/{id} { allow read, write: if false; }
+    match /paperRegistrationReceipts/{id} { allow read, write: if false; }
 
     match /projects/{projectId} {
       allow read: if seesProject(resource.data.get('projectId', projectId));
@@ -497,7 +500,7 @@ service cloud.firestore {
         email() == resource.data.submittedBy.email ||
         email() in resource.data.get('authorEmails', []) ||
         hasFullWrite()
-      ) && request.resource.data.get('verificationPlan',null) == resource.data.get('verificationPlan',null) && request.resource.data.get('openProblemId','') == resource.data.get('openProblemId','') && request.resource.data.get('projectId', '') == resource.data.get('projectId', '') &&
+      ) && request.resource.data.get('registrationKind','') == resource.data.get('registrationKind','') && request.resource.data.get('verificationPlan',null) == resource.data.get('verificationPlan',null) && request.resource.data.get('openProblemId','') == resource.data.get('openProblemId','') && request.resource.data.get('projectId', '') == resource.data.get('projectId', '') &&
         (hasFullWrite() || request.resource.data.get('proposal', null) == resource.data.get('proposal', null));
       allow delete: if may('projects', 'edit') && (
         email() == resource.data.submittedBy.email || hasFullWrite()

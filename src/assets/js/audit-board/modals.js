@@ -88,89 +88,171 @@
     return false;
   }
 
-  // The old venue form saved unsent notes per user and venue. Keep those notes readable.
-  function previousPaperDraft(boardId, email){
-    try { return JSON.parse(localStorage.getItem('airb-draft-register:' + boardId + ':' + email)); }
-    catch (e){ return null; }
+  function paperRegistrationReason(){
+    if (!state.currentUser) return 'Sign in with Slack to register a paper.';
+    if (BOLD.can('ml-cycle', 'edit') || BOLD.can('projects', 'edit')) return '';
+    return 'Registering a paper requires edit access to Internal Review or Projects.';
   }
 
-  function submissionProjects(groups, cards, venue, email, fullWrite){
-    var alreadyHere = new Set(cards.map(function(card){ return card.projectId || card.id; }));
-    var me = email.toLowerCase();
-    return ['planned','ongoing','submission','completed'].reduce(function(rows, group){
-      return rows.concat(groups[group] || []);
-    }, []).filter(function(p){
-      if (p.titleOnly || p.boardId === venue || alreadyHere.has(p.pid)) return false;
-      if (p.proposal && p.proposal.status !== 'approved') return false;
-      return fullWrite || String(p.ownerEmail || '').toLowerCase() === me ||
-        (p.authors || []).some(function(a){ return String(a.email || '').toLowerCase() === me; });
-    }).sort(function(a,b){ return a.title.localeCompare(b.title) || a.pid.localeCompare(b.pid); });
+  function paperDraftKey(board, email){
+    return 'airb-draft-register:' + board + ':' + email;
   }
 
-  function submissionProjectUrl(project, venue){
-    var params = new URLSearchParams({id:project.cardId || project.projectId});
-    if (project.boardId) params.set('board', project.boardId);
-    params.set('submitVenue', venue);
-    return 'project.html#' + params.toString();
+  function readPaperDraft(key){
+    try { return JSON.parse(localStorage.getItem(key)) || {}; }
+    catch (e){ return {}; }
+  }
+
+  function savePaperDraft(key, draft){
+    try {
+      if ([draft.title, draft.computeEstimate, draft.note, draft.problemId].some(function(value){ return value.trim(); })) {
+        localStorage.setItem(key, JSON.stringify(draft));
+      } else {
+        localStorage.removeItem(key);
+      }
+    } catch (e){ /* The form still works if browser storage is unavailable. */ }
+  }
+
+  var pendingPaperCard = null;
+
+  function openRegisteredPaper(){
+    if (!pendingPaperCard) return;
+    var target = pendingPaperCard;
+    if (state.currentBoardId !== target.board || state.view !== 'venue' || !state.currentUser || state.currentUser.email !== target.email){
+      pendingPaperCard = null;
+      return;
+    }
+    if (state.cards.some(function(card){ return card.id === target.id; })){
+      pendingPaperCard = null;
+      openCard(target.id);
+    }
   }
 
   function openModal(){
-    if (!requireSignedIn()) return;
+    var reason = paperRegistrationReason();
+    if (reason) { showToast(reason, 'error'); return; }
     var current = getCurrentBoard();
     if (!current || current.status === 'pending') { showToast('Choose an approved venue first.', 'error'); return; }
     var email = state.currentUser.email;
-    var draft = previousPaperDraft(current.id, email);
+    var key = paperDraftKey(current.id, email);
+    var draft = readPaperDraft(key);
+    var problemId = draft.problemId || '';
+    var requestId = draft.requestId || crypto.randomUUID();
+    var registry = firebase.app().functions('europe-west2').httpsCallable('benchmarkRegistry');
+    var busy = false;
+    var canDefine = BOLD.can('projects', 'view') && BOLD.can('projects', 'edit');
     els.modalRegion.innerHTML =
       '<div class="modal-overlay" id="modalOverlay"><div class="modal" role="dialog" aria-modal="true" aria-labelledby="modalTitle">' +
-        '<h2 id="modalTitle">Register a paper for ' + escapeHtml(current.label || current.id) + '</h2>' +
-        '<form id="paperProjectForm"><div class="field"><label for="paperProject">Project</label>' +
-          '<select id="paperProject" required disabled><option value="">Choose a project</option></select></div>' +
-          '<p id="paperProjectStatus" role="status">Loading projects…</p>' +
-          '<button class="btn-text" type="button" id="retryPaperProjects" hidden>Try again</button>' +
-          '<p><a id="proposePaperProject" href="projects-register.html">Propose a new project</a></p>' +
-          (draft ? '<details><summary>Your previous paper draft</summary><dl></dl></details>' : '') +
-          '<div class="modal-actions"><button class="btn" type="button" id="cancelModal">Cancel</button>' +
-          '<button class="btn btn-primary" type="submit" id="continuePaper" disabled>Continue to project</button></div></form></div></div>';
-    var form = document.getElementById('paperProjectForm'), select = document.getElementById('paperProject');
-    var submit = document.getElementById('continuePaper'), status = document.getElementById('paperProjectStatus');
-    var retry = document.getElementById('retryPaperProjects'), cancel = document.getElementById('cancelModal');
-    var propose = document.getElementById('proposePaperProject');
-    if (!BOLD.can('projects','edit')) {
-      propose.removeAttribute('href'); propose.setAttribute('aria-disabled','true'); propose.title = BOLD.cannotReason('projects','edit');
+      '<h2 id="modalTitle">Register paper for review</h2>' +
+      '<form id="paperForm"><p>Registering as ' + escapeHtml(state.currentUser.name || email) + ' for ' + escapeHtml(current.label || current.id) + '.</p>' +
+      (draft.savedAt ? '<p id="draftNotice">Restored your unsent draft. <button class="btn-text" type="button" id="discardDraft">Discard</button></p>' : '') +
+      '<div class="field"><label for="pTitle">Paper title</label><input id="pTitle" type="text" maxlength="300" required></div>' +
+      '<div class="field"><label for="pProblem">Open problem</label><select id="pProblem" required disabled aria-describedby="paperProblemStatus">' +
+        '<option value="">Choose an open problem</option></select>' +
+        '<span id="paperProblemStatus" role="status">Loading open problems…</span> ' +
+        '<button id="retryPaperProblems" class="btn-text" type="button" hidden>Refresh list</button>' +
+        (canDefine ? '<div>Can’t find the appropriate problem? Define one <a href="problems.html" target="_blank" rel="noopener" aria-label="here, in the Problem Bank (opens in a new tab)">here</a>.</div>' : '<div>Ask a collaborator to add any missing problem to the Problem Bank.</div>') + '</div>' +
+      '<div class="field"><label for="pCompute">Compute estimate</label><input id="pCompute" type="text" maxlength="500" placeholder="e.g. 8 A100-hours"></div>' +
+      '<div class="field"><label for="pNote">Note for the reviewers (optional)</label><textarea id="pNote" maxlength="4000"></textarea></div>' +
+      '<div class="field-error" id="paperFormError" role="alert" hidden></div>' +
+      '<div class="modal-actions"><button class="btn" type="button" id="cancelModal">Cancel</button>' +
+        '<button class="btn btn-primary" type="submit" id="submitCardBtn" disabled>Register paper</button></div></form></div></div>';
+    var form = document.getElementById('paperForm');
+    var title = form.elements.pTitle, select = form.elements.pProblem, compute = form.elements.pCompute, note = form.elements.pNote;
+    var submit = form.elements.submitCardBtn, cancel = form.elements.cancelModal, refresh = form.elements.retryPaperProblems;
+    var error = document.getElementById('paperFormError'), status = document.getElementById('paperProblemStatus');
+    title.value = draft.title || '';
+    compute.value = draft.computeEstimate || '';
+    note.value = draft.note || '';
+
+    function visible(){
+      return form.isConnected && state.currentUser && state.currentUser.email === email && state.currentBoardId === current.id;
     }
-    if (draft) {
-      var list = form.querySelector('dl');
-      [['Title', draft.title], ['Compute estimate',draft.computeEstimate], ['Reviewer note',draft.note]].forEach(function(pair){
-        if (!pair[1]) return;
-        var term = document.createElement('dt'), value = document.createElement('dd');
-        term.textContent = pair[0]; value.textContent = pair[1]; list.append(term,value);
-      });
+    function remember(){
+      savePaperDraft(key, {title:title.value, computeEstimate:compute.value, note:note.value, problemId:problemId, requestId:requestId, savedAt:Date.now()});
     }
-    function visible(){return form.isConnected && state.currentUser && state.currentUser.email === email && state.currentBoardId === current.id;}
-    async function load(){
-      retry.hidden = true; status.textContent = 'Loading projects…';
+    function updateSubmit(){
+      submit.disabled = busy || !title.value.trim() || select.disabled || !select.value;
+    }
+    async function loadProblems(){
+      select.disabled = true;
+      refresh.hidden = true;
+      status.textContent = 'Loading open problems…';
+      updateSubmit();
       try {
-        var result = await firebase.app().functions('europe-west2').httpsCallable('getAllProjects')();
+        var result = await registry({action:'past_paper_problem_choices'});
         if (!visible()) return;
-        var choices = submissionProjects(result.data, state.cards, current.id, email, BOLD.isFullWrite());
-        choices.forEach(function(project){ var opt = document.createElement('option');
-          opt.value = submissionProjectUrl(project,current.id); opt.textContent = project.title; select.append(opt);
-        });
-        select.disabled = !choices.length;
-        status.textContent = choices.length ? 'Choose a project you can edit, then confirm the submission on its page.' : 'You have no eligible projects to submit to this venue.';
-        if (choices.length && document.activeElement === cancel) select.focus();
+        var items = result.data.items;
+        select.length = 1;
+        items.forEach(function(problem){ select.add(new Option(problem.title, problem.id)); });
+        select.value = problemId;
+        select.disabled = !items.length;
+        if (!items.length) status.textContent = 'There are no active open problems. Refresh this list after a problem is added.';
+        else if (problemId && !select.value) status.textContent = 'The saved problem is no longer available. Choose another open problem.';
+        else status.textContent = '';
       } catch (e){
-        if (visible()) { retry.hidden = false; status.textContent = 'Could not load projects.'; }
+        if (visible()) status.textContent = 'Could not load the open problems. Refresh the list to try again.';
+      } finally {
+        if (visible()) { refresh.hidden = false; updateSubmit(); }
       }
     }
-    retry.addEventListener('click',load);
-    select.addEventListener('change',function(){submit.disabled = !select.value;});
-    form.addEventListener('submit',function(event){ event.preventDefault(); if (visible() && select.value) location.href = select.value; });
-    function dismiss(){closeModal(); var trigger=document.getElementById('submitPaperBtn'); if (trigger) trigger.focus();}
-    cancel.addEventListener('click',dismiss);
-    document.getElementById('modalOverlay').addEventListener('click',function(event){if (event.target.id==='modalOverlay') dismiss();});
-    form.addEventListener('keydown',function(event){if (event.key === 'Escape') dismiss();});
-    cancel.focus(); load();
+    form.addEventListener('input', function(){
+      error.hidden = true;
+      remember();
+      updateSubmit();
+    });
+    select.addEventListener('change', function(){ problemId = select.value; remember(); updateSubmit(); });
+    refresh.addEventListener('click', loadProblems);
+    if (form.elements.discardDraft) form.elements.discardDraft.addEventListener('click', function(){
+      try { localStorage.removeItem(key); } catch (e){}
+      openModal();
+    });
+    function dismiss(){
+      if (busy) return;
+      closeModal();
+      var trigger = document.getElementById('submitPaperBtn');
+      if (trigger) trigger.focus();
+    }
+    cancel.addEventListener('click', dismiss);
+    document.getElementById('modalOverlay').addEventListener('click', function(event){ if (event.target.id === 'modalOverlay') dismiss(); });
+    form.addEventListener('keydown', function(event){ if (event.key === 'Escape') dismiss(); });
+    form.addEventListener('submit', async function(event){
+      event.preventDefault();
+      if (!visible() || submit.disabled) return;
+      busy = true;
+      remember();
+      var payload = {action:'register_past_paper', request_id:requestId, board:current.id, problem_id:select.value,
+        title:title.value.trim(), compute_estimate:compute.value.trim(), note:note.value.trim()};
+      var controls = Array.from(form.elements).filter(function(control){ return !control.disabled; });
+      controls.forEach(function(control){ control.disabled = true; });
+      error.hidden = true;
+      submit.textContent = 'Registering…';
+      try {
+        var result = (await registry(payload)).data;
+        if (result.board !== current.id || !result.card_id) throw new Error('Could not confirm registration. Retry to check this paper.');
+        if (readPaperDraft(key).requestId === requestId) {
+          try { localStorage.removeItem(key); } catch (e){}
+        }
+        if (!visible()) return;
+        closeModal();
+        pendingPaperCard = {board:result.board, id:result.card_id, email:email};
+        openRegisteredPaper();
+        showToast('Registered for review.', 'ok');
+      } catch (e){
+        if (!visible()) return;
+        busy = false;
+        controls.forEach(function(control){ control.disabled = false; });
+        submit.textContent = 'Register paper';
+        error.hidden = false;
+        error.textContent = e.code === 'functions/already-exists'
+          ? 'This draft has already been registered. Check the venue board. To register another paper, reopen this form and discard the saved draft.'
+          : e.message || 'Could not register this paper. Try again.';
+        if (e.code === 'functions/failed-precondition' || e.code === 'functions/not-found') loadProblems();
+        else updateSubmit();
+      }
+    });
+    title.focus();
+    loadProblems();
   }
 
   function closeModal(){ els.modalRegion.innerHTML = ''; }

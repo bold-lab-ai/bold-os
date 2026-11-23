@@ -720,7 +720,10 @@
     { label: 'Change your group', href: 'group-request.html', can: function(){ return BOLD.myGroup() === 'exec' ? 'You’re in BOLD-exec, the top group' : ''; } },
     { label: 'Ask for a letter', href: 'letters.html#ask', can: may('service-desk', 'edit') },
     { label: 'Offer an introduction', href: 'introductions.html#offer', can: may('service-desk', 'edit') },
-    { label: 'A paper for internal review', href: 'audit-board.html', can: may('ml-cycle', 'edit') },
+    { label: 'A paper for internal review', href: 'audit-board.html', can: function(){
+      if (!BOLD.can('ml-cycle', 'view')) return BOLD.cannotReason('ml-cycle', 'view');
+      return BOLD.can('ml-cycle', 'edit') || BOLD.can('projects', 'edit') ? '' : 'Requires editing access to Internal Review or Projects';
+    } },
   ];
   var ICON_PLUS = '<svg viewBox="0 0 16 16" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path d="M8 3v10M3 8h10"/></svg>';
   var ICON_DOWN = '<svg viewBox="0 0 10 10" width="9" height="9" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path d="M2 3.5 5 6.5 8 3.5"/></svg>';

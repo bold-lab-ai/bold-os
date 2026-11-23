@@ -21,6 +21,7 @@
 // (prefix), tool, args, at, expireAt } (expireAt: for a Firestore TTL policy, 90 days).
 const crypto = require('crypto');
 const keycloak = require('./keycloak');
+const { isPastPaper } = require('./past-paper');
 const { seesEvent, rank: groupRank } = require('./access');
 // Search ranking, shared with the site: copied here at deploy (firebase.json's predeploy),
 // else the site's copy (run as a script: the repo's root package is an ES module).
@@ -399,7 +400,7 @@ module.exports = function(deps){
     if (!/^[A-Za-z0-9_-]{1,80}$/.test(String(id || ''))) throw httpError(400, 'Give a project id, from list_projects.');
     const [cards, unassigned] = await Promise.all([lab.cards(), lab.unassigned()]);
     const hit = cards.find((c) => c.id === id) || unassigned.map((u) => ({ boardId: null, id: u.id, data: u.data })).find((c) => c.id === id);
-    if (!hit) throw httpError(404, 'No project with that id.');
+    if (!hit || isPastPaper(hit.data)) throw httpError(404, 'No project with that id.');
     return hit;
   }
 
@@ -670,7 +671,7 @@ module.exports = function(deps){
     // Its cards: the one asked for, and every card of the same project.
     const all = cards.filter((c) => labels[c.boardId]).concat(unassigned.map((u) => ({ boardId: null, id: u.id, data: u.data })));
     const hit = all.find((c) => c.id === id);
-    if (!hit) throw httpError(404, 'No project with that id.');
+    if (!hit || isPastPaper(hit.data)) throw httpError(404, 'No project with that id.');
     const pid = hit.data.projectId || hit.id;
     const mine = all.filter((c) => (c.data.projectId || c.id) === pid).sort((x, y) => (x.data.createdAt || 0) - (y.data.createdAt || 0));
     const card = mine[mine.length - 1].data, w = workspaces.find((x) => x._id === pid) || {};

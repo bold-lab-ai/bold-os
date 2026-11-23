@@ -533,6 +533,13 @@
     if (!atAbstract) html += '<div class="detail-details-head"><button class="btn-text" type="button" data-edit="' + escapeHtml(card.id) + '"' + authorOnly + '>Edit fields</button></div>';
 
     html += '<dl class="detail-grid">';
+    if (card.openProblemId) {
+      var problemTitle = escapeHtml(card.openProblemTitle || 'View in Problem Bank');
+      var problemLink = BOLD.can('projects', 'view')
+        ? '<a href="problem.html?problem=' + encodeURIComponent(card.openProblemId) + '">' + problemTitle + '</a>'
+        : '<span title="' + escapeHtml(BOLD.cannotReason('projects', 'view')) + '">' + problemTitle + '</span>';
+      html += '<dt>Open problem</dt><dd>' + problemLink + '</dd>';
+    }
     if (card.authors && card.authors.length) html += '<dt>Authors</dt><dd>' + card.authors.map(function(a){ return escapeHtml(a.name || a.email || '?'); }).join(', ') + '</dd>';
     // Junior / senior reviewer (moved up from the For-reviewers tab,
     // 2026-09-18+21, per Eduardo) — who's assigned is a fact about the

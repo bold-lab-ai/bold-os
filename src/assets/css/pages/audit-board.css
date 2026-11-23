@@ -552,6 +552,8 @@ select.rv-input:invalid{border-color:var(--warn-line); background:color-mix(in s
 .field{margin-bottom:16px;}
 .field label{display:block; font-size:13px; color:var(--muted); margin-bottom:5px;}
 .field input, .field textarea{width:100%;}
+#paperForm select{display:block; width:100%; min-width:0;}
+body:has(#paperForm) #testBar{display:none;}
 .field textarea{min-height:64px; resize:vertical; font-family:inherit;}
 .modal-actions{display:flex; justify-content:flex-end; gap:10px; margin-top:22px;}
 .field-error{

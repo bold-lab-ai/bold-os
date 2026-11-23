@@ -45,6 +45,7 @@ const admin = require('firebase-admin');
 const crypto = require('crypto');
 const { createPhotoService } = require('./profile-photos');
 const { createServiceDesk } = require('./service-desk');
+const { isPastPaper } = require('./past-paper');
 
 admin.initializeApp();
 const db = admin.firestore();
@@ -1102,7 +1103,7 @@ async function slashBoard(channelName){
 // Whether they may add a board to the project (as on its page, and its people too).
 async function mayAddBoard(email, board){
   if ((board.ws.members || []).map((e) => String(e).toLowerCase()).indexOf(email) >= 0) return true;
-  const card = await cardRefFor(board.ws.cardId || board.id, board.ws.boardId || null).get();
+  const card = await readProjectCard(board.ws.cardId || board.id, board.ws.boardId || null);
   return card.exists ? !!(await canEditCard(email, card.data())) : !!(await isFullWrite(email));
 }
 // A board's milestones ([{ id, name, start, end }]).
@@ -3483,14 +3484,15 @@ function projectsFromDashboard(sections){
   };
   const reviewer = [];
   const seen = {};
-  sections.reviewingJunior.forEach(function(i){ seen[i.cardId] = reviewer.push(item(i, 'Junior')) - 1; });
-  sections.reviewingSenior.forEach(function(i){
+  const project = i => !isPastPaper(i.card);
+  sections.reviewingJunior.filter(project).forEach(function(i){ seen[i.cardId] = reviewer.push(item(i, 'Junior')) - 1; });
+  sections.reviewingSenior.filter(project).forEach(function(i){
     if (i.cardId in seen) reviewer[seen[i.cardId]].role = 'Junior & Senior';
     else reviewer.push(item(i, 'Senior'));
   });
   return {
-    owner: sections.registered.map(function(i){ return item(i); }),
-    author: sections.authoring.map(function(i){ return item(i); }),
+    owner: sections.registered.filter(project).map(function(i){ return item(i); }),
+    author: sections.authoring.filter(project).map(function(i){ return item(i); }),
     reviewer: reviewer
   };
 }
@@ -3565,7 +3567,7 @@ function allProjectsFromCards(boards, cards, unassigned, completedIds, startedId
     };
   };
   cards.forEach(function(c){
-    if (!(c.boardId in labels)) return;
+    if (!(c.boardId in labels) || isPastPaper(c.data)) return;
     entries.push({ pid: projectIdOf(c.data, c.id), d: c.data, boardId: c.boardId, item: Object.assign(base(c.id, c.data), { boardId: c.boardId, boardLabel: labels[c.boardId], cardId: c.id }) });
   });
   (unassigned || []).forEach(function(u){
@@ -3878,7 +3880,7 @@ exports.projectChannel = onCall(
     if (data.mode === 'rename' && !out.exists){
       const p = data.project || {};
       if (!/^[A-Za-z0-9_-]{1,80}$/.test(String(p.id || '')) || (p.board && !/^[A-Za-z0-9_-]{1,80}$/.test(String(p.board)))) throw new HttpsError('invalid-argument', 'No such project.');
-      const cardSnap = await cardRefFor(String(p.id), p.board ? String(p.board) : null).get();
+      const cardSnap = await readProjectCard(String(p.id), p.board ? String(p.board) : null);
       if (!cardSnap.exists) throw new HttpsError('not-found', 'No such project.');
       const card = cardSnap.data();
       if (!(await canEditCard(email, card))) throw new HttpsError('permission-denied', 'Only whoever registered the project, its authors, or a PI or admin can change its channel.');
@@ -3932,8 +3934,8 @@ async function isRegisteredProjectChannel(name){
   const tag = '#' + name;
   const [cardsSnap, projectsSnap] = await Promise.all([db.collectionGroup('cards').get(), db.collection('projects').get()]);
   return cardsSnap.docs.concat(projectsSnap.docs).some(function(d){
-    const c = d.data().slackChannel;
-    return typeof c === 'string' && c.toLowerCase() === tag;
+    const card = d.data(), c = card.slackChannel;
+    return !isPastPaper(card) && typeof c === 'string' && c.toLowerCase() === tag;
   });
 }
 
@@ -4313,6 +4315,13 @@ function cardRefFor(id, boardId){
   return boardId ? db.collection('boards').doc(boardId).collection('cards').doc(id) : db.collection('projects').doc(id);
 }
 
+async function readProjectCard(id, boardId){
+  const snap = await cardRefFor(id, boardId).get();
+  if (snap.exists && isPastPaper(snap.data()))
+    throw new HttpsError('failed-precondition', 'This paper belongs to Internal Review and has no project workspace.');
+  return snap;
+}
+
 // A project is one or more cards, one per venue it went to (`projects/{id}` until
 // it has a venue). A card submitted from a project's page to another venue carries
 // that project's id (`projectId`); every other card is its own project, with its
@@ -4325,7 +4334,7 @@ async function projectCards(pid){
   const [venueCards, own] = await Promise.all([db.collectionGroup('cards').get(), db.collection('projects').get()]);
   const out = [];
   venueCards.docs.concat(own.docs).forEach(function(d){
-    if (projectIdOf(d.data(), d.id) !== pid) return;
+    if (isPastPaper(d.data()) || projectIdOf(d.data(), d.id) !== pid) return;
     const parent = d.ref.parent.parent;
     out.push({ id: d.id, boardId: parent ? parent.id : null, ref: d.ref, data: d.data() });
   });
@@ -4820,6 +4829,7 @@ function onProjectCard(document){
     const before = event.data.before.exists ? event.data.before.data() : null;
     const after = event.data.after.exists ? event.data.after.data() : null;
     const id = event.params.cardId;
+    if (isPastPaper(after || before)) return;
     const pid = projectIdOf(after || before, id);
     const wsRef = db.collection('projectWorkspaces').doc(pid);
     if (!after){
@@ -5325,7 +5335,7 @@ exports.projectWorkspace = onCall(
     }
     const id = String(data.id || ''), boardId = data.board ? String(data.board) : null;
     if (!validSlug(id) || (boardId && !validSlug(boardId))) throw new HttpsError('invalid-argument', 'No project given.');
-    const cardSnap = await cardRefFor(id, boardId).get();
+    const cardSnap = await readProjectCard(id, boardId);
     if (!cardSnap.exists) throw new HttpsError('not-found', 'That project isn’t there any more.');
     const card = cardSnap.data();
     // Proposed (#226): nothing is set up, joined or changed until a PI or admin approves it (projectProposal).
@@ -5414,7 +5424,7 @@ exports.projectWorkspace = onCall(
       const c = data.card && typeof data.card === 'object' ? Object.assign({}, data.card) : null;
       if (!c || typeof c.title !== 'string' || !c.title.trim()) throw new HttpsError('invalid-argument', 'The new card has no title.');
       const cardId = /^card-[a-z0-9-]{1,60}$/.test(String(c.id || '')) ? c.id : 'card-' + Date.now() + '-' + crypto.randomBytes(3).toString('hex');
-      ['id', 'openProblemId', 'verificationPlan', 'setUpMeeting', 'setUpRepo', 'setUpDocs', 'setUpSkipped', 'announce'].forEach(function(k){ delete c[k]; });
+      ['id', 'registrationKind', 'openProblemTitle', 'openProblemId', 'verificationPlan', 'proposal', 'setUpChannel', 'setUpMeeting', 'setUpRepo', 'setUpDocs', 'setUpSkipped', 'announce'].forEach(function(k){ delete c[k]; });
       const now = Date.now();
       await db.collection('boards').doc(venue).collection('cards').doc(cardId).set(Object.assign(c, {
         ...(card.openProblemId ? {openProblemId:card.openProblemId} : {}),
@@ -6573,7 +6583,7 @@ exports.meetingTimes = onCall({ timeoutSeconds: 60 }, async (request) => {
   const email = callerEmail(request), data = request.data || {};
   const id = String(data.id || ''), boardId = data.board ? String(data.board) : null;
   if (!validSlug(id) || (boardId && !validSlug(boardId))) throw new HttpsError('invalid-argument', 'No project given.');
-  const cardSnap = await cardRefFor(id, boardId).get();
+  const cardSnap = await readProjectCard(id, boardId);
   if (!cardSnap.exists) throw new HttpsError('not-found', 'That project isn’t there any more.');
   const card = cardSnap.data(), pid = projectIdOf(card, id);
   await requireSeesProject(email, pid);
@@ -6613,7 +6623,7 @@ exports.moveMeeting = onCall({ timeoutSeconds: 120, secrets: [GOOGLE_OAUTH, GITH
   if (kind === 'project') {
     const boardId = data.board ? String(data.board) : null;
     if (!validSlug(id) || (boardId && !validSlug(boardId))) throw new HttpsError('invalid-argument', 'No project given.');
-    const cardSnap = await cardRefFor(id, boardId).get();
+    const cardSnap = await readProjectCard(id, boardId);
     if (!cardSnap.exists) throw new HttpsError('not-found', 'That project isn’t there any more.');
     const pid = projectIdOf(cardSnap.data(), id);
     await requireSeesProject(email, pid);
@@ -7532,7 +7542,7 @@ exports.projectInvite = onCall(
       if ((await access.groupFor(email)) === 'pan') throw new HttpsError('failed-precondition', 'Talk to the lead on Slack first: they add you to it.');
       const id = String(d.id || ''), board = d.board ? String(d.board) : null;
       if (!validSlug(id) || (board && !validSlug(board))) throw new HttpsError('invalid-argument', 'No project given.');
-      const snap = await cardRefFor(id, board).get();
+      const snap = await readProjectCard(id, board);
       if (!snap.exists) throw new HttpsError('not-found', 'That project isn’t there any more.');
       const card = snap.data(), pid = projectIdOf(card, id);
       const ws = (await db.collection('projectWorkspaces').doc(pid).get()).data() || {};
@@ -7547,7 +7557,7 @@ exports.projectInvite = onCall(
     if (d.action === 'invite' || d.action === 'list') {
       const id = String(d.id || ''), board = d.board ? String(d.board) : null;
       if (!validSlug(id) || (board && !validSlug(board))) throw new HttpsError('invalid-argument', 'No project given.');
-      const snap = await cardRefFor(id, board).get();
+      const snap = await readProjectCard(id, board);
       if (!snap.exists) throw new HttpsError('not-found', 'That project isn’t there any more.');
       const card = snap.data(), pid = projectIdOf(card, id);
       if (!(await canEditCard(email, card))) throw new HttpsError('permission-denied', 'Only the project’s submitter, authors, PIs and admins invite people to it.');
@@ -7590,7 +7600,7 @@ exports.projectInvite = onCall(
     const inv = (await ref.get()).data();
     if (d.action === 'admit') {
       if (!inv || inv.status !== 'asked') throw new HttpsError('failed-precondition', inv ? 'It’s already been ' + inv.status + '.' : 'That request isn’t there.');
-      const snap = await cardRefFor(inv.cardId, inv.board).get();
+      const snap = await readProjectCard(inv.cardId, inv.board);
       if (!snap.exists || !(await canEditCard(email, snap.data()))) throw new HttpsError('permission-denied', 'Only the project’s owner, authors, PIs and admins accept a request to join it.');
       const out = await joinProjectAs(inv.email, inv.pid, snap.data(), true);
       await ref.update({ status: 'accepted', decidedAt: Date.now(), decidedBy: email });
@@ -7599,13 +7609,13 @@ exports.projectInvite = onCall(
     }
     let editor = false;
     if (d.action === 'withdraw' && inv) {
-      const snap = await cardRefFor(inv.cardId, inv.board).get();
+      const snap = await readProjectCard(inv.cardId, inv.board);
       editor = snap.exists && await canEditCard(email, snap.data());
     }
     const why = inviteRefusal(inv, d.action, { email, editor });
     if (why) throw new HttpsError('failed-precondition', why);
     if (d.action === 'accept') {
-      const snap = await cardRefFor(inv.cardId, inv.board).get();
+      const snap = await readProjectCard(inv.cardId, inv.board);
       const out = await joinProjectAs(email, inv.pid, snap.exists ? snap.data() : null, true);
       await ref.update({ status: 'accepted', decidedAt: Date.now() });
       await sendEvent(SLACK_BOT_TOKEN.value(), { key: 'project-invites', emails: [inv.by], headline: '📌 ' + slackText(name) + ' joined ' + linkedTitle(inv.title, projectPageUrl(inv.cardId, inv.board)) + ', as you invited them.' });
@@ -8490,7 +8500,7 @@ exports.onSetupNudgeRun = onDocumentCreated({ document: 'runs/{id}', secrets: [S
     const missing = setupMissing(ws);
     if (!migrate && !missing.length) continue;
     // Its lead only: whoever registered it (its card's submittedBy).
-    const card = await cardRefFor(ws.cardId || d.id, ws.boardId || null).get().catch(() => null);
+    const card = await readProjectCard(ws.cardId || d.id, ws.boardId || null).catch(() => null);
     const lead = card && card.exists ? lowerEmail((card.data().submittedBy || {}).email) : '';
     const to = ws.setupNudgedAt || !lead ? [] : [lead];
     plan.push({ pid: d.id, title: ws.title || (card && card.exists && card.data().title) || '', migrate, missing, to });
