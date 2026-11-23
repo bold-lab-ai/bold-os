@@ -40,8 +40,10 @@
     if (!base) return '';
     var url = new URL(base);
     url.pathname = (url.pathname.replace(/\/$/, '') || '/lite') + '/from-problem';
-    url.hash = new URLSearchParams({ problem: p.id, project: project.id, board: project.board || '',
-      title: p.title, question: [p.objective || p.title, p.significance && 'Why it matters: ' + p.significance, p.difficulties && 'Difficulties: ' + p.difficulties, p.existing_solutions && 'Frontier: ' + p.existing_solutions].filter(Boolean).join('\n').slice(0,4000) }).toString();
+    var fields = new URLSearchParams({ problem: p.id,
+      title: p.title, question: [p.objective || p.title, p.significance && 'Why it matters: ' + p.significance, p.difficulties && 'Difficulties: ' + p.difficulties, p.existing_solutions && 'Frontier: ' + p.existing_solutions].filter(Boolean).join('\n').slice(0,4000) });
+    if (project) { fields.set('project', project.id); if (project.board) fields.set('board', project.board); }
+    url.hash = fields.toString();
     return url.href;
   }
   function editButton(what, why){
@@ -150,11 +152,10 @@
     html += '</div></div>';
     var links=p.projects;
     html += '<ol class="pb-steps" aria-label="Problem onboarding"><li>Problem defined</li><li>';
-    if(links.length>1) html += '<label for="verifierProject">Verifier project</label> <select id="verifierProject"><option value="">Choose a project</option>' +
+    if(links.length) html += '<label for="verifierProject">Project (optional)</label> <select id="verifierProject"><option value="">No project</option>' +
       links.map(function(x,i){return '<option value="'+i+'">'+esc(x.title)+'</option>';}).join('')+'</select> ';
-    var blocked = p.archived ? 'Restore this problem first.' : !BOLD.can('projects','edit') ? BOLD.cannotReason('projects','edit') : !links.length ? 'Link a project first.' : '';
+    var blocked = p.archived ? 'Restore this problem first.' : !BOLD.can('projects','edit') ? BOLD.cannotReason('projects','edit') : '';
     html += '<button type="button" class="btn-primary btn-box" id="addVerifier"' + (blocked ? ' disabled title="'+esc(blocked)+'"' : '')+'>' + (p.evaluator?'Add another verifier':'Add verifier') + '</button>';
-    if(!links.length) html += ' Link a project in Overview or <a href="projects.html">open All projects</a>.';
     html += '</li><li>Autoresearch baseline <small>Coming soon</small></li></ol>';
     if (canRemind && !p.archived && !p.evaluator) html += '<p><button type="button" class="btn-text" id="toggleReminder">' +
       (p.reminders ? 'Turn off my weekly reminders' : 'Remind me to add a verifier') + '</button></p>';
@@ -261,11 +262,11 @@
     };
     if (el('addVerifier')) el('addVerifier').onclick = async function(){
       var picker = el('verifierProject');
-      if (picker && picker.value===''){picker.focus();return alertLine(new Error('Choose the verifier project.'));}
-      var url = verifierLink(p.projects[picker ? Number(picker.value) : 0]);
+      var project = picker && picker.value !== '' ? p.projects[Number(picker.value)] : null;
+      var url = verifierLink(project);
       if (!url) return alertLine(new Error('Check the AutoKaggle Lite address in Settings.'));
       var ok = await BOLD.confirmAction({ title: 'Open AutoKaggle Lite?', always: true, go: 'Open Lite',
-        effects: ['Share this title, research question, and project and problem IDs with AutoKaggle Lite to start a verifier.'] });
+        effects: ['Share the problem ID, title, and research question' + (project ? ', plus the selected project ID' : '') + ' with AutoKaggle Lite.'] });
       if (ok) location.assign(url);
     };
     if (!editing) return;

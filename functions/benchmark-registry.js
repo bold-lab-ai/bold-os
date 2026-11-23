@@ -1,4 +1,4 @@
-// The Problem Bank (problems.html): research problems, each linked to a BOLD.OS project, and
+// The Problem Bank (problems.html): research problems, their optional BOLD.OS projects, and
 // the evaluator releases AutoKaggle Lite registers for them. An open problem can have several independent verifiers.
 //
 // problemBank/{id}            a problem: title, objective, task_kind, project_id/_board/_title,
@@ -63,8 +63,10 @@ function normalize(input){
   if (!input || input.schema !== 'bold.autokaggle.registration.v1' || Buffer.byteLength(JSON.stringify(input)) > 128000) throw new Error('Use a bounded AutoKaggle registration record.');
   if (!/^autokaggle:[a-f0-9-]{36}$/.test(input.source_id || '') || !hex(input.idempotency_key, 64)) throw new Error('Supply the stable source ID and request key.');
   if (canonical(input.destinations) !== canonical(['problem_bank'])) throw new Error('Register in the Problem Bank.');
-  const project_id = text(input.project_id, 160, 'the BOLD OS project ID');
-  if (!/^[A-Za-z0-9_-]+$/.test(project_id)) throw new Error('Use a valid BOLD OS project ID.');
+  const project_id = input.project_id === undefined ? '' : text(input.project_id, 160, 'the BOLD OS project ID');
+  if (project_id && !/^[A-Za-z0-9_-]+$/.test(project_id)) throw new Error('Use a valid BOLD OS project ID.');
+  const project_board = boardId(input.project_board);
+  if (project_board && !project_id) throw new Error('A project board needs a project ID.');
 
   const e = input.evaluator || {}, v = input.validation || {}, r = v.research_evidence || {}, a = input.human_approval || {};
   if (!hex(e.commit, 40) || !hex(e.contract_sha256, 64) || !Number.isSafeInteger(e.version) || e.version < 1) throw new Error('Pin the evaluator commit, contract, and version.');
@@ -88,7 +90,7 @@ function normalize(input){
   return {
     ...(input.problem_id === undefined ? {} : { problem_id: problemId(input.problem_id) }),
     schema: input.schema, source_id: input.source_id, idempotency_key: input.idempotency_key,
-    project_id, project_board: boardId(input.project_board),
+    project_id, project_board,
     stage: validated ? 'validated' : checked ? 'checked' : 'implemented',
     validation: Object.fromEntries(CHECKS.map((k) => [k, v[k] || 'not_run'])),
     details: details(input.details), session: session(input.session, input.source_id),
@@ -296,9 +298,9 @@ module.exports = function({ db, onCall, callerEmail, isFullWrite, access, HttpsE
       const out = { problem_id: pid, benchmark_id: bid, commit: data.evaluator.commit, idempotency_key: data.idempotency_key };
       return db.runTransaction(async (tx) => {
         const [p, b, r, project, streamDoc, legacy] = await Promise.all([tx.get(problem), tx.get(benchmark), tx.get(receipt),
-          tx.get(projectRef(data.project_id, data.project_board)), tx.get(stream),
+          data.project_id ? tx.get(projectRef(data.project_id, data.project_board)) : null, tx.get(stream),
           pid !== sourceKey ? tx.get(db.collection('problemBank').doc(sourceKey)) : null]);
-        if (!project.exists || isPastPaper(project.data())) throw error('failed-precondition', 'The linked BOLD OS project does not exist.');
+        if (project && (!project.exists || isPastPaper(project.data()))) throw error('failed-precondition', 'The linked BOLD OS project does not exist.');
         const prior = p.exists ? p.data() : {};
         const linked = !!data.problem_id;
         if (linked && !p.exists) throw error('not-found', 'The open problem no longer exists.');
@@ -310,27 +312,29 @@ module.exports = function({ db, onCall, callerEmail, isFullWrite, access, HttpsE
           if (r.data().fingerprint !== fingerprint) throw error('already-exists', 'This request key belongs to different evidence.');
           return r.data().receipt;
         }
+        const target = project && {id:data.project_id, board:data.project_board, title:project.data().title || data.project_id,
+          stable_id:project.data().projectId || data.project_id};
+        if (linked && target && !storedProjects(prior).some(link => sameProject(link,target)) && project.data().openProblemId !== pid)
+          throw error('failed-precondition', 'Link the selected project to this open problem first.');
         // A release is written once: the same commit again must be the same release.
         if (b.exists) {
           if (b.data().fingerprint !== release || (b.data().details !== undefined && canonical(b.data().details) !== canonical(data.details))) throw error('already-exists', 'This commit is already registered with different evidence. Register the change as a new version.');
           tx.set(receipt, { fingerprint, receipt: out, createdBy: email, createdAt: at });
           return out;
         }
-        const target = {id:data.project_id, board:data.project_board, stable_id:project.data().projectId || data.project_id};
-        if (linked && (prior.archived || (!storedProjects(prior).some(link => sameProject(link,target)) && project.data().openProblemId !== pid)))
-          throw error('failed-precondition', 'Choose an active problem in the same BOLD OS project.');
+        if (prior.archived) throw error('failed-precondition', 'Restore this problem before registering a new release.');
         const previousVersion = streamDoc.exists ? streamDoc.data().version : (prior.source_id === data.source_id ? prior.latest_version : 0);
         if (previousVersion >= data.evaluator.version) throw error('failed-precondition', 'Version ' + data.evaluator.version + ' or a newer one is already registered.');
         const author = p.exists ? p.data().createdBy : email;
         const problemData = { source_id: data.source_id, title: data.title, objective: data.objective, task_kind: data.task_kind,
-          project_id: data.project_id, project_board: data.project_board, project_title: project.data().title || data.project_id,
+          ...primary(target ? [target] : storedProjects(prior)),
           details: Object.assign({}, p.exists ? p.data().details : {}, data.details), session: data.session, stage: data.stage,
           reported_approval: data.reported_approval, approval: null, evaluator: data.evaluator,
           latest_benchmark: bid, latest_commit: data.evaluator.commit, latest_version: data.evaluator.version,
           archived: p.exists ? !!p.data().archived : false, notes: p.exists ? (p.data().notes || '') : '',
           createdBy: author, createdAt: p.exists ? p.data().createdAt : at, updatedBy: email, updatedAt: at };
         const benchmarkData = { problem_id: pid, source_id: data.source_id, title: data.title, task_kind: data.task_kind, evaluator: data.evaluator,
-          details: data.details, project_id:data.project_id, project_board:data.project_board, project_stable_id:target.stable_id, research: data.research, reported_approval: data.reported_approval, approval: null, stage: data.stage, validation: data.validation,
+          details: data.details, project_id:data.project_id, project_board:data.project_board, project_stable_id:target?.stable_id || '', research: data.research, reported_approval: data.reported_approval, approval: null, stage: data.stage, validation: data.validation,
           fingerprint: release, createdBy: streamOwner || email, createdAt: at, updatedBy: email, updatedAt: at };
         // A verifier release cannot replace the scientific definition or its submitter.
         if (linked && !prior.has_linked_verifiers && prior.source_id && prior.source_id !== data.source_id) {
@@ -427,7 +431,7 @@ module.exports = function({ db, onCall, callerEmail, isFullWrite, access, HttpsE
             const versions = await tx.get(db.collection('benchmarks').where('problem_id', '==', id));
             const pinned = versions.docs.map(doc => {
               const version = doc.data();
-              return { id: version.project_id || was.project_id, board: version.project_board ?? was.project_board ?? '', stable_id:version.project_stable_id || '' };
+              return { id: version.project_id ?? was.project_id, board: version.project_board ?? was.project_board ?? '', stable_id:version.project_stable_id || '' };
             });
             const removed = storedProjects(was).filter(link => !links.some(x => sameProject(x, link)));
             if (removed.some(link => pinned.some(x => sameProject(x, link))))

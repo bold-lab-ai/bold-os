@@ -17,10 +17,20 @@ async function rules(path,method='GET',token,body){return fetch('http://'+proces
   const registration=record();registration.title='Registry integration test — synthetic evidence';
   registration.source_id='autokaggle:'+crypto.randomUUID();registration.idempotency_key=crypto.randomBytes(32).toString('hex');
   assert.equal((await api('register_benchmark',{registration},readToken)).status,403);
-  const create={request_id:crypto.randomUUID(),projects:[{id:'diverging-runs'}],owner_id:'UTESTIN',title:'Registry integration test — kinetics',difficulties:'Noisy trajectories',
+  const create={request_id:crypto.randomUUID(),projects:[],owner_id:'UTESTIN',title:'Registry integration test — kinetics',difficulties:'Noisy trajectories',
     significance:'Shorten calibration.',existing_solutions:'Clean-trace estimation.',reminders:false};
   const direct=await api('create_open_problem',create);
   assert.equal(direct.status,200,await direct.clone().text());
+  const independent = {...registration};
+  delete independent.project_id;
+  const standalone = await api('register_benchmark', {registration:independent});
+  assert.equal(standalone.status,200,await standalone.clone().text());
+  const independentReceipt = await standalone.json();
+  assert.deepEqual(await (await api('register_benchmark',{registration:independent})).json(),independentReceipt);
+  assert.equal((await db.doc('benchmarks/'+independentReceipt.benchmark_id).get()).data().project_id,'');
+  delete registration.project_id;
+  registration.source_id='autokaggle:'+crypto.randomUUID();
+  registration.idempotency_key=crypto.randomBytes(32).toString('hex');
   const parent=(await direct.json()).problem_id;registration.problem_id=parent;
   assert.deepEqual(await (await api('create_open_problem',create)).json(),{problem_id:parent});
   for(const session of [null,{application:'full'}]){
@@ -49,7 +59,7 @@ async function rules(path,method='GET',token,body){return fetch('http://'+proces
   const second=await api('register_benchmark',{registration:{...registration,source_id:'autokaggle:'+crypto.randomUUID(),idempotency_key:crypto.randomBytes(32).toString('hex')}});
   assert.equal(second.status,200,await second.clone().text());assert.equal((await second.json()).problem_id,parent);
   assert.equal((await db.collection('benchmarks').where('problem_id','==',parent).get()).size,2);
-  const edit=await api('edit_problem',{problem_id:receipt.problem_id,project_id:'diverging-runs',details:{owner:'Ines Internal'},notes:'Synthetic integration fixture. Do not treat this as research validation.',archived:false});assert.equal(edit.status,200,await edit.clone().text());
+  const edit=await api('edit_problem',{problem_id:receipt.problem_id,changes:{projects:[{id:'diverging-runs'}]}});assert.equal(edit.status,200,await edit.clone().text());
   const search=await api('search?query=integration&scope=problems',null,readToken);assert.equal(search.status,200);assert.match(await search.text(),/Registry integration test/);
   console.log('Registry HTTP, transactions, search, permissions, and Firestore rules passed.');
   console.log('Browser fixture: http://localhost:8150/problem.html?problem='+receipt.problem_id);

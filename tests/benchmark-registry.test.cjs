@@ -78,8 +78,15 @@ test('ownership, Slack identity and page access apply to registration and edits'
 });
 module.exports={record,harness};
 
-test('project is mandatory and must exist',async()=>{
- const h=harness(),r=record();delete r.project_id;assert.throws(()=>factory.normalize(r),/project ID/);
+test('a project is optional; a supplied project must be valid and exist',async()=>{
+ const h=harness(),r=record();delete r.project_id;
+ for (const value of ['', false, '../other', 2]) assert.throws(()=>factory.normalize({...r,project_id:value}), /project ID/);
+ assert.throws(()=>factory.normalize({...r,project_board:'venue'}), /board/i);
+ const receipt=await h.call({action:'register',registration:r});
+ assert.deepEqual(await h.call({action:'register',registration:r}),receipt);
+ const detail=await h.call({action:'get',problem_id:receipt.problem_id});
+ assert.equal(detail.problem.stage,'validated');assert.deepEqual(detail.problem.projects,[]);
+ assert.equal(detail.versions[0].project_id,'');assert.ok(detail.versions[0].reported_approval);
  r.project_id='missing';await assert.rejects(h.call({action:'register',registration:r}),e=>e.code==='failed-precondition');
 });
 test('stages reflect evidence, approval is separate, and invalid evidence cannot raise a stage',()=>{
@@ -99,6 +106,25 @@ test('no credential or arbitrary session URL enters the record',()=>{
 });
 const openProblem = { action:'create', projects:[{id:'diverging-runs'}], title:'Estimate kinetics', owner_id:'UDEFINER', difficulties:'Sparse observations',
  significance:'A faster measurement', existing_solutions:'Least squares on clean signals', reminders:true, request_id:'98c689be-0660-4a12-9e63-be3abce09910' };
+test('a problem can get a verifier before it gets a project',async()=>{
+ const h=harness(), {problem_id}=await h.call({...openProblem,projects:[]});
+ const registration={...record(),problem_id}; delete registration.project_id;
+ const submit=(changes={},email)=>h.call({action:'register',registration:{...registration,...changes}},email);
+ const first=await submit(), pinned=structuredClone(h.data.get('benchmarks/'+first.benchmark_id));
+ assert.equal(first.problem_id,problem_id);
+ assert.deepEqual(await submit(),first);
+ const detail=await h.call({action:'get',problem_id});
+ assert.equal(detail.problem.title,openProblem.title); assert.equal(detail.problem.stage,'validated');assert.deepEqual(detail.problem.projects,[]);
+ await assert.rejects(submit({},'other@example.invalid'),{code:'permission-denied'});
+ const key='5'.repeat(64),project_id='diverging-runs';
+ await assert.rejects(submit({project_id,idempotency_key:key}),{code:'failed-precondition'});
+ await h.call({action:'update',problem_id,changes:{projects:[{id:project_id}]}});
+ assert.equal((await submit({project_id,idempotency_key:key})).benchmark_id,first.benchmark_id);
+ assert.deepEqual(h.data.get('benchmarks/'+first.benchmark_id),pinned);
+ await h.call({action:'update',problem_id,changes:{projects:[]}});
+ await h.call({action:'update',problem_id,changes:{archived:true}});
+ await assert.rejects(submit({source_id:'autokaggle:88888888-1111-2222-3333-444444444444',idempotency_key:'6'.repeat(64)}),{code:'failed-precondition'});
+});
 test('a definition needs a definer, scientific context and an explicit reminder choice; retries save one record',async()=>{
  const h=harness();
  for (const key of ['title','significance','existing_solutions','difficulties','owner_id','reminders','request_id']) {

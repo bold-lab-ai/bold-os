@@ -8,7 +8,7 @@ The same page lists verifier releases for active problems, newest first. Select 
 
 ## Project and evidence requirements
 
-An open problem can exist before a project starts. It can link to several BOLD OS projects. Every new project proposal must select an unarchived scientific problem. A verified evaluator can exist while the scientific question is still open. Each new verifier release must name one linked project. The server checks that project during registration.
+An open problem can exist before a project starts. It can link to several BOLD OS projects. Every new project proposal must select an unarchived scientific problem. A verified evaluator can exist while the scientific question is still open. A verifier can register before a project exists. The server checks any project that accompanies a release.
 
 When proposing a project, select one or more registered verifier or benchmark releases. Projects can reuse a benchmark registered for another active problem. If none fits, select **Define verifier later** and supply both the reason and an approximate time for onboarding. A time such as “within six weeks” is sufficient. The project overview records the pinned versions or the deferral supplied at proposal.
 
@@ -27,7 +27,7 @@ On **Add problem**, select any broader objectives or problems and, separately, a
 ## Onboard an open problem
 
 1. Select **Add problem**. Enter the title, select the person who defined it, and describe its significance, difficulties and current frontier. Link existing projects and name collaborators if applicable. Save the problem. To propose a new project, follow **All projects**, select **Propose a project**, and choose the open problem. If the problem is missing, follow **here** below the project form’s **Open problem** field. The bank opens in a separate tab. Save the problem and return to the proposal to select it. **Refresh list** reloads the choices if needed. The project then appears on the problem page.
-2. Select **Add verifier**. If several projects are linked, choose the one that will own this verifier. Confirm the transfer to AutoKaggle Lite. The handoff includes the problem and project IDs, title, and a research brief of up to 4,000 characters in the URL fragment. Lite asks for storage consent. Each verifier has its own session, releases, data and assets, repository, metrics and score format, submission format, and constraints. Open **Verifiers** to compare releases. Older releases can lack recorded contract details.
+2. Select **Add verifier**. You can start before a project exists. To associate the verifier with a linked project, select it before opening Lite. Confirm the transfer. The handoff includes the problem ID, title, and a research brief of up to 4,000 characters in the URL fragment. It includes a project ID only when selected. Lite asks for storage consent. Each verifier has its own session, releases, data and assets, repository, metrics and score format, submission format, and constraints. Open **Verifiers** to compare releases. Older releases can lack recorded contract details.
 3. **Autoresearch baseline** is planned. This release does not start a baseline run or send a result email.
 
 The submitter can accept or decline reminders when saving. People who submitted older problems can turn reminders on in their problem. The first reminder on a new problem is due at creation. It repeats every seven days until a verifier is registered. Opening Lite does not count. Archiving pauses delivery. Restoring resumes it when the submitter has reminders enabled. The submitter can change this choice on the problem.
@@ -62,11 +62,11 @@ The Lite session link on each verifier opens its saved interview. Use the sharin
 
 After deployment, AutoKaggle Lite sends `POST /boldApi/v1/register_benchmark` with `Authorization: Bearer <approved acting token>` and JSON `{ "registration": <record> }`. A read-only token cannot register records. No Firebase service-account key is needed.
 
-Schema `bold.autokaggle.registration.v1` requires `source_id`, `idempotency_key`, `project_id`, optional `project_board`, `destinations: ["problem_bank"]`, `session: {"application": "lite"}`, title, objective, task kind, pinned evaluator details, and validation states. Descriptive metadata, a full/Lite session reference, research evidence, and human approval are supported. Field checks are in `functions/benchmark-registry.js`.
+Schema `bold.autokaggle.registration.v1` requires `source_id`, `idempotency_key`, `destinations: ["problem_bank"]`, `session: {"application": "lite"}`, title, objective, task kind, pinned evaluator details, and validation states. Descriptive metadata, a full/Lite session reference, research evidence, and human approval are supported. Field checks are in `functions/benchmark-registry.js`.
 
 One Firestore transaction saves `problemBank`, pinned releases in `benchmarks`, their history, and a private receipt. The response contains `problem_id`, `benchmark_id`, `commit`, and `idempotency_key`. Retries return the same receipt. A reused key with different content fails.
 
-The optional `problem_id` identifies an existing problem. The receiver checks the linked project and board and refuses a new release for an archived problem. Each Lite source ID belongs to one problem. Versions advance within that source. Independent sessions can both start at version one. Legacy registrations without a parent keep their existing IDs.
+The optional `problem_id` identifies an existing problem. An optional `project_id` can identify a project, with `project_board` when it belongs to a board. With a parent problem, the project must already link to it. Without a parent or project, the first release creates a problem using the Lite session identity. The receiver refuses new releases for archived problems. Adding a project later preserves the release and its original receipt. Each Lite source ID belongs to one problem. Versions advance within that source. Independent sessions can both start at version one. Legacy registrations without a parent keep their existing IDs.
 
 **A release is written once.** Registering the same commit again with identical evidence returns the same release; with different evidence it fails (`already-exists`). Changed evidence is a new version, with a new commit. A version lower than or equal to the latest is refused.
 

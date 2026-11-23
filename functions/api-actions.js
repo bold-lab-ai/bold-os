@@ -795,7 +795,7 @@ module.exports = function(ctx){
         projects:{type:'array',items:{type:'object',properties:{id:str('Project ID'),board:str('Board ID if applicable')},required:['id']}},
         reminders:{type:'boolean'},request_id:str('Stable request UUID')},['title','owner_id','significance','difficulties','existing_solutions','reminders','request_id']),
       run:(who,a)=>act(who,'benchmarkRegistry',{...a,action:'create'}) },
-    { name: 'register_benchmark', description: 'Register an implemented evaluator from AutoKaggle Lite in the Problem Bank, linked to an existing project and its Lite session. The server derives its stage from the evidence, shown as reported by AutoKaggle. Approval is a PI’s or admin’s, on the page; a release is written once. Retries reuse the same registration key. This saves lab records; it sends no messages or invitations.',
+    { name: 'register_benchmark', description: 'Register an implemented evaluator from AutoKaggle Lite in the Problem Bank, linked to its Lite session. A project is optional. The server derives its stage from the evidence, shown as reported by AutoKaggle. Approval is a PI’s or admin’s, on the page; a release is written once. Retries reuse the same registration key. This saves lab records; it sends no messages or invitations.',
       inputSchema: S({registration:{type:'object',description:'The bold.autokaggle.registration.v1 record from the validated release.'}},['registration']),
       run: (who,a) => act(who,'benchmarkRegistry',{action:'register',registration:a.registration}) },
     { name:'edit_problem',description:'Edit a field of a problem or archive it. A verifier contract belongs to its released version.',
