@@ -481,7 +481,7 @@
     if (!BOLD.getApp()) return null;
     try {
       auth = firebase.auth();
-      if (BOLD.useAuthEmulator) auth.useEmulator('http://localhost:9099');
+      if (BOLD.useAuthEmulator) auth.useEmulator('http://localhost:9099', { disableWarnings: !!window.BOLD_TEST }); // test-mode.js shows the demo banner and account switcher.
     } catch (e){ auth = null; return null; }
     auth.onAuthStateChanged(function(user){
       current = user; authReady = true; skipConfirm = null;
