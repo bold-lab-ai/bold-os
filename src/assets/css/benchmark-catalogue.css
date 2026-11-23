@@ -1,7 +1,0 @@
-.bench-catalogue { margin: 2rem 0; }
-.bench-catalogue h2 { margin-bottom: .25rem; }
-.bench-catalogue ul { padding: 0; list-style: none; }
-.bench-catalogue li { display: grid; gap: .25rem; padding: .8rem 0; border-bottom: 1px solid var(--line); }
-.bench-catalogue li a { justify-self: start; font-weight: 600; overflow-wrap: anywhere; }
-.bench-catalogue li small { color: var(--muted); }
-#openBenchmarkLite { white-space: normal; }

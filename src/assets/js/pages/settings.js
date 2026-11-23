@@ -194,7 +194,7 @@
       '<label>Web Push key<input type="text" class="jr-push-key" maxlength="200" spellcheck="false" autocomplete="off" value="' + esc((webPush || {}).publicKey || '') + '" placeholder="B…"></label></fieldset>' +
       save + '</div></section>' +
       '<section class="profile-panel" id="problem-bank"><div class="event-form join-form">' + group('AutoKaggle') +
-      '<p class="proj-meta">Service addresses for the Problem Bank and Benchmarks pages.</p>' +
+      '<p class="proj-meta">Service addresses for the Problem Bank.</p>' +
       '<label>AutoKaggle<input type="url" class="jr-ak-full" maxlength="300" spellcheck="false" value="' + esc(problemBank.autokaggleUrl || AUTOKAGGLE.autokaggleUrl) + '"></label>' +
       '<label>AutoKaggle Lite<input type="url" class="jr-ak-lite" maxlength="300" spellcheck="false" value="' + esc(problemBank.autokaggleLiteUrl || AUTOKAGGLE.autokaggleLiteUrl) + '"></label></fieldset>' +
       save + '</div></section></div>' +

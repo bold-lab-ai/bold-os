@@ -37,51 +37,12 @@ test('a benchmark launch goes to the Lite base without a session or handoff',()=
   assert.equal(demo.window.BOLDRegistryLinks.serviceUrl('http://localhost:8888/lite'), 'http://localhost:8888/lite');
 });
 
-// Drive the page's sign-in callback with a settings snapshot, including sign-out during a pending read.
-function benchmarkPage(snapshot){
-  const link = { removeAttribute(key){ delete this[key]; }, setAttribute(key, value){ this[key] = value; } };
-  const status = {};
-  let userChanged;
-  const page = {
-    window:{}, URL, document:{getElementById:id=>id === 'openBenchmarkLite' ? link : status},
-    BOLD:{ getApp:()=>({}), getAuth:()=>({}), onUser:fn=>{userChanged=fn;} },
-    firebase:{firestore(){return {collection(name){
-      assert.equal(name, 'settings');
-      return {doc(id){assert.equal(id, 'problemBank'); return {get:snapshot};}};
-    }};}}
-  };
-  vm.runInNewContext(fs.readFileSync(require.resolve('../src/assets/js/registry-links.js'),'utf8'), page);
-  page.BOLDRegistryLinks = page.window.BOLDRegistryLinks;
-  vm.runInNewContext(fs.readFileSync(require.resolve('../src/assets/js/pages/benchmarks.js'),'utf8'), page);
-  return {link, status, userChanged, defaults:page.BOLDRegistryLinks.defaults};
-}
-
-test('the signed-in Benchmarks page uses the saved service or the Civo default when unset',async()=>{
-  let saved;
-  const page = benchmarkPage(async()=>({exists:!!saved, data:()=>saved}));
-  await page.userChanged({});
-  assert.equal(page.link.href, page.defaults.autokaggleLiteUrl);
-  saved = {autokaggleLiteUrl:'https://lab.example/lite?project=other'};
-  await page.userChanged({});
-  assert.equal(page.link.href, 'https://lab.example/lite');
-  assert.equal(page.link['aria-disabled'], undefined);
-  saved = {autokaggleLiteUrl:'javascript:alert(1)'};
-  await page.userChanged({});
-  assert.equal(page.link.href, undefined);
-  assert.match(page.status.textContent, /Settings/);
-});
-
-test('an unavailable setting or sign-out while loading leaves the launcher disabled',async()=>{
-  let resolveRead;
-  const page = benchmarkPage(()=>Promise.reject(new Error('offline')));
-  await page.userChanged({});
-  assert.equal(page.link.href, undefined);
-  assert.match(page.status.textContent, /Reload/);
-  const pending = benchmarkPage(()=>new Promise(resolve=>{resolveRead=resolve;}));
-  const signingIn = pending.userChanged({});
-  await pending.userChanged(null);
-  resolveRead({exists:false});
-  await signingIn;
-  assert.equal(pending.link.href, undefined);
-  assert.equal(pending.link['aria-disabled'], 'true');
+test('Research lists the Problem Bank; old Benchmarks bookmarks lead there', async () => {
+  const site = (await import('../src/_data/site.js')).default;
+  const research = site.nav.find(group => group.label === 'Research').links;
+  assert.ok(research.some(link => link.href === 'problems.html'));
+  assert.ok(!research.some(link => link.href === 'benchmarks.html'));
+  const redirect = fs.readFileSync(require.resolve('../src/pages/benchmarks.html'), 'utf8');
+  assert.match(redirect, /http-equiv="refresh" content="0; url=problems\.html"/);
+  assert.match(redirect, /href="problems\.html"/);
 });
