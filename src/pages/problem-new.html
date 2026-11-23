@@ -1,0 +1,28 @@
+---
+area: "projects"
+title: "Add a problem | BOLD Lab"
+description: "Define a research question for the Problem Bank."
+sdk: ["firestore", "functions"]
+css: "problems"
+styles: ["problem-steps"]
+scripts: ["pages/problem-new.js"]
+permalink: "problem-new.html"
+nav: "problems.html"
+---
+<div class="hero"><a href="problems.html">← Problem Bank</a><h1>Add a problem</h1></div>
+<main>
+  <ol class="pb-steps" aria-label="Problem onboarding">
+    <li aria-current="step">Define the problem</li><li>Add a verifier</li><li>Autoresearch baseline <small>Coming soon</small></li>
+  </ol>
+  <form class="pb-form" id="pbCreate">
+    <fieldset id="pbInputs" disabled>
+      <div class="field"><label for="pbProject">BOLD OS project</label><select id="pbProject" required><option value="">Choose a project</option></select></div>
+      <div class="field"><label for="pbTitle">Problem title</label><input id="pbTitle" required maxlength="180"></div>
+      <div class="field"><label for="pbQuestion">What research question do you want to answer?</label><textarea class="no-tags" id="pbQuestion" required maxlength="8000"></textarea></div>
+      <div class="field"><label for="pbWhy">Why would solving it matter?</label><textarea class="no-tags" id="pbWhy" required maxlength="8000"></textarea></div>
+      <div class="field"><label for="pbExisting">What can existing methods do, and what is still open?</label><textarea class="no-tags" id="pbExisting" required maxlength="8000"></textarea></div>
+      <button type="submit" class="btn btn-primary">Save problem</button>
+    </fieldset>
+    <p role="status" id="pbStatus">Loading projects…</p>
+  </form>
+</main>

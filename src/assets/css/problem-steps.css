@@ -1,0 +1,8 @@
+.pb-steps{display:flex; flex-wrap:wrap; align-items:center; gap:12px 32px; list-style:decimal inside; margin:24px 0; padding:16px 0; border-block:1px solid var(--line); font:500 15px var(--sans);}
+.pb-steps small{display:block; margin-top:2px; color:var(--muted);}
+.pb-steps .btn-primary{background:var(--accent); border-color:var(--accent); color:var(--on-fill);}
+
+#problemBody .detail-head{display:grid; grid-template-columns:minmax(0,1fr) auto;}
+#problemBody .detail-head h2{overflow-wrap:anywhere;}
+#problemBody .detail-head > .pb-missing{grid-column:2; grid-row:1; align-self:start; white-space:nowrap;}
+#problemBody .detail-badges{grid-column:1 / -1;}

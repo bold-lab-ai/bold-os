@@ -708,6 +708,7 @@
   var may = function(area, what){ return function(){ return BOLD.can(area, what) ? '' : BOLD.cannotReason(area, what); }; };
   var CREATE = [
     { head: 'New' },
+    { label: 'Open problem', href: 'problem-new.html', can: may('projects', 'edit') },
     { label: 'Project', href: 'projects-register.html', can: may('projects', 'edit') },
     { label: 'Event series', href: 'series.html?new', can: may('events', 'edit') },
     { label: 'Guide', href: 'guide.html?new', can: pi },

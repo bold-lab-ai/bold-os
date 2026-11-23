@@ -11,9 +11,6 @@
 
   // A stage is AutoKaggle's report; an open problem has no evaluator yet.
   var STAGES = { open: 'Open problem', implemented: 'Implemented', checked: 'Checked', validated: 'Validated' };
-  // AutoKaggle's addresses (settings/problemBank, set on Settings › Problem Bank); these until they're saved.
-  var urls = { autokaggleUrl: 'https://ecc962fa-2f4c-4a3f-96c4-179af273fb7a.k8s.civo.com/', autokaggleLiteUrl: 'https://lite.ecc962fa-2f4c-4a3f-96c4-179af273fb7a.k8s.civo.com/lite' };
-
   var rows = [], cursor = null, q = '', loaded = false, generation = 0;
 
   function projectHref(p){ return 'project.html#id=' + encodeURIComponent(p.project_id) + (p.project_board ? '&board=' + encodeURIComponent(p.project_board) : ''); }
@@ -29,7 +26,7 @@
   /* ---------- the list ---------- */
   function matches(p){
     if (!q) return true;
-    var hay = [p.title, p.objective, p.task_kind, p.project_title, (p.details || {}).owner, (p.evaluator || {}).commit].join(' ').toLowerCase();
+    var hay = [p.title, p.objective, p.significance, p.existing_solutions, p.task_kind, p.project_title, (p.details || {}).owner, (p.evaluator || {}).commit].join(' ').toLowerCase();
     return q.toLowerCase().split(/\s+/).every(function(w){ return hay.indexOf(w) >= 0; });
   }
   function row(p){
@@ -37,19 +34,22 @@
     if ((p.details || {}).owner) meta.push(esc(p.details.owner));
     if (p.task_kind) meta.push(esc(p.task_kind));
     if (p.evaluator) meta.push('Evaluator v' + esc(String(p.evaluator.version)));
-    return '<li><div class="proj-main">' +
+    var path = 'problem.html?problem=' + encodeURIComponent(p.id);
+    var missing = !p.evaluator;
+    return '<li><div class="proj-main"><div class="pb-card-head">' +
       '<a class="proj-title" href="problem.html?problem=' + encodeURIComponent(p.id) + '">' + esc(p.title) + '</a>' +
+      (missing ? '<span class="badge pb-missing">No verifier</span>' : '') + '</div>' +
       '<span class="proj-meta">' + meta.join(' · ') + '</span>' +
       (p.objective ? '<p class="proj-abstract">' + esc(p.objective) + '</p>' : '') +
       (badges(p) ? '<div class="proj-badges">' + badges(p) + '</div>' : '') +
-      '</div></li>';
+      (missing && !p.archived ? '<a class="pb-add-verifier" href="' + path + '#tab=releases">Add verifier →</a>' : '') + '</div></li>';
   }
   function renderList(){
     var groups = { open: [], implemented: [], checked: [], validated: [], archived: [] };
     rows.filter(matches).forEach(function(p){ groups[tabOf(p)].push(p); });
     Object.keys(groups).forEach(function(k){
       var cap = k.charAt(0).toUpperCase() + k.slice(1);
-      el('pb' + cap).innerHTML = groups[k].length ? groups[k].map(row).join('') : '<li class="proj-none"><p class="proj-empty">' + (q ? 'No problems match.' : 'None yet: problems start in AutoKaggle Lite.') + '</p></li>';
+      el('pb' + cap).innerHTML = groups[k].length ? groups[k].map(row).join('') : '<li class="proj-none"><p class="proj-empty">' + (q ? 'No problems match.' : 'No problems in this stage.') + '</p></li>';
       el('cnt' + cap).textContent = groups[k].length || (q ? '0' : '');
     });
     el('pbClear').hidden = !q;
@@ -104,19 +104,14 @@
   el('pbClear').addEventListener('click', function(){ q = ''; el('pbSearch').value = ''; renderList(); });
   el('pbMore').addEventListener('click', function(){ loadList(true); });
 
-  // AutoKaggle's addresses (settings/problemBank, set on Settings): the Lite link.
-  function loadUrls(){
-    return firebase.firestore(BOLD.getApp()).collection('settings').doc('problemBank').get().then(function(x){
-      if (x.exists && x.data().autokaggleLiteUrl) urls.autokaggleLiteUrl = x.data().autokaggleLiteUrl;
-    }).catch(function(){}).then(function(){ el('pbLite').href = urls.autokaggleLiteUrl; });
-  }
-
   /* ---------- start ---------- */
   BOLD.onUser(function(user){
     generation++;
     if (!user) { el('pbMsg').textContent = 'Sign in to see the Problem Bank.'; return; }
     BOLD.onAccess(function(){
-      loadUrls();
+      var button = el('pbAdd'), allowed = BOLD.can('projects', 'edit');
+      if (allowed) button.href = 'problem-new.html'; else button.removeAttribute('href');
+      button.setAttribute('aria-disabled', String(!allowed)); button.title = allowed ? '' : BOLD.cannotReason('projects', 'edit');
     });
     // The project picker: one row per project, as Projects lists them.
     loadList(false);

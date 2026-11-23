@@ -21,7 +21,7 @@
   // AutoKaggle's addresses (settings/problemBank, set on Settings › Problem Bank); these until they're saved.
   var urls = { autokaggleUrl: 'https://ecc962fa-2f4c-4a3f-96c4-179af273fb7a.k8s.civo.com/', autokaggleLiteUrl: 'https://lite.ecc962fa-2f4c-4a3f-96c4-179af273fb7a.k8s.civo.com/lite' };
 
-  var p = null, releases = [], history = [], canApprove = false, projects = [], people = [], editing = false, busy = false;
+  var p = null, releases = [], history = [], canApprove = false, canRemind = false, projects = [], people = [], editing = false, busy = false;
   var tab = (location.hash.match(/[#&]tab=([^&]+)/) || [])[1];
   var TABS = [['overview', 'Overview'], ['releases', 'Evaluator releases'], ['history', 'History']];
   if (!TABS.some(function(t){ return t[0] === tab; })) tab = 'overview';
@@ -37,6 +37,15 @@
   function when(ms){ return ms ? new Date(ms).toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' }) : ''; }
   function canEdit(){ return !!(p && p.can_edit); }
   function isOpen(){ return p && p.stage === 'open'; }
+  function editableDefinition(){ return isOpen() || p.origin === 'problem_bank'; }
+  function verifierLink(){
+    var url = new URL(urls.autokaggleLiteUrl);
+    if (url.protocol !== 'https:' || url.username || url.password) return '';
+    url.pathname = url.pathname.replace(/\/$/, '') + '/from-problem';
+    url.hash = new URLSearchParams({ problem: p.id, project: p.project_id, board: p.project_board || '',
+      title: p.title, question: (p.objective || '').slice(0, 4000) }).toString();
+    return url.href;
+  }
   function editButton(what, why){
     var off = !canEdit() ? NOT_EDITOR : (why || '');
     return ' ' + act('<button class="btn-text detail-inline-edit" type="button" data-edit="' + what + '"' + (off ? ' disabled title="' + esc(off) + '"' : '') + '>Edit</button>');
@@ -63,12 +72,17 @@
       var d = p.details || {};
       var html = '<dl class="detail-grid">';
       html += editableRow('project', 'Project', '<a href="' + esc(projectHref()) + '">' + esc(p.project_title || p.project_id) + '</a>',
-        '<select id="fieldInput"><option value="">Loading projects…</option></select>');
+        '<select id="fieldInput"><option value="">Loading projects…</option></select>', p.has_linked_verifiers ? 'Linked verifiers use this project.' : '');
       html += editableRow('owner', 'Research owner',
         d.owner ? (p.owner_id ? '<a href="person.html?id=' + encodeURIComponent(p.owner_id) + '">' + esc(d.owner) + '</a>' : esc(d.owner)) : missing(),
         '<select id="fieldInput"><option value="">Loading the lab’s people…</option></select>');
       html += editableRow('task_kind', 'Task type', p.task_kind ? esc(p.task_kind) : missing(),
         '<input type="text" id="fieldInput" maxlength="80" value="' + esc(p.task_kind || '') + '">', isOpen() ? '' : CONTRACT);
+      ['significance', 'existing_solutions'].forEach(function(key){
+        if (!editableDefinition() && !p[key]) return;
+        html += editableRow(key, key === 'significance' ? 'Why it matters' : 'Existing methods and the gap', text(p[key]),
+          '<textarea class="no-tags" id="fieldInput" maxlength="8000">' + esc(p[key] || '') + '</textarea>', editableDefinition() ? '' : CONTRACT);
+      });
       TEXT.forEach(function(f){
         html += editableRow(f[0], f[1], text(d[f[0]]), '<div class="field"><textarea id="fieldInput" class="no-tags" maxlength="8000">' + esc(d[f[0]] || '') + '</textarea></div>');
       });
@@ -79,12 +93,12 @@
       // The research question, as a project's abstract.
       html += editing === 'objective'
         ? '<div class="detail-abstract"><div class="field"><label for="fieldInput">Research question</label><textarea id="fieldInput" class="no-tags" maxlength="8000">' + esc(p.objective || '') + '</textarea></div>' + saveCancelHtml() + '</div>'
-        : '<div class="detail-abstract"><div class="detail-abstract-label">Research question' + editButton('objective', isOpen() ? '' : CONTRACT) + '</div>' +
+        : '<div class="detail-abstract"><div class="detail-abstract-label">Research question' + editButton('objective', editableDefinition() ? '' : CONTRACT) + '</div>' +
           (p.objective ? '<div class="abstract-render">' + esc(p.objective) + '</div>' : missing()) + '</div>';
       return html;
     },
     releases: function(){
-      if (!releases.length) return '<p class="detail-muted">No evaluator yet: AutoKaggle registers one here once it’s built.</p>';
+      if (!releases.length) return '<p class="detail-muted">Registered verifiers and their checks will appear here.</p>';
       return '<ul class="talk-list">' + releases.map(function(r){
         var e = r.evaluator, a = r.approval, ra = r.reported_approval, v = r.research;
         var checks = Object.keys(r.validation || {}).map(function(k){ return [k.replace(/_/g, ' '), r.validation[k]]; });
@@ -94,9 +108,9 @@
         var approve = !a && r.stage === 'validated'
           ? '<button class="btn-text" type="button" data-approve="' + esc(r.id) + '"' + (canApprove ? '' : ' disabled title="Only a PI or admin approves a release"') + '>Approve</button>' : '';
         return '<li><div class="talk-when">Registered ' + esc(when(r.createdAt)) + ' · ' + esc(STAGES[r.stage] || r.stage) + ', reported by AutoKaggle</div>' +
-          '<div class="talk-title">Evaluator version ' + esc(String(e.version)) + '</div>' +
+          '<div class="talk-title">' + esc(r.title) + ' · version ' + esc(String(e.version)) + '</div>' +
           '<div class="talk-when">' + (a ? 'Approved by ' + esc(a.name) + ', ' + esc(when(a.at)) + (a.note ? ': ' + esc(a.note) : '') : 'Not approved in BOLD.OS') + '</div>' +
-          '<div class="talk-actions">' + external(e.repository, 'Repository') + external(e.repository + '/tree/' + e.commit, 'Pinned code') + external(e.zip_url, 'ZIP') + approve + '</div>' +
+          '<div class="talk-actions">' + external(e.repository, 'Repository') + external(e.repository + '/tree/' + e.commit, 'Pinned code') + external(e.zip_url, 'ZIP') + external(urls.autokaggleLiteUrl + '?project=' + encodeURIComponent(r.source_id.slice(11)), 'Lite session') + approve + '</div>' +
           '<details><summary class="detail-muted">Checks and evidence</summary><dl class="detail-grid">' +
           [['Commit', e.commit], ['Contract SHA-256', e.contract_sha256]].concat(checks).map(function(x){ return row(x[0], text(x[1] == null ? '' : x[1])); }).join('') +
           '</dl></details></li>';
@@ -114,7 +128,8 @@
   function render(){
     var html = '<div class="detail-head">' + (editing === 'title'
       ? '<div class="detail-title-edit"><input type="text" id="fieldInput" maxlength="180" value="' + esc(p.title || '') + '" aria-label="Title">' + saveCancelHtml() + '</div>'
-      : '<h2>' + esc(p.title) + editButton('title', isOpen() ? '' : CONTRACT) + '</h2>');
+      : '<h2>' + esc(p.title) + editButton('title', editableDefinition() ? '' : CONTRACT) + '</h2>');
+    if (!p.evaluator) html += '<span class="badge pb-missing">No verifier</span>';
     html += '<div class="detail-badges">';
     if (!isOpen()) html += '<span class="badge badge-stage">' + esc(STAGES[p.stage] || p.stage) + '</span>';
     if (p.approval) html += '<span class="badge">Approved</span>';
@@ -128,6 +143,12 @@
     html += '<p class="detail-venue">Project: <a href="' + esc(projectHref()) + '">' + esc(p.project_title || p.project_id) + '</a>' +
       (owner ? ' · ' + (p.owner_id ? '<a href="person.html?id=' + encodeURIComponent(p.owner_id) + '">' + esc(owner) + '</a>' : esc(owner)) : '') +
       (isOpen() ? '' : ' · Stage reported by AutoKaggle') + '</p>';
+    html += '<ol class="pb-steps" aria-label="Problem onboarding"><li>Problem defined</li><li>' +
+      (p.archived || !BOLD.can('projects', 'edit') ? '<button class="btn-box" disabled title="' + esc(p.archived ? 'Restore this problem first.' : BOLD.cannotReason('projects', 'edit')) + '">Add verifier</button>'
+        : '<button type="button" class="btn-primary btn-box" id="addVerifier">' + (p.evaluator ? 'Add another verifier' : 'Add verifier') + '</button>') +
+      '</li><li>Autoresearch baseline <small>Coming soon</small></li></ol>';
+    if (canRemind && !p.archived && !p.evaluator) html += '<p><button type="button" class="btn-text" id="toggleReminder">' +
+      (p.reminders ? 'Turn off my weekly reminders' : 'Remind me to add a verifier') + '</button></p>';
     html += '<div class="tabs" role="tablist" aria-label="Problem">' + TABS.map(function(t){
       var on = t[0] === tab;
       return '<button class="tab' + (on ? ' active' : '') + '" type="button" role="tab" data-tab="' + t[0] + '" aria-selected="' + on + '"' + (on ? '' : ' tabindex="-1"') + '>' +
@@ -157,7 +178,9 @@
     if ('notes' in patch) data.notes = patch.notes;
     if ('archived' in patch) data.archived = patch.archived;
     if ('details' in patch) Object.keys(patch.details).forEach(function(k){ if (patch.details[k]) d[k] = patch.details[k]; else delete d[k]; });
-    if (isOpen()) data.definition = { title: 'title' in patch ? patch.title : p.title, objective: 'objective' in patch ? patch.objective : p.objective, task_kind: 'task_kind' in patch ? patch.task_kind : p.task_kind };
+    ['title', 'objective', 'task_kind', 'significance', 'existing_solutions'].forEach(function(k){
+      if (k in patch) { data.definition = data.definition || {}; data.definition[k] = patch[k]; }
+    });
     return call(data).then(load);
   }
   function failer(){ var e = el('detailEditError'); return function(msg){ if (e) { e.textContent = msg; e.hidden = false; } }; }
@@ -185,6 +208,22 @@
       busy = true; render();
       save({ archived: !p.archived }).catch(function(e){ busy = false; render(); alertLine(e); });
     });
+    if (el('toggleReminder')) el('toggleReminder').onclick = async function(){
+      var button = this, enable = !p.reminders;
+      button.disabled = true;
+      try {
+        if (enable && !await BOLD.confirmAction({ title: 'Enable verifier reminders?', always: true, go: 'Enable reminders',
+          effects: ['Remind you on Slack now and every week until this problem has a verifier. Your notification settings apply.'] })) return;
+        await call({ action: 'reminders', problem_id: id, reminders: enable }); await load();
+      } catch (e){ alertLine(e); } finally { button.disabled = false; }
+    };
+    if (el('addVerifier')) el('addVerifier').onclick = async function(){
+      var url = verifierLink();
+      if (!url) return alertLine(new Error('Check the AutoKaggle Lite address in Settings.'));
+      var ok = await BOLD.confirmAction({ title: 'Open AutoKaggle Lite?', always: true, go: 'Open Lite',
+        effects: ['Share this title, research question, and project and problem IDs with AutoKaggle Lite to start a verifier.'] });
+      if (ok) location.assign(url);
+    };
     if (!editing) return;
     var input = el('fieldInput'), fail = failer();
     el('editCancel').addEventListener('click', function(){ editing = false; render(); });
@@ -200,7 +239,7 @@
       var v = input.value, patch = {};
       if (editing === 'project') { if (!v) return fail('Choose its project.'); patch.project = JSON.parse(v); }
       else if (editing === 'owner') { if (!v) return fail('Choose the research owner.'); patch.owner_id = v; }
-      else if (editing === 'title' || editing === 'objective' || editing === 'task_kind') { if (!v.trim()) return fail('This can’t be empty.'); patch[editing] = v.trim(); }
+      else if (editing === 'title' || editing === 'objective' || editing === 'task_kind' || editing === 'significance' || editing === 'existing_solutions') { if (!v.trim()) return fail('This can’t be empty.'); patch[editing] = v.trim(); }
       else if (editing === 'notes') patch.notes = v;
       else { patch.details = {}; patch.details[editing] = v.trim(); }
       el('fieldSave').disabled = true;
@@ -212,7 +251,7 @@
   /* ---------- loading ---------- */
   function load(){
     return call({ action: 'get', problem_id: id }).then(function(data){
-      p = data.problem; releases = data.versions || []; history = data.history || []; canApprove = !!data.can_approve; busy = false;
+      p = data.problem; releases = data.versions || []; history = data.history || []; canApprove = !!data.can_approve; canRemind = !!data.can_manage_reminders; busy = false;
       render();
     });
   }
@@ -221,6 +260,7 @@
       if (x.exists) ['autokaggleUrl', 'autokaggleLiteUrl'].forEach(function(k){ if (x.data()[k]) urls[k] = x.data()[k]; });
     }).catch(function(){});
   }
+  BOLD.onAccess(function(){ if (p && !editing) render(); });
   BOLD.onUser(function(user){
     if (!user) return;
     if (!/^ak-[a-f0-9]{24}$/.test(id)) { el('detailMsg').textContent = 'No such problem.'; return; }
