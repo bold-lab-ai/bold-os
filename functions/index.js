@@ -39,6 +39,7 @@ const { defineSecret } = require('firebase-functions/params');
 const accessLib = require('./access');
 // Three-way merges for proposals (#177): shared with the pages (assets/js/merge.js).
 const merge = require('./merge');
+const guideAnchors = require('./guide-anchors');
 const { setGlobalOptions } = require('firebase-functions/v2');
 const logger = require('firebase-functions/logger');
 const admin = require('firebase-admin');
@@ -2280,6 +2281,11 @@ function mergedEdit(p, before, after){
 
 // The document with proposal q applied: pure, so it's testable on its own. → { title, description, parts } changed.
 function appliedProposal(doc, q, ctx){
+  const fields = appliedProposalFields(doc, q, ctx);
+  if (fields.parts && q.kind !== 'batch') fields.headingAnchors = guideAnchors.update(doc.parts || [], fields.parts, doc.headingAnchors);
+  return fields;
+}
+function appliedProposalFields(doc, q, ctx){
   // Several changes proposed together (a draft): each in turn, on the result of the last.
   if (q.kind === 'batch') {
     const changes = Array.isArray(q.changes) ? q.changes : [];
@@ -2400,6 +2406,9 @@ async function acceptedOps(collection, slug, snap, q, ctx){
     return [{ op: 'update', ref, data: stamp }, { op: 'delete', ref }];
   }
   let fields = appliedProposal(snap.exists ? snap.data() : {}, q, { pages: ctx.pages });
+  if (fields.headingAnchors && Buffer.byteLength(JSON.stringify(Object.assign({}, snap.exists ? snap.data() : {}, fields)), 'utf8') > 900000) {
+    throw new HttpsError('failed-precondition', 'This guide and its saved links are too large to save. Split it into smaller guides.');
+  }
   // A tool is checked as agents get it (name, inputs, code that compiles: functions/api-tools.js).
   if (collection === 'agentTools') {
     try { fields = agentApi.checkTool(slug, Object.assign({}, snap.exists ? snap.data() : {}, fields)); }

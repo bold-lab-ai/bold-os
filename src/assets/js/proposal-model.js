@@ -20,6 +20,11 @@
 
   // Page d with change q applied → { title, description, parts } changed.
   function applied(d, q){
+    var fields = appliedFields(d, q);
+    if (fields.parts && q.kind !== 'batch' && window.BoldGuideAnchors) fields.headingAnchors = window.BoldGuideAnchors.update(d.parts || [], fields.parts, d.headingAnchors);
+    return fields;
+  }
+  function appliedFields(d, q){
     if (q.kind === 'batch') {
       var cur = Object.assign({}, d), out = {};
       (q.changes || []).forEach(function(c){ var r = applied(cur, c); Object.assign(cur, r); Object.assign(out, r); });
