@@ -126,6 +126,7 @@ const releaseFingerprint = (data) => sha(canonical({ evaluator: data.evaluator, 
 // from functions/index.js (allProjectsFromCards, as the Projects page lists them).
 module.exports = function({ db, onCall, callerEmail, isFullWrite, access, HttpsError, projectChoices }){
   const error = (code, message) => new HttpsError(code, message);
+  const family = require('./problem-family')(db,error);
   // What a page or agent sees of a document: no emails.
   const publicRow = (doc, edit) => {
     const { createdBy, updatedBy, approvedBy, createFingerprint, verifierNoticeDue, verifierNoticeCycle, ...data } = doc.data();
@@ -171,12 +172,15 @@ module.exports = function({ db, onCall, callerEmail, isFullWrite, access, HttpsE
 
   async function run(request){
     const email = callerEmail(request), d = request.data || {}, action = d.action || 'list';
-    const permission = action === 'open_choices' ? 'list' : ['list', 'get', 'projects', 'search', 'benchmark_catalogue'].includes(action) ? 'view' : 'change';
+    const permission = action === 'open_choices' ? 'list' : ['list', 'get', 'projects', 'search', 'family', 'benchmark_catalogue'].includes(action) ? 'view' : 'change';
     await access.requireAccess(email, 'projects', permission);
     const full = await isFullWrite(email);
     const mayEdit = full || await access.can(email, 'projects', 'change');
     const canEdit = (doc) => mayEdit && (full || doc.data().createdBy === email);
 
+    if (action === 'family') return family.list(full);
+    if (action === 'set_family') return family.setFamily(d,email,canEdit);
+    if (action === 'save_moonshot') return family.saveMoonshot(d,email,full);
     if (action === 'benchmark_catalogue') return require('./benchmark-catalogue').listBenchmarkReleases(db,d,error);
     if (action === 'projects') return { items: await projectChoices() };
 
@@ -214,7 +218,12 @@ module.exports = function({ db, onCall, callerEmail, isFullWrite, access, HttpsE
       const refs = projectRefs(list);
       const id = 'ak-' + sha('problem:' + email + ':' + d.request_id).slice(0, 24);
       const ref = db.collection('problemBank').doc(id), at = Date.now();
-      const fingerprint = sha(canonical(modern ? [definition,owner.owner_id,collaborators,list,d.reminders] : [definition,d.project_id,d.project_board || '',d.reminders]));
+      const selection = d.family === undefined ? null : family.normalize(d.family,id);
+      const inputs = modern ? [definition,owner.owner_id,collaborators,list,d.reminders] : [definition,d.project_id,d.project_board || '',d.reminders];
+      // Preserve the fingerprint of older creates that had no relationships.
+      const hasLinks = selection && (selection.parents.length || selection.related.length);
+      if (hasLinks) inputs.push(selection);
+      const fingerprint = sha(canonical(inputs));
       return db.runTransaction(async tx => {
         const previous = await tx.get(ref);
         if (previous.exists) {
@@ -223,11 +232,12 @@ module.exports = function({ db, onCall, callerEmail, isFullWrite, access, HttpsE
         }
         if (!modern) throw error('invalid-argument', 'Reload the form to select the problem definer and describe the difficulties.');
         const links = await readLinks(tx,refs,list);
+        const familyChange = hasLinks ? await family.replace(tx,id,selection,null,email,at) : null;
         const row = { ...definition, origin: 'problem_bank', stage: 'open', archived: false, task_kind: '',
           ...primary(links), projects:links, owner_id:owner ? owner.owner_id : null,
           details:owner ? {owner:owner.owner,collaborators} : {}, notes: '', createdBy: email, updatedBy: email, createdAt: at, updatedAt: at, reminders: d.reminders };
         tx.set(ref, { ...row, createFingerprint: fingerprint, verifierNoticeDue: d.reminders ? at : null });
-        tx.set(ref.collection('versions').doc('created'), { ...row, changeNote: 'Defined the open problem' });
+        tx.set(ref.collection('versions').doc('created'), { ...row, changeNote: 'Defined the open problem', ...(familyChange ? {familyChange} : {}) });
         return { problem_id: id };
       });
     }
