@@ -9666,6 +9666,30 @@ exports.homeLetter = boldLlm.homeLetter;
 exports.onLetterJob = boldLlm.onLetterJob;
 exports.onVisit = boldLlm.onVisit;
 
+// Adding a problem by talking it through with BOLD-LLM (problem-new.html, functions/problem-interview.js): one turn of
+// the conversation → { reply, ready, draft }. Sofya, thinking off. What it may link to is read as the person, through the
+// Problem Bank's own callable (its family tree and projects), so it never sees more than they do. Saving is the page's,
+// through benchmarkRegistry's create, after they check the draft.
+const problemInterview = require('./problem-interview');
+const sofyaForProblems = require('./sofya')({ key: () => BOLD_LLM_KEY.value() });
+exports.problemInterview = onCall({ secrets: [BOLD_LLM_KEY], timeoutSeconds: 120 }, async (request) => {
+  const email = callerEmail(request);
+  await access.requireAccess(email, 'projects', 'change');
+  const [family, dir] = await Promise.all([problemBank.run({ data: { action: 'family' } }, email), problemBank.run({ data: { action: 'projects' } }, email)]);
+  const lab = {
+    objectives: (family.objectives || []).filter((o) => !o.archived).map((o) => ({ id: o.id, title: o.title, kind: o.kind })),
+    problems: (family.problems || []).filter((p) => !p.archived).map((p) => ({ id: p.id, title: p.title })),
+    projects: (dir.items || []).map((p) => ({ id: p.id, title: p.title }))
+  };
+  try {
+    return await problemInterview.interview((request.data || {}).turns, lab, sofyaForProblems.complete, require('./sofya').said, require('./sofya').jsonOf, (request.data || {}).draft);
+  } catch (err) {
+    if (/^(Start again|Keep each|Say something)/.test(err.message)) throw new HttpsError('invalid-argument', err.message);
+    logger.warn('Problem interview failed', { error: String(err.message).slice(0, 300) });
+    throw new HttpsError('unavailable', 'BOLD-LLM didn’t answer. Try again, or fill in the form yourself.');
+  }
+});
+
 exports._internal = { proposalRoute, proposalHours, asksForMore, replaceEmail, accountEmailsBySlackId, calendarUpdates, isCalendarLimit,
   slackImagesOf, slackToPlain, pingText, bugReportOf, bugNotes, bugTitle,
   channelsToJoin, setupMissing, setupMissingText, workspaceStarted, normalizeRepo, setupNudgeText, projectHealth,

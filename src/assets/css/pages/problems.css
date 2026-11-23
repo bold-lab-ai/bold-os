@@ -87,3 +87,18 @@ a.btn{display:inline-block; text-decoration:none;}
 #pbInputs{min-width:0; margin:0; padding:0; border:0; display:grid; gap:16px;}
 #pbInputs button{justify-self:start;}
 #pbAdd[aria-disabled="true"], #openBenchmarkLite[aria-disabled="true"]{opacity:.55; cursor:default;}
+
+/* ---------- adding a problem with BOLD-LLM (problem-new.html) ---------- */
+.pb-chat{margin:0 0 28px;}
+.pb-chat-log{display:flex; flex-direction:column; gap:12px; margin-bottom:14px;}
+.pb-chat-msg{max-width:85%; padding:10px 14px; border-radius:var(--radius); line-height:1.5;}
+.pb-chat-msg p{margin:0 0 6px;} .pb-chat-msg p:last-child{margin-bottom:0;}
+.pb-chat-msg.from-llm{align-self:flex-start; background:var(--surface); border:1px solid var(--line);}
+.pb-chat-msg.from-me{align-self:flex-end; background:color-mix(in srgb, var(--accent) 10%, transparent);}
+.pb-chat-msg.pending{color:var(--muted); font-style:italic;}
+.pb-chat-say textarea{width:100%; box-sizing:border-box;}
+.pb-chat-actions{display:flex; flex-wrap:wrap; align-items:center; gap:12px; margin:8px 0 4px;}
+.pb-draft-head{font:600 15px var(--sans); margin:0 0 12px;}
+.pb-form .pb-filled{animation:pb-filled 1.2s ease-out;}
+@keyframes pb-filled{from{background:color-mix(in srgb, var(--accent) 16%, transparent);} to{background:transparent;}}
+@media (prefers-reduced-motion: reduce){.pb-form .pb-filled{animation:none;}}

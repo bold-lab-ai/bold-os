@@ -39,12 +39,18 @@ window.BoldProblemFamily = (function(){
     var route = node.kind ? 'problems.html?objective=' : 'problem.html?problem=';
     return '<a href="' + route + encodeURIComponent(node.id) + '">' + esc(node.title) + '</a>' + (node.archived ? ' (archived)' : '');
   }
-  function picker(container, graph, id){
+  // `initial` (optional) { parents, related }: ids to start ticked, as suggested by BOLD-LLM on problem-new.html.
+  function picker(container, graph, id, initial){
     var nodes = Array.from(index(graph).values()).sort(function(a,b){
       return (Number(!a.kind) - Number(!b.kind)) || a.title.localeCompare(b.title) || a.id.localeCompare(b.id);
     });
     var original = connections(graph, id), narrower = narrowerProblems(graph, id), children = new Set(original.children);
     var picked = {parents:new Set(original.parents), related:new Set(original.related)};
+    if (initial) {
+      var known = index(graph);
+      (initial.parents || []).forEach(function(x){ if (known.has(x) && x !== id) picked.parents.add(x); });
+      (initial.related || []).forEach(function(x){ if (known.has(x) && x !== id && !picked.parents.has(x) && !known.get(x).kind) picked.related.add(x); });
+    }
     var groupNames = Object.keys(picked);
     container.innerHTML = groupNames.map(function(key){
       return '<details class="pb-family-choice" data-group="'+key+'"><summary>' + labels[key] + ' <small data-count></small></summary>' +

@@ -5,7 +5,7 @@ description: "Define a research question for the Problem Bank."
 sdk: ["firestore", "functions"]
 css: "problems"
 styles: ["problem-steps", "problem-family-picker"]
-scripts: ["people-select.js", "problem-projects.js", "problem-family-picker.js", "pages/problem-new.js"]
+scripts: ["people-select.js", "problem-projects.js", "problem-family-picker.js", "markdown.js", "pages/problem-new.js"]
 permalink: "problem-new.html"
 nav: "problems.html"
 ---
@@ -14,7 +14,20 @@ nav: "problems.html"
   <ol class="pb-steps" aria-label="Problem onboarding">
     <li aria-current="step">Define the problem</li><li id="pbVerifierStep">Add a verifier</li><li id="pbBaselineStep">Autoresearch baseline <small>Coming soon</small></li>
   </ol>
-  <form class="pb-form" id="pbCreate">
+  <section class="pb-chat" id="pbChat" aria-label="Describe the problem with BOLD-LLM">
+    <div class="pb-chat-log" id="pbChatLog" aria-live="polite"></div>
+    <form class="pb-chat-say" id="pbChatForm">
+      <textarea class="no-tags" id="pbChatInput" aria-label="Your answer" rows="3" maxlength="4000" placeholder="Describe the problem: what you want to solve and why" disabled></textarea>
+      <div class="pb-chat-actions">
+        <button type="submit" class="btn btn-primary" id="pbChatSend" disabled>Send</button>
+        <button type="button" class="btn-text" id="pbChatRestart" hidden>Start again</button>
+        <button type="button" class="btn-text" id="pbManual">Fill in the form myself</button>
+      </div>
+      <p class="field-hint">BOLD-LLM fills in the draft below as you talk; check it and save. BOLD-LLM logs conversations to improve it.</p>
+    </form>
+  </section>
+  <form class="pb-form" id="pbCreate" hidden>
+    <h2 class="pb-draft-head" id="pbDraftHead">Draft</h2>
     <fieldset id="pbInputs" disabled>
       <div class="field"><label for="pbTitle">Problem title</label><input id="pbTitle" required maxlength="180"></div>
       <div class="field"><label class="pb-purpose"><input id="pbBuildsBenchmark" type="checkbox" aria-describedby="pbPurposeHint"> This problem is building a benchmark</label>
@@ -31,7 +44,7 @@ nav: "problems.html"
         <div id="pbFamily"></div><span id="pbFamilyStatus" role="status"></span>
         <button type="button" id="pbFamilyRetry" class="btn-text" hidden>Reload family tree</button>
       </section>
-      <button type="submit" class="btn btn-primary">Save problem</button>
+      <button type="submit" class="btn btn-primary" id="pbSave">Save problem</button>
     </fieldset>
     <p role="status" id="pbStatus">Loading…</p>
   </form>

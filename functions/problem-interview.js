@@ -1,0 +1,102 @@
+// Adding a problem by talking it through with BOLD-LLM (Sofya, functions/sofya.js): the person describes the
+// problem, BOLD-LLM asks what's missing, one thing at a time, and keeps a draft of the Problem Bank's fields
+// (problem-new.html shows it, to check and edit before saving through benchmarkRegistry's create). Thinking off,
+// so each turn takes seconds. Sofya logs its requests for training: the page says so. Pure but for `complete`.
+'use strict';
+
+const MAX_TURNS = 40, MAX_CHARS = 4000;
+const TEXT = { title: 180, significance: 8000, difficulties: 8000, existing_solutions: 8000, collaborators: 8000 };
+
+// The draft's shape, as the model answers it (strict JSON schema).
+const SCHEMA = {
+  type: 'object', additionalProperties: false,
+  required: ['reply', 'ready', 'draft'],
+  properties: {
+    reply: { type: 'string' },
+    ready: { type: 'boolean' },
+    draft: {
+      type: 'object', additionalProperties: false,
+      required: ['title', 'significance', 'difficulties', 'existing_solutions', 'builds_benchmark', 'collaborators', 'project_ids', 'parent_ids', 'related_ids'],
+      properties: {
+        title: { type: 'string' }, significance: { type: 'string' }, difficulties: { type: 'string' }, existing_solutions: { type: 'string' },
+        builds_benchmark: { type: 'boolean' }, collaborators: { type: 'string' },
+        project_ids: { type: 'array', items: { type: 'string' } }, parent_ids: { type: 'array', items: { type: 'string' } }, related_ids: { type: 'array', items: { type: 'string' } }
+      }
+    }
+  }
+};
+
+// Pure: the system prompt, with what the lab already has to link to.
+function systemPrompt({ objectives, problems, projects }){
+  const list = (rows, f) => rows.length ? rows.map(f).join('\n') : '(none yet)';
+  return [
+    'You help a researcher at BOLD, an AI research lab, add an open research problem to the lab’s Problem Bank, by conversation.',
+    'Start from what they describe. Ask about the required fields first, one missing thing at a time, briefly and warmly, in plain British English. Never ask about something they already told you. Don’t lecture or invent facts about their research: when unsure, ask.',
+    '',
+    'The Problem Bank needs, for each problem:',
+    '- title: a short, specific name for the problem (at most 180 characters). Propose one yourself once you understand it.',
+    '- significance: why it matters, who benefits if it’s solved.',
+    '- difficulties: what makes it hard.',
+    '- existing_solutions: where the frontier is: what current methods can do, and what remains open.',
+    '- builds_benchmark: true only if the goal is to build a benchmark itself (then it needs no separate verifier). Ask if it’s unclear.',
+    'Optional: once the required fields are there, suggest these when they fit (one question for all of them), and confirm with the person:',
+    '- parent_ids: the northstars, moonshots or broader problems it contributes to (ids from the lists below).',
+    '- related_ids: related problems (ids from the problem list).',
+    '- project_ids: existing projects working on it (ids from the project list).',
+    '- collaborators: names of people working on it with them.',
+    '',
+    'Write each text field in the researcher’s voice, from what they said, concise and concrete (a few sentences). Keep every field you already have unless they change it; use "" or [] for what you don’t know yet.',
+    'Set ready to true once title, significance, difficulties and existing_solutions are filled and builds_benchmark is settled; then tell them to check the draft below the conversation and save it. They can keep talking to change it.',
+    'Answer with JSON only: { "reply": what you say to them next, "ready": …, "draft": { … } }.',
+    '',
+    'Northstars and moonshots (id: title):', list(objectives, (o) => o.id + ': ' + o.title + ' (' + o.kind + ')'),
+    '',
+    'Problems already in the bank (id: title):', list(problems, (p) => p.id + ': ' + p.title),
+    '',
+    'Projects (id: title):', list(projects, (p) => p.id + ': ' + p.title)
+  ].join('\n');
+}
+
+// Pure: the conversation as sent, or throws a message for the person.
+function turnsOf(turns){
+  if (!Array.isArray(turns) || !turns.length || turns.length > MAX_TURNS) throw new Error('Start again: the conversation is too long or empty.');
+  const out = turns.map((t) => {
+    if (!t || (t.role !== 'user' && t.role !== 'assistant') || typeof t.content !== 'string' || !t.content.trim() || t.content.length > MAX_CHARS)
+      throw new Error('Keep each message under ' + MAX_CHARS + ' characters.');
+    return { role: t.role, content: t.content.trim() };
+  });
+  if (out[out.length - 1].role !== 'user') throw new Error('Say something first.');
+  return out;
+}
+
+// Pure: the model's draft, kept to known fields and ids it was given.
+function cleanDraft(d, known){
+  d = d && typeof d === 'object' ? d : {};
+  const out = {};
+  Object.keys(TEXT).forEach((k) => { out[k] = typeof d[k] === 'string' ? d[k].trim().slice(0, TEXT[k]) : ''; });
+  out.builds_benchmark = d.builds_benchmark === true;
+  const ids = (list, allowed) => Array.from(new Set((Array.isArray(list) ? list : []).map(String).filter((id) => allowed.has(id)))).slice(0, 20);
+  out.project_ids = ids(d.project_ids, known.projects);
+  out.parent_ids = ids(d.parent_ids, known.parents);
+  out.related_ids = ids(d.related_ids, known.problems).filter((id) => out.parent_ids.indexOf(id) < 0);
+  return out;
+}
+// Pure: whether the required fields are there.
+function complete(d){ return !!(d.title && d.significance && d.difficulties && d.existing_solutions); }
+
+// One turn: `turns` [{ role, content }], what the lab has (`lab`: { objectives, problems, projects }), Sofya's
+// `complete`, and the draft as it stands on the page (`current`) → { reply, ready, draft }.
+async function interview(turns, lab, sofyaComplete, said, jsonOf, current){
+  const so = current && typeof current === 'object' ? JSON.stringify(current).slice(0, 30000) : '';
+  const messages = [{ role: 'system', content: systemPrompt(lab) + (so ? '\n\nThe draft so far, as the person sees it below the conversation (they may have edited it: keep what they wrote unless they ask to change it):\n' + so : '') }].concat(turnsOf(turns));
+  const r = await sofyaComplete({ max_tokens: 3000, messages, chat_template_kwargs: { enable_thinking: false },
+    response_format: { type: 'json_schema', json_schema: { name: 'problem_interview', schema: SCHEMA, strict: true } } });
+  const v = jsonOf(said(r.message));
+  const known = { projects: new Set(lab.projects.map((p) => p.id)), problems: new Set(lab.problems.map((p) => p.id)),
+    parents: new Set(lab.objectives.map((o) => o.id).concat(lab.problems.map((p) => p.id))) };
+  const draft = cleanDraft(v && v.draft, known);
+  const reply = typeof (v && v.reply) === 'string' && v.reply.trim() ? v.reply.trim().slice(0, MAX_CHARS) : 'Tell me more about it.';
+  return { reply, draft, ready: !!(v && v.ready) && complete(draft) };
+}
+
+module.exports = { interview, systemPrompt, turnsOf, cleanDraft, SCHEMA, MAX_TURNS };
