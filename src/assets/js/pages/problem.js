@@ -60,7 +60,8 @@
   function external(href, label){ return '<a href="' + esc(href) + '" target="_blank" rel="noopener">' + esc(label) + ' ↗</a>'; }
 
   function familySection(){
-    var html = '<section class="pb-family-panel" aria-label="Research family tree"><h3>Research family tree</h3>';
+    var html = '<section class="pb-family-panel" aria-label="Research family tree"><h3>Research family tree</h3>' +
+      '<a href="problems.html?view=graph&amp;focus=' + encodeURIComponent(id) + '">Explore this problem in the graph</a>';
     if (!familyGraph) return html + (familyError ? '<p role="status">Could not load family links. <button type="button" class="btn-text" id="retryFamily">Try again</button></p>' : '<p role="status">Loading family links…</p>') + '</section>';
     if (editing === 'family') return html + '<fieldset id="familyEditor" aria-label="Family links"></fieldset>' + saveCancelHtml() + '</section>';
     var links = BoldProblemFamily.connections(familyGraph, id), nodes = BoldProblemFamily.index(familyGraph);

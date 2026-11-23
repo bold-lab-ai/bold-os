@@ -32,7 +32,7 @@
     return {objectives:objectives, problems:problems, children:children, parents:parents, unclassified:unclassified, classified:classified};
   }
 
-  function mount(call, initialObjective){
+  function mount(call, initialObjective, onFamilyChanged){
     var el = function(id){return document.getElementById(id);};
     var branches = el('pbTreeBranches'), status = el('pbTreeStatus'), retry = el('pbTreeRetry');
     var includeArchived = el('pbIncludeArchived'), manage = el('pbManageObjectives');
@@ -124,7 +124,11 @@
         branches.append(group(roots, requested));
       }
     }
-    function reindex(){index = buildIndex(graph, includeArchived.checked); render();}
+    function reindex(){
+      index = buildIndex(graph, includeArchived.checked);
+      render();
+      onFamilyChanged(graph, includeArchived.checked);
+    }
     function fillForm(){
       var current = graph.objectives.find(function(o){return o.id === select.value;});
       title.value = current ? current.title : '';
@@ -203,11 +207,15 @@
     archive.addEventListener('click', function(){submit(true);});
     return {
       load:load,
+      includeArchived:function(){
+        if (graph && !includeArchived.checked) { includeArchived.checked = true; reindex(); }
+      },
       search:function(value){if (query !== value) {query = value; render();}},
       reset:function(){
         version++; pending = false; graph = null; index = null;
         includeArchived.checked = false; branches.replaceChildren(); retry.hidden = true; form.reset();
         showForm(false); formBusy(false); statusText('');
+        onFamilyChanged(null, false);
       }
     };
   }

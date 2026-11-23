@@ -4,8 +4,8 @@ title: "Problem Bank | BOLD Lab"
 description: "Open research problems, their linked projects, and the evaluators built for them."
 sdk: ["firestore", "functions"]
 css: "problems"
-styles: ["problem-steps", "problem-tree"]
-scripts: ["problem-projects.js", "problem-tree.js", "pages/problems.js"]
+styles: ["problem-steps", "problem-tree", "research-graph"]
+scripts: ["problem-projects.js", "problem-tree.js", "research-graph-model.js", "research-graph.js", "pages/problems.js"]
 permalink: "problems.html"
 nav: "problems.html"
 ---
@@ -24,6 +24,7 @@ nav: "problems.html"
       <button type="button" class="view-btn" data-view="list" aria-pressed="true">List</button>
       <button type="button" class="view-btn" data-view="grid" aria-pressed="false">Grid</button>
       <button type="button" class="view-btn" data-view="tree" aria-pressed="false">By objective</button>
+      <button type="button" class="view-btn" data-view="graph" aria-pressed="false">Graph</button>
     </div>
     <a class="btn btn-primary" id="pbAdd" aria-disabled="true">Add problem</a>
   </div>
@@ -70,6 +71,8 @@ nav: "problems.html"
     <p id="pbTreeStatus" class="proj-msg" role="status"></p>
     <button type="button" id="pbTreeRetry" class="btn-text" hidden>Try again</button>
     <div id="pbTreeBranches"></div>
+    <p id="pbGraphNotice" class="proj-msg" role="status" hidden></p>
+    <section id="pbGraph" aria-label="Research graph" hidden></section>
   </section>
 
   <details class="pb-note"><summary>What the stages mean</summary>

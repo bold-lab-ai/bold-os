@@ -14,6 +14,8 @@ An open problem can exist before a project starts. It can link to several BOLD O
 
 Open **Problem Bank → By objective** to browse the three research pillars and named moonshots. Expand a branch to see the problems that contribute to it. Search across active problems at every verifier stage. **Include archived** shows historical links. The **Unclassified** branch holds problems without a broader link and their descendants.
 
+Choose **Graph** to explore the same records visually. Select a node to see its broader objectives, narrower problems and related problems. Solid arrows point toward a broader objective or problem. Dashed lines connect related problems. Search by title to find a problem, including one without links. You can share the address of a selected node or open its Problem Bank record.
+
 On **Add problem**, select any broader objectives or problems and, separately, any related problems. On a saved problem, use **Edit family links**. The same problem can appear under several objectives. Its projects, verifiers and history are shared across every path. A PI or admin can add, rename, archive and restore a moonshot under **Manage moonshots**. The registry reads pillar names from the research pillars section of the handbook.
 
 ## Onboard an open problem

@@ -8,8 +8,11 @@
   var el = function(id){ return document.getElementById(id); };
   var call = function(data){ return firebase.app().functions('europe-west2').httpsCallable('benchmarkRegistry')(data).then(function(r){ return r.data; }); };
   var VIEW_KEY = 'boldProblems:view';
-  var initialObjective = new URLSearchParams(location.search).get('objective');
-  var tree = BoldProblemTree.mount(call, initialObjective);
+  var params = new URLSearchParams(location.search);
+  var initialObjective = params.get('objective');
+  var focusId = params.get('focus') || initialObjective, revealArchive = !!focusId;
+  var family = null, archived = false, diagram = null, drawnFamily = null;
+  var tree = BoldProblemTree.mount(call, initialObjective, familyChanged);
   var view = 'list', signedIn = false, listPending = false, listError = '';
 
   // A stage is AutoKaggle's report; an open problem has no evaluator yet.
@@ -46,8 +49,9 @@
       (badges(p) ? '<div class="proj-badges">' + badges(p) + '</div>' : '') +
       (missing && !p.archived ? '<a class="pb-add-verifier" href="' + path + '#tab=releases">Add verifier →</a>' : '') + '</div></li>';
   }
+  function familyView(name){return name === 'tree' || name === 'graph';}
   function renderList(){
-    if (view === 'tree') return;
+    if (familyView(view)) return;
     var groups = { open: [], implemented: [], checked: [], validated: [], archived: [] };
     rows.filter(matches).forEach(function(p){ groups[tabOf(p)].push(p); });
     Object.keys(groups).forEach(function(k){
@@ -69,15 +73,59 @@
     }).catch(function(e){
       if (epoch !== generation) return;
       listError = 'Could not load the Problem Bank. ' + (e.message || '');
-      if (view !== 'tree') { el('pbMsg').hidden = false; el('pbMsg').textContent = listError; }
+      if (!familyView(view)) { el('pbMsg').hidden = false; el('pbMsg').textContent = listError; }
     }).then(function(){ if (epoch === generation) { listPending = false; el('pbMore').disabled = false; } });
   }
 
+  function graphUrl(url){
+    url.searchParams.set('view', 'graph');
+    url.searchParams.delete('objective');
+    if (focusId) url.searchParams.set('focus', focusId); else url.searchParams.delete('focus');
+    url.hash = '';
+  }
+  function selectGraphNode(id){
+    focusId = id; revealArchive = false;
+    el('pbGraphNotice').hidden = true;
+    var url = new URL(location.href);
+    graphUrl(url); history.replaceState(null, '', url.href);
+    el('pbSearch').value = ''; q = ''; el('pbClear').hidden = true;
+    diagram.search(''); diagram.setFocus(id);
+  }
+  function showGraph(){
+    var host = el('pbGraph');
+    var notice = el('pbGraphNotice');
+    host.hidden = view !== 'graph' || !family;
+    if (host.hidden) { notice.hidden = true; return; }
+    if (!diagram) diagram = BoldResearchGraph.mount(host, {onFocus:selectGraphNode});
+    if (focusId) {
+      var target = family.problems.find(function(n){return n.id === focusId;}) || family.objectives.find(function(n){return n.id === focusId;});
+      if (target && target.archived && !archived && revealArchive) {
+        revealArchive = false; tree.includeArchived(); return;
+      }
+      revealArchive = false;
+      if (!target || (target.archived && !archived)) {
+        focusId = null;
+        var url = new URL(location.href); graphUrl(url); history.replaceState(null, '', url.href);
+        notice.textContent = target ? 'The selected item is archived. Showing active connections.' : 'This item could not be found. Showing the graph overview.';
+        notice.hidden = false;
+      }
+    }
+    if (drawnFamily !== family) { diagram.setData(family); drawnFamily = family; }
+    diagram.setArchived(archived); diagram.setFocus(focusId); diagram.search(q);
+    if (diagram.resize) diagram.resize();
+  }
+  function familyChanged(data, includeArchived){
+    family = data; archived = includeArchived;
+    if (!data) { drawnFamily = null; if (diagram) diagram.reset(); }
+    showGraph();
+  }
   function setView(selected){
-    view = selected === 'tree' || selected === 'grid' ? selected : 'list';
-    var byObjective = view === 'tree';
+    view = familyView(selected) || selected === 'grid' ? selected : 'list';
+    var byObjective = familyView(view);
     el('pbStageTabs').hidden = byObjective;
     el('pbTree').hidden = !byObjective;
+    el('pbTreeBranches').hidden = view !== 'tree';
+    showGraph();
     var searchLabel = byObjective ? 'Search objectives and problems' : 'Search problems';
     el('pbSearch').placeholder = searchLabel; el('pbSearch').setAttribute('aria-label', searchLabel);
     el('problems').setAttribute('data-view', view);
@@ -86,7 +134,7 @@
     el('pbMsg').hidden = byObjective || (loaded && !listError);
     el('pbMsg').textContent = listError || (signedIn ? 'Loading…' : 'Sign in to see the Problem Bank.');
     if (byObjective) {
-      tree.search(q);
+      if (view === 'tree') tree.search(q);
       if (signedIn) tree.load();
     } else if (loaded) renderList();
     else if (signedIn && !listPending) loadList(false);
@@ -94,7 +142,11 @@
   }
   Array.prototype.forEach.call(document.querySelectorAll('.view-btn'), function(b){ b.addEventListener('click', function(){
     var next = b.getAttribute('data-view'), url = new URL(location.href);
-    if (next !== 'tree') url.searchParams.delete('objective'); else url.hash = '';
+    if (next === 'graph') graphUrl(url);
+    else {
+      url.searchParams.delete('view'); url.searchParams.delete('focus');
+      if (next !== 'tree') url.searchParams.delete('objective'); else url.hash = '';
+    }
     history.replaceState(null, '', url.href); setView(next);
   }); });
 
@@ -121,12 +173,16 @@
   if (stageRequested) setTab(hashTab);
   var savedView;
   try { savedView = localStorage.getItem(VIEW_KEY); } catch (e){}
-  setView(initialObjective ? 'tree' : stageRequested && savedView === 'tree' ? 'list' : savedView);
+  if (params.get('view') === 'graph') setView('graph');
+  else if (initialObjective) setView('tree');
+  else setView(stageRequested && familyView(savedView) ? 'list' : savedView);
 
   function search(){
     q = el('pbSearch').value.trim();
     el('pbClear').hidden = !q;
-    if (view === 'tree') tree.search(q); else if (loaded) renderList();
+    if (view === 'graph') { if (diagram) diagram.search(q); }
+    else if (view === 'tree') tree.search(q);
+    else if (loaded) renderList();
   }
   el('pbSearch').addEventListener('input', search);
   el('pbClear').addEventListener('click', function(){ el('pbSearch').value = ''; search(); el('pbSearch').focus(); });
@@ -135,6 +191,7 @@
   /* ---------- start ---------- */
   BOLD.onUser(function(user){
     generation++; signedIn = !!user; loaded = false; listPending = false; rows = []; cursor = null; listError = '';
+    revealArchive = !!focusId;
     tree.reset();
     setView(view);
   });
