@@ -1,0 +1,75 @@
+const {test} = require('node:test');
+const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const vm = require('node:vm');
+const {parseHTML} = require('linkedom');
+
+const script = fs.readFileSync(require.resolve('../src/assets/js/pages/problem.js'), 'utf8');
+const id = 'ak-' + '3'.repeat(24);
+const token = '1a'.repeat(32);
+
+async function page({configured, permitted, confirm = true, handoff = token, projects = []} = {}) {
+  const {document} = parseHTML('<html><head></head><body><p id="detailMsg"></p><div id="problemBody"></div></body></html>');
+  const requests = [], visits = [];
+  const location = {search:'?problem='+id, hash:'#tab=releases',assign:url => visits.push(new URL(url))};
+  const callable = async data => {
+    if (data.action === 'projects') return {data:{items:projects}};
+    if (data.action === 'get') return {data:{handoff_enabled:configured,
+      problem:{id,title:'Rates & kinetics',objective:'Measure decay',stage:'open',papers:[],projects,handoff_enabled:permitted}}};
+    assert.equal(data.action,'issue_verifier_handoff');
+    requests.push(JSON.parse(JSON.stringify(data)));
+    if (handoff instanceof Error) throw handoff;
+    return {data:{handoff}};
+  };
+  const BOLD = {getAuth:()=>true,escapeHtml:String,can:()=>true,confirmAction:async()=>confirm,
+    onUser:callback=>callback({uid:'test'}),onAccess:()=>{}};
+  const urls = {autokaggleLiteUrl:'https://lite.example/lite'};
+  vm.runInNewContext(script,{BOLD,document,location,URL,URLSearchParams,
+    firebase:{app:()=>({functions:()=>({httpsCallable:()=>callable})})},
+    BOLDRegistryLinks:{defaults:urls,serviceUrl:v=>v,loadServiceUrls:async()=>urls},
+    BoldProblemPapers:{unavailableReason:()=>''}});
+  await new Promise(resolve=>setImmediate(resolve));
+  const button = document.getElementById('addVerifier');
+  return {document,requests,visits,button,launch:()=>button.onclick()};
+}
+
+test('consent issues a single-use handoff for this problem and the chosen project', async()=>{
+  const ui = await page({configured:true,permitted:true,projects:[{id:'robot',title:'Robot',board:'venue'}]});
+  ui.document.querySelector('#verifierProject option[value="0"]').selected = true;
+  await ui.launch();
+  assert.deepEqual(ui.requests,[{action:'issue_verifier_handoff',problem_id:id,project_id:'robot',project_board:'venue'}]);
+  const url = ui.visits[0], fields = new URLSearchParams(url.hash.slice(1));
+  assert.equal(url.origin+url.pathname, 'https://lite.example/lite/from-problem');
+  assert.equal(url.search,'');
+  assert.deepEqual(Object.fromEntries(fields),{problem:id,builds_benchmark:'0',title:'Rates & kinetics',question:'Measure decay',project:'robot',board:'venue',handoff:token});
+});
+
+test('cancel and missing authorization cannot issue a ticket or navigate', async()=>{
+  for (const opts of [{configured:true,permitted:true,confirm:false},{configured:true,permitted:false}]) {
+    const ui = await page(opts);
+    await ui.launch();
+    assert.equal(ui.requests.length,0);
+    assert.equal(ui.visits.length,0);
+  }
+});
+
+test('a failed or invalid handoff keeps the user on the problem with a retry', async()=>{
+  for (const handoff of ['', 'unexpected', new Error('failed-precondition')]) {
+    const ui = await page({configured:true,permitted:true,handoff});
+    await ui.launch();
+    assert.deepEqual(ui.requests,[{action:'issue_verifier_handoff',problem_id:id}]);
+    assert.equal(ui.visits.length,0);
+    assert.match(ui.document.getElementById('detailMsg').textContent,/try again/);
+    assert.equal(ui.button.disabled,false);
+  }
+});
+
+test('legacy deployments still launch a verifier with its problem and no project', async()=>{
+  const ui = await page();
+  await ui.launch();
+  assert.equal(ui.requests.length,0);
+  const fields = new URLSearchParams(ui.visits[0].hash.slice(1));
+  assert.equal(fields.get('problem'),id);
+  assert.equal(fields.has('handoff'),false);
+  assert.equal(fields.has('project'),false);
+});

@@ -17,6 +17,7 @@
   var urls = BOLDRegistryLinks.defaults;
 
   var p = null, releases = [], history = [], canApprove = false, canRemind = false, projects = [], projectsLoaded = false, editing = false, busy = false;
+  var handoffEnabled = false, launching = false;
   var userEpoch = 0, familyGraph = null, familyError = '', familySaving = false, familyRead = 0;
   var tab = (location.hash.match(/[#&]tab=([^&]+)/) || [])[1];
   var initialRelease = tab === 'releases' ? new URLSearchParams(location.hash.slice(1)).get('release') : null;
@@ -45,6 +46,39 @@
     if (project) { fields.set('project', project.id); if (project.board) fields.set('board', project.board); }
     url.hash = fields.toString();
     return url.href;
+  }
+  async function openVerifier(){
+    if (launching || !p || p.builds_benchmark || p.archived || this.disabled) return;
+    var picker = el('verifierProject');
+    var project = picker && picker.value !== '' ? p.projects[Number(picker.value)] : null;
+    var url = verifierLink(project);
+    if (!url) return alertLine(new Error('Check the AutoKaggle Lite address in Settings.'));
+    var epoch = userEpoch, scoped = handoffEnabled;
+    launching = true; this.disabled = true;
+    try {
+      var effects = ['Share the problem ID, title, and research question' + (project ? ', plus the selected project ID' : '') + ' with AutoKaggle Lite.'];
+      if (scoped) effects.push('Sign in to Lite with your BOLD OS email so the session can return its verifier to this problem.');
+      var ok = await BOLD.confirmAction({ title: 'Open AutoKaggle Lite?', always: true, go: 'Open Lite', effects: effects });
+      if (!ok || epoch !== userEpoch) return;
+      if (scoped) {
+        var request = {action:'issue_verifier_handoff', problem_id:id};
+        if (project) {
+          request.project_id = project.id;
+          if (project.board) request.project_board = project.board;
+        }
+        var result = await call(request);
+        if (epoch !== userEpoch) return;
+        if (!result || !/^[a-f0-9]{64}$/.test(result.handoff || '')) throw new Error('Invalid verifier handoff');
+        var target = new URL(url), fragment = new URLSearchParams(target.hash.slice(1));
+        fragment.set('handoff', result.handoff);
+        target.hash = fragment.toString(); url = target.href;
+      }
+      location.assign(url);
+    } catch (e) {
+      if (epoch === userEpoch) alertLine(new Error('Could not start this verifier. Refresh the problem and try again.'));
+    } finally {
+      if (epoch === userEpoch) { launching = false; this.disabled = false; }
+    }
   }
   function editButton(what, why){
     var off = !canEdit() ? NOT_EDITOR : (why || '');
@@ -163,6 +197,7 @@
       if(links.length) html += '<label for="verifierProject">Project (optional)</label> <select id="verifierProject"><option value="">No project</option>' +
         links.map(function(x,i){return '<option value="'+i+'">'+esc(x.title)+'</option>';}).join('')+'</select> ';
       var blocked = p.archived ? 'Restore this problem first.' : !BOLD.can('projects','edit') ? BOLD.cannotReason('projects','edit') : '';
+      if (!blocked && handoffEnabled && !p.handoff_enabled) blocked = 'A verifier handoff is unavailable. Ask a BOLD OS administrator to check access and settings.';
       html += '<button type="button" class="btn-primary btn-box" id="addVerifier"' + (blocked ? ' disabled title="'+esc(blocked)+'"' : '')+'>' + (p.evaluator?'Add another verifier':'Add verifier') + '</button>';
       html += '</li><li>Autoresearch baseline <small>Coming soon</small></li></ol>';
     }
@@ -269,15 +304,7 @@
         await call({ action: 'reminders', problem_id: id, reminders: enable }); await load();
       } catch (e){ alertLine(e); } finally { button.disabled = false; }
     };
-    if (el('addVerifier')) el('addVerifier').onclick = async function(){
-      var picker = el('verifierProject');
-      var project = picker && picker.value !== '' ? p.projects[Number(picker.value)] : null;
-      var url = verifierLink(project);
-      if (!url) return alertLine(new Error('Check the AutoKaggle Lite address in Settings.'));
-      var ok = await BOLD.confirmAction({ title: 'Open AutoKaggle Lite?', always: true, go: 'Open Lite',
-        effects: ['Share the problem ID, title, and research question' + (project ? ', plus the selected project ID' : '') + ' with AutoKaggle Lite.'] });
-      if (ok) location.assign(url);
-    };
+    if (el('addVerifier')) el('addVerifier').onclick = openVerifier;
     if (!editing) return;
     var input = el('fieldInput'), fail = failer();
     el('editCancel').addEventListener('click', function(){ editing = false; render(); });
@@ -306,7 +333,8 @@
     var epoch = userEpoch;
     return call({ action: 'get', problem_id: id }).then(function(data){
       if (epoch !== userEpoch) return;
-      p = data.problem; releases = data.versions || []; history = data.history || []; canApprove = !!data.can_approve; canRemind = !!data.can_manage_reminders; busy = false;
+      p = data.problem; handoffEnabled = !!(data.handoff_enabled || p.handoff_enabled);
+      releases = data.versions || []; history = data.history || []; canApprove = !!data.can_approve; canRemind = !!data.can_manage_reminders; busy = false;
       render();
     });
   }
@@ -325,6 +353,7 @@
   BOLD.onUser(function(user){
     var epoch = ++userEpoch;
     familyRead++; familyGraph = null; familyError = ''; familySaving = false; p = null; editing = false;
+    handoffEnabled = false; launching = false;
     projects = []; projectsLoaded = false; el('problemBody').replaceChildren(); el('problemBody').hidden = true;
     el('detailMsg').hidden = false; el('detailMsg').textContent = user ? 'Loading…' : 'Sign in to view this problem.';
     if (!user) return;
