@@ -14,6 +14,7 @@ function value(v) {
   if (v === null) return { nullValue: null };
   if (typeof v === 'boolean') return { booleanValue: v };
   if (typeof v === 'number') return { integerValue: String(v) };
+  if (Array.isArray(v)) return { arrayValue: { values: v.map(value) } };
   if (typeof v === 'object') return { mapValue: { fields: fields(v) } };
   return { stringValue: v };
 }
@@ -31,7 +32,8 @@ async function req(path, method, token, body, mask) {
   await db.doc('roles/admins').set({ emails: [] });
   await db.doc('members/' + MEMBER).set({ category: 'internal' });
   let n = 0;
-  const make = (proposal, by = MEMBER) => req('projects?documentId=p' + (++n), 'POST', jwt(by), { title: 'P', submittedBy: { email: by }, proposal });
+  // A stepping stone, part of a moonshot (#248: required).
+  const make = (proposal, by = MEMBER, extra = { parents: ['m1'] }) => req('projects?documentId=p' + (++n), 'POST', jwt(by), Object.assign({ title: 'P', submittedBy: { email: by }, proposal }, extra));
   const at = Date.now();
 
   assert.equal(await make({ status: 'proposed', more: false, at, by: MEMBER }), 200, 'within the standard allowance');
@@ -43,5 +45,25 @@ async function req(path, method, token, body, mask) {
   assert.equal(await make({ status: 'proposed', at, by: MEMBER }), 403, 'neither');
   assert.equal(await make({ status: 'approved', more: false, at, by: MEMBER }), 403, 'approved by its proposer');
   assert.equal(await make({ status: 'proposed', more: true, gpuHours: 2000, dueAt: at, at, by: MEMBER }), 403, 'its own deadline');
+
+  // Its level and what it's part of (#248).
+  const std = { status: 'proposed', more: false, at, by: MEMBER };
+  assert.equal(await make(std, MEMBER, {}), 403, 'a stepping stone part of nothing');
+  assert.equal(await make(std, MEMBER, { parents: [] }), 403, 'a stepping stone part of nothing (empty)');
+  assert.equal(await make(std, MEMBER, { problems: ['q1'] }), 200, 'a stepping stone exploring a problem');
+  assert.equal(await make(std, MEMBER, { level: 'northstar' }), 200, 'a northstar');
+  assert.equal(await make(std, MEMBER, { level: 'moonshot' }), 403, 'a moonshot part of nothing');
+  assert.equal(await make(std, MEMBER, { level: 'moonshot', problems: ['q1'] }), 403, 'a moonshot with only problems');
+  assert.equal(await make(std, MEMBER, { level: 'moonshot', parents: ['n1'], connection: 'how' }), 200, 'a moonshot part of a northstar');
+  assert.equal(await make(std, MEMBER, { level: 'galaxy', parents: ['n1'] }), 403, 'no such level');
+  assert.equal(await make({ status: 'proposed', more: true, gpuHours: 10, at, by: MEMBER }, MEMBER, { level: 'moonshot', parents: ['n1'] }), 403, 'a moonshot asking for compute');
+  assert.equal(await make(std, MEMBER, { parents: 'm1' }), 403, 'parents not a list');
+  // Older projects (no links) stay editable; changing their links needs them linked.
+  await db.doc('projects/old').set({ title: 'Old', submittedBy: { email: MEMBER }, proposal: { status: 'approved' } });
+  assert.equal(await req('projects/old', 'PATCH', jwt(MEMBER), { title: 'Older' }, ['title']), 200, 'an unlinked project, its title changed');
+  assert.equal(await req('projects/old', 'PATCH', jwt(MEMBER), { parents: [] }, ['parents']), 403, 'its links changed to nothing');
+  assert.equal(await req('projects/old', 'PATCH', jwt(MEMBER), { parents: ['m1'], connection: 'how' }, ['parents', 'connection']), 200, 'linked up');
+  assert.equal(await req('projects/old', 'PATCH', jwt(MEMBER), { level: 'northstar', parents: [] }, ['level', 'parents']), 200, 'made a northstar');
+  assert.equal(await req('projects/old', 'PATCH', jwt(MEMBER), { level: 'moonshot' }, ['level']), 403, 'a moonshot part of nothing');
   console.log('project proposal rules: ok');
 })().catch((e) => { console.error(e); process.exit(1); });

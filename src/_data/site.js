@@ -51,6 +51,8 @@ export default {
       // To come: `soon: true` shows the name with a Soon tag, not a link (no page yet).
       { label: 'Problem Bank', href: 'problems.html', area: 'projects' },
       { label: 'Projects', href: 'projects.html', area: 'projects', areaWhat: 'titles' },
+      // Northstars, moonshots and stepping stones, and how they connect (#248).
+      { label: 'Map', href: 'research-map.html', area: 'projects', areaWhat: 'titles' },
       { label: 'Internal review', href: 'audit-board.html', area: 'ml-cycle' },
     ] },
     { label: 'Calendar', href: 'calendar.html', links: [], separatorAfter: true, area: 'calendar' },

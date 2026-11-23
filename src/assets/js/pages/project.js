@@ -46,6 +46,13 @@ function escapeHtml(s){ return BOLD.escapeHtml(s); }
   var OLD_KINDS = { group: 'Group meeting', pitch: 'Pitch Day', conference: 'Conference', invited: 'Invited talk', other: 'Other' };
   var events = null;   // the released events, loaded when a presentation is edited
   var authorRows = [];     // in-progress rows while editing the authors, see authors.js
+  // Northstars, moonshots and stepping stones (#248): the map (researchMap), for its Part of and Made of; the picker while editing.
+  var R = window.BoldResearch, rmap = null, partPicker = null;
+  BOLD.onUser(function(u){
+    if (!u || rmap || !window.BoldResearchPicker) return;
+    BoldResearchPicker.load().then(function(m){ rmap = m; if (card && !editing) render(); })
+      .catch(function(err){ console.error('[BOLD Lab] loading the map failed', err); });
+  });
   var projectId = (location.hash.match(/[#&]id=([^&]+)/) || [])[1];
   if (projectId) projectId = decodeURIComponent(projectId);
   var boardId = (location.hash.match(/[#&]board=([^&]+)/) || [])[1];
@@ -207,6 +214,47 @@ function escapeHtml(s){ return BOLD.escapeHtml(s); }
       (off ? ' disabled title="' + off + '"' : '') + '>Edit</button>');
   }
 
+  // Its level, what it's part of and how, and what it's made of (#248, research-map.js); edited together.
+  function researchRows(){
+    var level = R.levelOf(card), pid = card.projectId || projectId, html = '';
+    var partOf = level === 'northstar' ? '<a href="boldiquette.html#our-goals-for-bold">BOLD\u2019s goals</a>'
+      : !rmap ? '<span class="detail-muted">Loading\u2026</span>'
+      : (BoldResearchPicker.linksHtml(rmap, card) || '<span class="detail-muted">Not linked yet: say what it\u2019s part of</span>');
+    var editor = '<label class="detail-hint" for="partLevel">It\u2019s a</label> <select id="partLevel">' + R.LEVELS.map(function(l){
+        return '<option value="' + l + '"' + (l === level ? ' selected' : '') + '>' + R.NAMES[l] + '</option>'; }).join('') + '</select>' +
+      '<div id="partPicker" class="part-picker"></div>' +
+      '<label class="detail-hint" for="partConnection">How it connects</label><textarea id="partConnection" maxlength="2000" rows="3">' + esc(card.connection || '') + '</textarea>';
+    html += editableRow('part', 'Part of', '<span class="level-badge lv-' + level + '">' + R.NAMES[level] + '</span> ' + partOf, '', editor, 'partSave');
+    if (editing !== 'part' && card.connection && level !== 'northstar') html += row('How it connects', esc(card.connection));
+    var down = R.childLevel(level);
+    if (down && rmap) {
+      var kids = (rmap.items || []).filter(function(i){ return (i.parents || []).indexOf(pid) >= 0 && i.level === down; });
+      html += row('Made of', (kids.length ? kids.map(function(i){ return '<a href="' + esc(BoldResearchPicker.href(i)) + '">' + esc(i.title) + '</a>'; }).join(', ') : '<span class="detail-muted">No ' + R.PLURAL[down].toLowerCase() + ' yet</span>') +
+        act('<a class="btn-text detail-inline-edit" href="projects-register.html#level=' + down + '&part=' + encodeURIComponent(pid) + '">+ ' + R.NAMES[down] + '</a>'));
+    }
+    return html;
+  }
+  function wirePart(){
+    var draw = function(){
+      // Another level is part of another level: its choices start empty.
+      var level = el('partLevel').value;
+      if (!rmap) { el('partPicker').innerHTML = '<p class="detail-muted">Loading\u2026</p>'; return; }
+      partPicker = BoldResearchPicker.mount(el('partPicker'), rmap, level, level === R.levelOf(card) ? card : {}, card.projectId || projectId);
+      el('partConnection').hidden = level === 'northstar';
+    };
+    el('partLevel').addEventListener('change', draw);
+    draw();
+    el('partSave').addEventListener('click', function(){
+      var fail = failer();
+      if (!partPicker) return fail('Wait for them to load.');
+      var links = R.normalizeLinks(Object.assign({ level: el('partLevel').value, connection: el('partConnection').value }, partPicker.read()));
+      var issue = R.linkIssue(links);
+      if (issue) return fail(issue);
+      saveField(el('partSave'), { level: links.level, parents: links.parents, problems: links.problems, connection: links.connection }, fail);
+      if (window.BoldResearchPicker) BoldResearchPicker.load(true).then(function(m){ rmap = m; if (!editing) render(); });
+    });
+  }
+
   // The page's tabs, chosen by &tab= in the address (Overview when there's none).
   // The second tab is named for what it holds (the project's meeting, slides and notes, and
   // its talks); its hash stays #presentations, so links keep working.
@@ -243,7 +291,7 @@ function escapeHtml(s){ return BOLD.escapeHtml(s); }
   var PANELS = {
     // What the project is.
     overview: function(){
-      var html = '<dl class="detail-grid">';
+      var html = '<dl class="detail-grid">' + researchRows();
       html += '<dt>Authors</dt><dd>' + (editing === 'authors'
         ? '<div id="authorsWrap"></div>' +
           '<button class="btn-text" type="button" id="authorsAdd">+ Add author</button>' +
@@ -574,7 +622,7 @@ function escapeHtml(s){ return BOLD.escapeHtml(s); }
       title: card.title, abstractText: card.abstractText, keywords: card.keywords, slackChannel: card.slackChannel,
       computeEstimate: card.computeEstimate
     });
-    ['authors', 'authorEmails', 'overleafLink', 'arxivLink', 'pitchLink'].forEach(function(k){ if (card[k]) next[k] = card[k]; });
+    ['authors', 'authorEmails', 'overleafLink', 'arxivLink', 'pitchLink', 'level', 'parents', 'problems', 'connection'].forEach(function(k){ if (card[k]) next[k] = card[k]; });
     el('submitSave').disabled = true;
     callWorkspace({ action: 'submit', venue: venue, card: next }).then(function(r){
       try { localStorage.removeItem(CACHE_KEY + me.email.toLowerCase()); } catch (e){}
@@ -1136,6 +1184,8 @@ function escapeHtml(s){ return BOLD.escapeHtml(s); }
     } else if (editing === 'abstract') {
       wireAbstractPreview();
       el('abstractSave').addEventListener('click', saveAbstract);
+    } else if (editing === 'part') {
+      wirePart();
     } else if (editing === 'keywords') {
       var errorEl = el('detailEditError');
       keywordField = wireKeywordField(card.keywords, failer(), function(){ errorEl.hidden = true; });

@@ -421,9 +421,10 @@ module.exports = function(deps){
     },
     {
       name: 'list_projects',
-      description: 'The lab’s research projects, as on the Projects page: proposed (waiting for a PI or admin to approve them), approved (planned: not started yet), ongoing (being worked on), in submission (on a venue’s board) and completed, most recently updated first. Filter by group, keyword, words, or only yours.',
+      description: 'The lab’s research projects, as on the Projects page, each a northstar, a moonshot or a stepping stone (level: project) with what it’s part of (part_of: their ids): proposed (waiting for a PI or admin to approve them), approved (planned: not started yet), ongoing (being worked on), in submission (on a venue’s board) and completed, most recently updated first. Filter by group, keyword, words, or only yours.',
       inputSchema: { type: 'object', properties: {
         group: { type: 'string', enum: ['proposed', 'planned', 'ongoing', 'submission', 'completed'] },
+        level: { type: 'string', enum: ['northstar', 'moonshot', 'project'], description: 'Only northstars, moonshots or stepping stones (project).' },
         keyword: { type: 'string', description: 'A project keyword, e.g. "reinforcement learning".' },
         query: { type: 'string', description: 'Words in the title, abstract, keywords or people.' },
         mine: { type: 'boolean', description: 'Only projects you are a member of.' },
@@ -635,6 +636,8 @@ module.exports = function(deps){
       venue: p.boardLabel || null, owner: p.owner || '',
       authors: (p.authors || []).map((x) => x.name || name(x.email)), keywords: p.keywords || [],
       slack_channel: p.slackChannel || '', url: url(projectHref(p.projectId || p.cardId, p.boardId)),
+      // Its level and what it's part of (#248): northstar, moonshot or project (a stepping stone).
+      level: p.level || 'project', part_of: p.parents || [], problems: p.problems || [],
     };
   }
   async function listProjects(who, a){
@@ -648,6 +651,7 @@ module.exports = function(deps){
       (g[group] || []).forEach((p) => {
         const id = p.pid || p.projectId || p.cardId;
         if (kw && !(p.keywords || []).some((k) => fold(k) === kw)) return;
+        if (a.level && (p.level || 'project') !== a.level) return;
         if (ws.length && !matches([p.title, p.abstract, (p.keywords || []).join(' '), p.owner, (p.authors || []).map((x) => x.name).filter((n) => n !== p.owner).join(' ')].join(' '), ws)) return;
         const team = (members[id] || []).map((e) => String(e).toLowerCase());
         if (a.mine && team.indexOf(who.email) === -1 && !(p.authors || []).some((x) => String(x.email).toLowerCase() === who.email)) return;
@@ -689,6 +693,9 @@ module.exports = function(deps){
       stage: card.status || '', outcome: card.outcome || '',
       venues: mine.map((c) => ({ venue: c.boardId ? labels[c.boardId] : 'No venue yet', stage: c.data.status || '', outcome: c.data.outcome || '' })),
       abstract: card.abstractText || '', keywords: card.keywords || [],
+      level: card.level || 'project', part_of: card.parents || [], problems: card.problems || [], connection: card.connection || '',
+      parts: all.filter((c) => (c.data.parents || []).indexOf(pid) >= 0).map((c) => ({ id: c.data.projectId || c.id, title: c.data.title || 'Untitled', level: c.data.level || 'project' }))
+        .filter((x, i, arr) => arr.findIndex((y) => y.id === x.id) === i),
       registered_by: card.submittedBy ? card.submittedBy.name || name(card.submittedBy.email) : '',
       authors: (card.authors || []).map((x) => ({ name: x.name || name(x.email), profile: profile(x.email) })),
       members: (w.members || []).map((e) => ({ name: name(e), profile: profile(e) })),
