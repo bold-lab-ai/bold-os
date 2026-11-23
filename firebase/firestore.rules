@@ -480,6 +480,7 @@ service cloud.firestore {
       allow read, write: if false;
       match /validations/{version} { allow read, write: if false; }
     }
+    match /benchmarkSources/{id} { allow read, write: if false; }
     match /benchmarkReceipts/{id} { allow read, write: if false; }
 
     match /projects/{projectId} {

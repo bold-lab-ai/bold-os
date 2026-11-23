@@ -487,7 +487,7 @@ module.exports = function(deps){
   // Who can see what (functions/access.js): each reading tool reads one page, and answers
   // only if its person may view that page. Acting goes through the rules and callables,
   // which check it themselves.
-  const TOOL_PAGE = { list_benchmarks: 'projects', register_benchmark: 'projects', edit_problem: 'projects', search: 'search', list_group_rota: 'events', list_projects: 'projects', get_project: 'projects', find_people: 'people', get_person: 'people',
+  const TOOL_PAGE = { list_benchmarks: 'projects', register_benchmark: 'projects', create_open_problem: 'projects', edit_problem: 'projects', search: 'search', list_group_rota: 'events', list_projects: 'projects', get_project: 'projects', find_people: 'people', get_person: 'people',
     calendar: 'calendar', my_items: 'profile', list_introduction_offers: 'service-desk', list_tools: 'tools', list_skills: 'skills', get_skill: 'skills' };
   const pageOfTool = (name, args) => { const p = String((args || {}).page || '').trim().toLowerCase();
     return name === 'read_page' ? (p === 'boldiquette' ? 'boldiquette' : require('./access').guideArea(p)) : TOOL_PAGE[name]; };
@@ -582,7 +582,7 @@ module.exports = function(deps){
     if ((want('problems') || want('benchmarks')) && await access.can(who.email, 'projects', 'view')) jobs.push(Promise.all([db.collection('problemBank').get(), db.collection('benchmarks').get()]).then(([problems, releases]) => {
       const live = new Set(problems.docs.filter((d) => !d.data().archived).map((d) => d.id));
       if (want('problems')) problems.docs.filter((d) => live.has(d.id)).forEach((d) => { const x = d.data();
-        item('problems', x.title, 'Problem Bank', [x.objective, x.task_kind, x.notes].filter(Boolean).join(' '), 'problem.html?problem=' + encodeURIComponent(d.id)); });
+        item('problems', x.title, 'Problem Bank', [x.objective, x.significance, x.existing_solutions, x.task_kind, x.notes].filter(Boolean).join(' '), 'problem.html?problem=' + encodeURIComponent(d.id)); });
       if (want('benchmarks')) releases.docs.filter((d) => live.has(d.data().problem_id)).forEach((d) => { const x = d.data();
         item('benchmarks', x.title, 'Evaluator version ' + x.evaluator.version, [x.task_kind, x.evaluator.commit, (x.research || {}).expected_basis].filter(Boolean).join(' '), 'problem.html?problem=' + encodeURIComponent(x.problem_id)); });
     }));

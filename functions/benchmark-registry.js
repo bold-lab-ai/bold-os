@@ -1,5 +1,5 @@
 // The Problem Bank (problems.html): research problems, each linked to a BOLD.OS project, and
-// the evaluator releases AutoKaggle Lite registers for them. Problems start in Lite, never here.
+// the evaluator releases AutoKaggle Lite registers for them. An open problem can have several independent verifiers.
 //
 // problemBank/{id}            a problem: title, objective, task_kind, project_id/_board/_title,
 //                             details, notes, archived, stage, and its latest release
@@ -29,6 +29,10 @@ function text(value, limit, label){
   if (typeof value !== 'string' || !value.trim() || value.length > limit) throw new Error('Supply ' + label + ' within ' + limit + ' characters.');
   return value.trim();
 }
+function problemId(value){
+  if (typeof value !== 'string' || !/^ak-[a-f0-9]{24}$/.test(value)) throw new Error('Supply the Problem Bank ID.');
+  return value;
+}
 function boardId(value){
   if (value == null || value === '') return '';
   if (typeof value !== 'string' || !/^[A-Za-z0-9_-]{1,160}$/.test(value)) throw new Error('Invalid project board.');
@@ -46,7 +50,7 @@ function details(input){
   for (const k of DETAIL_FIELDS) if (input[k] != null && input[k] !== '') out[k] = text(input[k], 8000, k.replace(/_/g, ' '));
   return out;
 }
-// Every problem starts in an AutoKaggle Lite session (docs/BENCHMARK_REGISTRY.md).
+// Every verifier starts in an AutoKaggle Lite session (docs/BENCHMARK_REGISTRY.md).
 function session(input, source){
   if (!input || input.application !== 'lite') throw new Error('Register a problem through an AutoKaggle Lite session.');
   return { application: input.application, project_id: source.replace('autokaggle:', '') };
@@ -81,6 +85,7 @@ function normalize(input){
   if (reported && (!validated || a.commit !== e.commit || a.contract_sha256 !== e.contract_sha256 || a.research_report_sha256 !== r.report_sha256 || !hex(a.approved_by, 64) || !a.approved_at)) throw new Error('A reported approval must name this exact release and research report.');
 
   return {
+    ...(input.problem_id === undefined ? {} : { problem_id: problemId(input.problem_id) }),
     schema: input.schema, source_id: input.source_id, idempotency_key: input.idempotency_key,
     project_id, project_board: boardId(input.project_board),
     stage: validated ? 'validated' : checked ? 'checked' : 'implemented',
@@ -103,7 +108,7 @@ module.exports = function({ db, onCall, callerEmail, isFullWrite, access, HttpsE
   const error = (code, message) => new HttpsError(code, message);
   // What a page or agent sees of a document: no emails.
   const publicRow = (doc, edit) => {
-    const { createdBy, updatedBy, approvedBy, ...data } = doc.data();
+    const { createdBy, updatedBy, approvedBy, createFingerprint, verifierNoticeDue, verifierNoticeCycle, ...data } = doc.data();
     return Object.assign({ id: doc.id }, data, edit === undefined ? {} : { can_edit: edit });
   };
   function projectRef(id, board){
@@ -145,7 +150,7 @@ module.exports = function({ db, onCall, callerEmail, isFullWrite, access, HttpsE
       const live = new Set(problems.docs.filter((x) => !x.data().archived).map((x) => x.id));
       return { items: problems.docs.filter((x) => live.has(x.id)).map((x) => {
         const p = x.data();
-        return { kind: 'problems', problem_id: x.id, title: p.title, label: 'Problem Bank', text: [p.objective, p.task_kind, p.notes].filter(Boolean).join(' ') };
+        return { kind: 'problems', problem_id: x.id, title: p.title, label: 'Problem Bank', text: [p.objective, p.significance, p.existing_solutions, p.task_kind, p.notes].filter(Boolean).join(' ') };
       }).concat(releases.docs.filter((x) => live.has(x.data().problem_id)).map((x) => {
         const b = x.data();
         return { kind: 'benchmarks', problem_id: b.problem_id, title: b.title, label: 'Evaluator version ' + b.evaluator.version,
@@ -153,8 +158,33 @@ module.exports = function({ db, onCall, callerEmail, isFullWrite, access, HttpsE
       })) };
     }
 
-    // New problems start in AutoKaggle Lite, never here: not even for PIs and admins.
-    if (action === 'create') throw error('failed-precondition', 'Add problems through AutoKaggle Lite. Direct creation in the Problem Bank is disabled.');
+    if (action === 'create') {
+      let definition;
+      try {
+        definition = Object.fromEntries(['title', 'objective', 'significance', 'existing_solutions'].map(k =>
+          [k, text(d[k], k === 'title' ? 180 : 8000, k.replace(/_/g, ' '))]));
+      } catch (e) { throw error('invalid-argument', e.message); }
+      if (typeof d.reminders !== 'boolean' || typeof d.request_id !== 'string' || !/^[a-f0-9]{8}-(?:[a-f0-9]{4}-){3}[a-f0-9]{12}$/.test(d.request_id))
+        throw error('invalid-argument', 'Confirm the reminder choice and supply a request ID.');
+      const parent = projectRef(d.project_id, d.project_board);
+      const id = 'ak-' + sha('problem:' + email + ':' + d.request_id).slice(0, 24);
+      const ref = db.collection('problemBank').doc(id), at = Date.now();
+      const fingerprint = sha(canonical([definition, d.project_id, d.project_board || '', d.reminders]));
+      return db.runTransaction(async tx => {
+        const [project, previous] = await Promise.all([tx.get(parent), tx.get(ref)]);
+        if (previous.exists) {
+          if (previous.data().createFingerprint !== fingerprint) throw error('already-exists', 'This request already saved a different problem.');
+          return { problem_id: id };
+        }
+        if (!project.exists) throw error('failed-precondition', 'The linked BOLD OS project does not exist.');
+        const row = { ...definition, origin: 'problem_bank', stage: 'open', archived: false, task_kind: '',
+          project_id: d.project_id, project_board: d.project_board || '', project_title: project.data().title || project.id,
+          details: {}, notes: '', createdBy: email, updatedBy: email, createdAt: at, updatedAt: at, reminders: d.reminders };
+        tx.set(ref, { ...row, createFingerprint: fingerprint, verifierNoticeDue: d.reminders ? at : null });
+        tx.set(ref.collection('versions').doc('created'), { ...row, changeNote: 'Defined the open problem' });
+        return { problem_id: id };
+      });
+    }
 
     if (action === 'list') {
       let q = db.collection('problemBank').orderBy('__name__').limit(100);
@@ -174,21 +204,31 @@ module.exports = function({ db, onCall, callerEmail, isFullWrite, access, HttpsE
         db.collection('benchmarks').where('problem_id', '==', d.problem_id).get(),
         ref.collection('versions').orderBy('updatedAt', 'desc').limit(100).get(),
       ]);
-      return { history: history.docs.map((x) => publicRow(x)), problem: publicRow(doc, canEdit(doc)), can_approve: full,
-        versions: releases.docs.map((x) => publicRow(x)).sort((a, b) => b.evaluator.version - a.evaluator.version) };
+      return { can_manage_reminders: mayEdit && doc.data().createdBy === email, history: history.docs.map((x) => publicRow(x)), problem: publicRow(doc, canEdit(doc)), can_approve: full,
+        versions: releases.docs.map((x) => publicRow(x)).sort((a, b) => b.createdAt - a.createdAt || b.evaluator.version - a.evaluator.version) };
     }
 
     if (action === 'register') {
       let data;
       try { data = normalize(d.registration); } catch (e) { throw error('invalid-argument', e.message); }
-      const pid = 'ak-' + sha(data.source_id).slice(0, 24), bid = pid + '-' + data.evaluator.commit;
+      const sourceKey = 'ak-' + sha(data.source_id).slice(0, 24);
+      const pid = data.problem_id || sourceKey, bid = sourceKey + '-' + data.evaluator.commit;
+      const stream = db.collection('benchmarkSources').doc(sourceKey);
       const problem = db.collection('problemBank').doc(pid), benchmark = db.collection('benchmarks').doc(bid), receipt = db.collection('benchmarkReceipts').doc(data.idempotency_key);
       const fingerprint = sha(canonical(data)), release = releaseFingerprint(data), at = Date.now();
       const out = { problem_id: pid, benchmark_id: bid, commit: data.evaluator.commit, idempotency_key: data.idempotency_key };
       return db.runTransaction(async (tx) => {
-        const [p, b, r, project] = await Promise.all([tx.get(problem), tx.get(benchmark), tx.get(receipt), tx.get(projectRef(data.project_id, data.project_board))]);
+        const [p, b, r, project, streamDoc, legacy] = await Promise.all([tx.get(problem), tx.get(benchmark), tx.get(receipt),
+          tx.get(projectRef(data.project_id, data.project_board)), tx.get(stream),
+          pid !== sourceKey ? tx.get(db.collection('problemBank').doc(sourceKey)) : null]);
         if (!project.exists) throw error('failed-precondition', 'The linked BOLD OS project does not exist.');
-        if (p.exists && p.data().createdBy !== email && !full) throw error('permission-denied', 'Only its registering account or a PI/admin can update this problem.');
+        const prior = p.exists ? p.data() : {};
+        const linked = !!data.problem_id;
+        if (linked && !p.exists) throw error('not-found', 'The open problem no longer exists.');
+        if ((streamDoc.exists && streamDoc.data().problem_id !== pid) || (legacy && legacy.exists))
+          throw error('failed-precondition', 'This verifier session belongs to another problem.');
+        const streamOwner = streamDoc.exists ? streamDoc.data().createdBy : (!linked || prior.source_id === data.source_id ? prior.createdBy : null);
+        if (streamOwner && streamOwner !== email && !full) throw error('permission-denied', 'Only its registering account or a PI/admin can update this problem.');
         if (r.exists) {
           if (r.data().fingerprint !== fingerprint) throw error('already-exists', 'This request key belongs to different evidence.');
           return r.data().receipt;
@@ -199,7 +239,10 @@ module.exports = function({ db, onCall, callerEmail, isFullWrite, access, HttpsE
           tx.set(receipt, { fingerprint, receipt: out, createdBy: email, createdAt: at });
           return out;
         }
-        if (p.exists && p.data().latest_version >= data.evaluator.version) throw error('failed-precondition', 'Version ' + data.evaluator.version + ' or a newer one is already registered.');
+        if (linked && (prior.archived || prior.project_id !== data.project_id || (prior.project_board || '') !== data.project_board))
+          throw error('failed-precondition', 'Choose an active problem in the same BOLD OS project.');
+        const previousVersion = streamDoc.exists ? streamDoc.data().version : (prior.source_id === data.source_id ? prior.latest_version : 0);
+        if (previousVersion >= data.evaluator.version) throw error('failed-precondition', 'Version ' + data.evaluator.version + ' or a newer one is already registered.');
         const author = p.exists ? p.data().createdBy : email;
         const problemData = { source_id: data.source_id, title: data.title, objective: data.objective, task_kind: data.task_kind,
           project_id: data.project_id, project_board: data.project_board, project_title: project.data().title || data.project_id,
@@ -210,10 +253,18 @@ module.exports = function({ db, onCall, callerEmail, isFullWrite, access, HttpsE
           createdBy: author, createdAt: p.exists ? p.data().createdAt : at, updatedBy: email, updatedAt: at };
         const benchmarkData = { problem_id: pid, source_id: data.source_id, title: data.title, task_kind: data.task_kind, evaluator: data.evaluator,
           research: data.research, reported_approval: data.reported_approval, approval: null, stage: data.stage, validation: data.validation,
-          fingerprint: release, createdBy: author, createdAt: at, updatedBy: email, updatedAt: at };
-        tx.set(problem, problemData);
+          fingerprint: release, createdBy: streamOwner || email, createdAt: at, updatedBy: email, updatedAt: at };
+        // A verifier release cannot replace the scientific definition or its submitter.
+        if (linked && !prior.has_linked_verifiers && prior.source_id && prior.source_id !== data.source_id) {
+          const original = db.collection('benchmarkSources').doc('ak-' + sha(prior.source_id).slice(0, 24));
+          tx.set(original, { problem_id: pid, createdBy: prior.createdBy, version: prior.latest_version });
+        }
+        if (linked) Object.assign(problemData, { has_linked_verifiers: true, title: prior.title, objective: prior.objective, task_kind: prior.task_kind || '',
+          details: prior.details || {}, verifierNoticeDue: null });
+        tx.set(stream, { problem_id: pid, version: data.evaluator.version, createdBy: streamOwner || email });
+        tx.set(problem, { ...prior, ...problemData });
         tx.set(benchmark, benchmarkData);
-        tx.set(problem.collection('versions').doc(data.idempotency_key), Object.assign({}, problemData, { changeNote: 'Registered evaluator version ' + data.evaluator.version }));
+        tx.set(problem.collection('versions').doc(data.idempotency_key), Object.assign({}, prior, problemData, { changeNote: 'Registered evaluator version ' + data.evaluator.version }));
         tx.set(benchmark.collection('validations').doc(data.idempotency_key), Object.assign({}, benchmarkData, { registration_key: data.idempotency_key }));
         tx.set(receipt, { fingerprint, receipt: out, createdBy: email, createdAt: at });
         return out;
@@ -244,6 +295,23 @@ module.exports = function({ db, onCall, callerEmail, isFullWrite, access, HttpsE
       return { ok: true };
     }
 
+    if (action === 'reminders') {
+      let id;
+      try { id = problemId(d.problem_id); } catch (e) { throw error('invalid-argument', e.message); }
+      if (typeof d.reminders !== 'boolean') throw error('invalid-argument', 'Choose whether to receive reminders.');
+      const ref = db.collection('problemBank').doc(id);
+      await db.runTransaction(async tx => {
+        const snap = await tx.get(ref);
+        if (!snap.exists) throw error('not-found', 'This problem no longer exists.');
+        const p = snap.data();
+        if (p.createdBy !== email) throw error('permission-denied', 'Only the submitter can change their reminders.');
+        if (p.evaluator || p.archived) throw error('failed-precondition', 'Reminders apply to active problems without a verifier.');
+        if (!!p.reminders === d.reminders) return;
+        tx.update(ref, { reminders: d.reminders, verifierNoticeDue: d.reminders ? Date.now() : null, verifierNoticeCycle: null });
+      });
+      return { ok: true };
+    }
+
     if (action === 'update') {
       if (!/^ak-[a-f0-9]{24}$/.test(d.problem_id || '')) throw error('invalid-argument', 'Supply the problem ID.');
       if (typeof d.notes !== 'string' || d.notes.length > 8000 || typeof d.archived !== 'boolean') throw error('invalid-argument', 'Supply bounded notes and the archive choice.');
@@ -264,9 +332,18 @@ module.exports = function({ db, onCall, callerEmail, isFullWrite, access, HttpsE
         else delete metadata.owner;
         const update = { notes: d.notes.trim(), archived: d.archived, project_id: project.id, project_board: project.board, project_title: project.title,
           details: metadata, owner_id: owner ? owner.owner_id : (was.owner_id || null), updatedBy: email, updatedAt: Date.now() };
+        if (was.has_linked_verifiers && (was.project_id !== project.id || (was.project_board || '') !== project.board))
+          throw error('failed-precondition', 'A problem with registered verifiers must keep its project.');
+        if (d.archived !== !!was.archived && was.reminders && !was.evaluator)
+          Object.assign(update, { verifierNoticeDue: d.archived ? null : Date.now(), verifierNoticeCycle: null });
         if (d.definition) {
-          if (doc.data().stage !== 'open') throw error('failed-precondition', 'Change an evaluator contract through AutoKaggle.');
-          try { for (const [key, limit] of [['title', 180], ['objective', 8000], ['task_kind', 80]]) update[key] = text(d.definition[key], limit, key); }
+          if (was.stage !== 'open' && was.origin !== 'problem_bank') throw error('failed-precondition', 'Change an evaluator contract through AutoKaggle.');
+          try {
+            for (const [key, limit] of [['title', 180], ['objective', 8000], ['task_kind', 80], ['significance', 8000], ['existing_solutions', 8000]]) {
+              if (d.definition[key] !== undefined && !(key === 'task_kind' && !d.definition[key]))
+                update[key] = text(d.definition[key], limit, key);
+            }
+          }
           catch (e) { throw error('invalid-argument', e.message); }
         }
         tx.update(ref, update);

@@ -7,7 +7,7 @@ function record(){return {schema:'bold.autokaggle.registration.v1',source_id:'au
 function harness(){
  const data=new Map([['projects/diverging-runs',{title:'Diverging runs'}]]);
  const snap=p=>({id:p.split('/').pop(),exists:data.has(p),data:()=>structuredClone(data.get(p))});
- const doc=p=>({path:p,get:async()=>snap(p),collection:n=>col(p+'/'+n)});
+ const doc=p=>({id:p.split('/').pop(),path:p,get:async()=>snap(p),collection:n=>col(p+'/'+n)});
  const kids=p=>[...data.keys()].filter(k=>k.startsWith(p+'/')&&k.split('/').length===p.split('/').length+1).map(snap);
  const col=p=>({get:async()=>({docs:kids(p)}),doc:id=>doc(p+'/'+id),orderBy:()=>({limit:()=>({get:async()=>({docs:[...data.keys()].filter(k=>k.startsWith(p+'/')&&k.split('/').length===p.split('/').length+1).map(snap)})})}),where:(key,op,value)=>({get:async()=>({docs:[...data.keys()].filter(k=>k.startsWith(p+'/')&&k.split('/').length===p.split('/').length+1&&data.get(k)[key]===value).map(snap)})})});
  const db={collection:col,runTransaction:async fn=>{const writes=[];const result=await fn({get:async ref=>snap(ref.path),set:(ref,x)=>writes.push(()=>data.set(ref.path,structuredClone(x))),update:(ref,x)=>writes.push(()=>data.set(ref.path,{...data.get(ref.path),...structuredClone(x)}))});writes.forEach(f=>f());return result;}};
@@ -15,7 +15,7 @@ function harness(){
  let denied=false;
  const registry=factory({db,onCall:(_,fn)=>fn,callerEmail:r=>{if(!r.auth?.slack)throw new ErrorWithCode('unauthenticated','Slack required');return r.auth.email;},isFullWrite:async e=>e==='admin@example.invalid',access:{requireAccess:async()=>{if(denied)throw new ErrorWithCode('permission-denied','Access denied');},can:async()=>true},HttpsError:ErrorWithCode});
  const call=(value,email='owner@example.invalid')=>registry.run({auth:{slack:true,email},data:value});
- return {call,data,registry,deny:()=>{denied=true;}};
+ return {call,data,db,registry,deny:()=>{denied=true;}};
 }
 for(const change of ['research','approval','commit','reference','score','zip','mode','extra_url'])test('registration rejects '+change,()=>{
  const r=record();if(change==='research')r.validation.research_data='not_run';if(change==='approval')r.human_approval={commit:'bad'};if(change==='commit')r.validation.research_evidence.commit='0'.repeat(40);if(change==='reference')delete r.validation.research_evidence.reference_sha256;if(change==='score')r.validation.research_evidence.observed_fitness=2;if(change==='zip')r.evaluator.zip_url='https://github.com/example/evaluator/archive/main.zip';if(change==='mode')r.validation.research_evidence.mode='synthetic';if(change==='extra_url')r.evaluator.repository+='?token=private';assert.throws(()=>factory.normalize(r));
@@ -71,11 +71,50 @@ test('no credential or arbitrary session URL enters the record',()=>{
  assert.doesNotMatch(JSON.stringify(out),/SECRET|evil/);
  r.session.application='unknown';assert.throws(()=>factory.normalize(r),/session/);
 });
-test('direct problem creation is disabled for members and administrators without writes',async()=>{
- const h=harness(),before=[...h.data.entries()];
- const input={action:'create',project_id:'diverging-runs',title:'An open question',objective:'What works?',task_kind:'custom',details:{owner:'A researcher'}};
- for(const email of ['owner@example.invalid','admin@example.invalid'])await assert.rejects(h.call(input,email),e=>e.code==='failed-precondition'&&/AutoKaggle Lite/.test(e.message));
- assert.deepEqual([...h.data.entries()],before);
+const openProblem = { action:'create', project_id:'diverging-runs', title:'Estimate kinetics', objective:'Estimate rates from observations',
+ significance:'A faster measurement', existing_solutions:'Least squares on clean signals', reminders:true, request_id:'98c689be-0660-4a12-9e63-be3abce09910' };
+test('a definition needs a project, scientific context and an explicit reminder choice; retries save one record',async()=>{
+ const h=harness();
+ for (const key of ['title','significance','existing_solutions','objective','project_id','reminders','request_id']) {
+   const bad={...openProblem};delete bad[key];await assert.rejects(h.call(bad),e=>e.code==='invalid-argument');
+ }
+ const saved=await h.call(openProblem);assert.deepEqual(await h.call(openProblem),saved);
+ await assert.rejects(h.call({...openProblem,title:'Other'}),e=>e.code==='already-exists');
+ const view=await h.call({action:'get',problem_id:saved.problem_id});
+ assert.equal(view.problem.stage,'open');assert.equal(view.versions.length,0);assert.equal(view.history.length,1);
+ assert.equal(view.problem.significance,openProblem.significance);assert.doesNotMatch(JSON.stringify(view),/@example|createFingerprint/);
+});
+test('two independent verifier sessions can each register version one without changing the research definition',async()=>{
+ const h=harness(), {problem_id}=await h.call(openProblem);
+ const r={...record(),problem_id};const a=await h.call({action:'register',registration:r},'other@example.invalid');
+ const r2={...r,source_id:'autokaggle:99999999-2222-3333-4444-555555555555',idempotency_key:'9'.repeat(64)};
+ const b=await h.call({action:'register',registration:r2});
+ assert.notEqual(a.benchmark_id,b.benchmark_id);assert.equal(a.problem_id,b.problem_id);
+ assert.deepEqual(a,await h.call({action:'register',registration:r},'other@example.invalid'));
+ await assert.rejects(h.call({action:'register',registration:r}),e=>e.code==='permission-denied');
+ const view=await h.call({action:'get',problem_id});
+ assert.equal(view.versions.length,2);assert.equal(view.problem.title,openProblem.title);assert.equal(view.problem.can_edit,true);
+ assert.equal(view.problem.significance,openProblem.significance);assert.equal(view.history[0].createdBy,undefined);
+ assert.equal(h.data.get('problemBank/'+problem_id).verifierNoticeDue,null);
+ const second=await h.call({...openProblem,request_id:'99999999-2222-3333-4444-555555555555'});
+ await assert.rejects(h.call({action:'register',registration:{...r,problem_id:second.problem_id}},'other@example.invalid'),e=>e.code==='failed-precondition');
+ h.data.set('projects/other',{title:'Other'});
+ await assert.rejects(h.call({action:'register',registration:{...r2,source_id:'autokaggle:12345678-1234-1234-1234-123456789012',project_id:'other',idempotency_key:'8'.repeat(64)}}),e=>e.code==='failed-precondition');
+ await assert.rejects(h.call({action:'register',registration:{...r,problem_id:'ak-'+'0'.repeat(24)}}),e=>e.code==='not-found');
+});
+test('only the submitter sets reminders; retries, paused problems and actual verifier registration control delivery',async()=>{
+ const h=harness(),{problem_id}=await h.call(openProblem),ref=h.db.collection('problemBank').doc(problem_id);
+ const {sendDue,WEEK}=require('../functions/problem-reminders'), sends=[];
+ const start=h.data.get(ref.path).verifierNoticeDue, notify=x=>sends.push(x);
+ await sendDue(h.db,ref,notify,start);await sendDue(h.db,ref,notify,start);await sendDue(h.db,ref,notify,start+WEEK-1);
+ assert.equal(sends.length,1);await sendDue(h.db,ref,notify,start+WEEK);assert.equal(sends.length,2);assert.equal(sends[0].email,'owner@example.invalid');
+ const pref={action:'reminders',problem_id,reminders:false};
+ await assert.rejects(h.call(pref,'admin@example.invalid'),e=>e.code==='permission-denied');await h.call(pref);
+ await sendDue(h.db,ref,notify,start+2*WEEK);assert.equal(sends.length,2);
+ await h.call({...pref,reminders:true});const edit={action:'update',problem_id,project_id:'diverging-runs',notes:'',archived:true};
+ await h.call(edit);await sendDue(h.db,ref,notify,start+3*WEEK);assert.equal(sends.length,2);
+ await h.call({...edit,archived:false});await sendDue(h.db,ref,notify,start+3*WEEK);assert.equal(sends.length,3);
+ await h.call({action:'register',registration:{...record(),problem_id}});await sendDue(h.db,ref,notify,start+4*WEEK);assert.equal(sends.length,3);
 });
 test('registration requires a Lite session and rejects other origins without writes',async()=>{
  const h=harness(),before=[...h.data.entries()];
@@ -141,5 +180,5 @@ test('the research owner is one of the lab\'s people, by Slack ID, named as the 
  p=(await h.call({action:'get',problem_id:r.problem_id})).problem;assert.equal(p.details.owner,'Rae Researcher');assert.equal(p.owner_id,'UOWNER1');
  await h.call({...edit,owner_id:'UOWNER2'});
  p=(await h.call({action:'get',problem_id:r.problem_id})).problem;assert.equal(p.details.owner,'Sam Second');assert.equal(p.owner_id,'UOWNER2');
- await assert.rejects(h.call({action:'create',project_id:'diverging-runs',title:'Q',objective:'O',task_kind:'k',owner_id:'UOWNER1'},'admin@example.invalid'),e=>e.code==='failed-precondition');
+ await assert.rejects(h.call({action:'create',project_id:'diverging-runs',title:'Q',objective:'O',task_kind:'k',owner_id:'UOWNER1'},'admin@example.invalid'),e=>e.code==='invalid-argument');
 });
