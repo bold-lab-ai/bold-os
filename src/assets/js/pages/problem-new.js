@@ -3,17 +3,33 @@
   var el = function(id){ return document.getElementById(id); };
   var form = el('pbCreate'), fields = el('pbInputs'), status = el('pbStatus');
   var userId = null, epoch = 0, canWrite = false, ready = false, projects = [], busy = false, submission = null;
+  var familySelection = null;
   function call(data){ return firebase.app().functions('europe-west2').httpsCallable('benchmarkRegistry')(data).then(function(r){ return r.data; }); }
   function controls(){
     fields.disabled = !canWrite || !ready || busy;
     fields.title = canWrite ? '' : BOLD.cannotReason('projects', 'edit');
   }
   BOLD.onAccess(function(){ canWrite = BOLD.can('projects', 'edit'); controls(); });
+  function loadFamily(generation){
+    var feedback = el('pbFamilyStatus'), retry = el('pbFamilyRetry');
+    retry.hidden = true; feedback.textContent = 'Loading family links…';
+    call({action:'family'}).then(function(graph){
+      if (generation !== epoch) return;
+      familySelection = BoldProblemFamily.picker(el('pbFamily'), graph, null);
+      feedback.textContent = '';
+    }).catch(function(){
+      if (generation !== epoch) return;
+      feedback.textContent = 'Family links could not load. You can add them later. '; retry.hidden = false;
+    });
+  }
+  el('pbFamilyRetry').onclick = function(){ if (userId) loadFamily(epoch); };
   BOLD.onUser(function(user){
     var generation = ++epoch;
     userId = user && user.uid; ready = false; projects = []; submission = null; busy = false; form.reset(); controls();
     el('pbProjects').replaceChildren();
+    familySelection = null; el('pbFamily').replaceChildren(); el('pbFamilyStatus').textContent = ''; el('pbFamilyRetry').hidden = true;
     if (!user) { status.textContent = 'Sign in to add a problem.'; return; }
+    loadFamily(generation);
     Promise.all([call({ action:'projects' }), BoldPeopleSelect.load()]).then(function(results){
       if (epoch !== generation) return;
       projects = results[0].items;
@@ -31,6 +47,10 @@
     var data = { action:'create', projects:BoldProblemProjects.selected(el('pbProjects'),projects),
       title:el('pbTitle').value.trim(), owner_id:el('pbDefiner').value, collaborators:el('pbCollaborators').value.trim(),
       significance:el('pbWhy').value.trim(), difficulties:el('pbDifficulties').value.trim(), existing_solutions:el('pbExisting').value.trim() };
+    if (familySelection) {
+      var family = familySelection();
+      if (family.parents.length || family.related.length) data.family = family;
+    }
     busy = true; controls();
     try {
       var choice = await BOLD.confirmAction({ title: 'Save this open problem?', go: 'Save problem', always: true,

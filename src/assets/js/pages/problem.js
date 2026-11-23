@@ -17,7 +17,9 @@
   var urls = BOLDRegistryLinks.defaults;
 
   var p = null, releases = [], history = [], canApprove = false, canRemind = false, projects = [], projectsLoaded = false, editing = false, busy = false;
+  var userEpoch = 0, familyGraph = null, familyError = '', familySaving = false, familyRead = 0;
   var tab = (location.hash.match(/[#&]tab=([^&]+)/) || [])[1];
+  var initialRelease = tab === 'releases' ? new URLSearchParams(location.hash.slice(1)).get('release') : null;
   var TABS = [['overview', 'Overview'], ['releases', 'Verifiers'], ['history', 'History']];
   if (!TABS.some(function(t){ return t[0] === tab; })) tab = 'overview';
 
@@ -57,6 +59,22 @@
   function text(v){ return v ? BOLDRegistryLinks.formatText(String(v)) : missing(); }
   function external(href, label){ return '<a href="' + esc(href) + '" target="_blank" rel="noopener">' + esc(label) + ' ↗</a>'; }
 
+  function familySection(){
+    var html = '<section class="pb-family-panel" aria-label="Research family tree"><h3>Research family tree</h3>';
+    if (!familyGraph) return html + (familyError ? '<p role="status">Could not load family links. <button type="button" class="btn-text" id="retryFamily">Try again</button></p>' : '<p role="status">Loading family links…</p>') + '</section>';
+    if (editing === 'family') return html + '<fieldset id="familyEditor" aria-label="Family links"></fieldset>' + saveCancelHtml() + '</section>';
+    var links = BoldProblemFamily.connections(familyGraph, id), nodes = BoldProblemFamily.index(familyGraph);
+    var groups = [['parents','Contributes to'],['children','Problems that contribute to this'],['related','Related problems']];
+    var items = groups.map(function(group){
+      var linked = links[group[0]].map(function(to){return nodes.get(to);}).filter(Boolean);
+      linked.sort(function(a,b){return a.title.localeCompare(b.title);});
+      return linked.length ? row(group[1],linked.map(BoldProblemFamily.link).join(' · ')) : '';
+    }).join('');
+    var why = !canEdit() ? NOT_EDITOR : p.archived ? 'Restore this problem to change its links.' : familySaving ? 'Saving family links…' : '';
+    return html + (items ? '<dl class="detail-grid">'+items+'</dl>' : '<p class="detail-muted">No family links yet.</p>') +
+      '<button class="btn-text" data-edit="family" type="button"' + (why ? ' disabled title="' + esc(why) + '"' : '') + '>Edit family links</button></section>';
+  }
+
   /* ---------- the tabs ---------- */
   var PANELS = {
     overview: function(){
@@ -72,7 +90,7 @@
       html += editableRow('collaborators','Collaborators',text(d.collaborators),'<input id="fieldInput" aria-label="Collaborators" maxlength="8000" value="' + esc(d.collaborators || '') + '">');
       html += '</dl>';
       if (p.objective && p.objective !== p.title) html += '<p class="detail-abstract">' + text(p.objective) + '</p>';
-      return html;
+      return html + familySection();
     },
     releases: function(){
       if (!releases.length) return '<p class="detail-muted">Registered verifiers and their checks will appear here.</p>';
@@ -88,7 +106,7 @@
         if (ra) checks = checks.concat([['AutoKaggle reports approval', ra.approved_at], ['Its approval note', ra.note]]);
         var approve = !a && r.stage === 'validated'
           ? '<button class="btn-text" type="button" data-approve="' + esc(r.id) + '"' + (canApprove ? '' : ' disabled title="Only a PI or admin approves a release"') + '>Approve</button>' : '';
-        return '<li><div class="talk-when">Registered ' + esc(when(r.createdAt)) + ' · ' + esc(STAGES[r.stage] || r.stage) + ', reported by AutoKaggle</div>' +
+        return '<li id="release-' + esc(r.id) + '"><div class="talk-when">Registered ' + esc(when(r.createdAt)) + ' · ' + esc(STAGES[r.stage] || r.stage) + ', reported by AutoKaggle</div>' +
           '<div class="talk-title">' + esc(r.title) + ' · version ' + esc(String(e.version)) + '</div>' +
           '<div class="talk-when">' + (a ? 'Approved by ' + esc(a.name) + ', ' + esc(when(a.at)) + (a.note ? ': ' + esc(a.note) : '') : 'Not approved in BOLD.OS') + '</div>' +
           '<dl class="detail-grid">' + contract.map(function(f){return row(f[0],f[0]==='Verifier repository' ? f[1] : text(f[1]));}).join('') + '</dl>' +
@@ -139,12 +157,21 @@
     el('problemBody').innerHTML = html; el('problemBody').hidden = false; el('detailMsg').hidden = true;
     document.title = p.title + ' | BOLD Lab';
     wire();
+    if (initialRelease && tab === 'releases') {
+      var releaseId = 'release-' + initialRelease;
+      initialRelease = null;
+      requestAnimationFrame(function(){ var item = el(releaseId); if (item) item.scrollIntoView({block:'start'}); });
+    }
   }
 
   function setTab(name, focus){
     if (name === tab) return;
+    initialRelease = null;
     try { history_replace(name === 'overview' ? '' : '#tab=' + name); } catch (e){}
-    BOLD.switchTab('.tabs', el('problemBody'), function(){ tab = name; editing = false; render(); });
+    BOLD.switchTab('.tabs', el('problemBody'), function(){
+      tab = name; editing = false;
+      if (name === 'overview' && !familyGraph && !familyError) loadFamily(); else render();
+    });
     if (focus) document.querySelector('.tab.active').focus();
   }
   function history_replace(hash){ window.history.replaceState(null, '', location.pathname + location.search + hash); }
@@ -155,7 +182,40 @@
   }
   function failer(){ var e = el('detailEditError'); return function(msg){ if (e) { e.textContent = msg; e.hidden = false; } }; }
 
+  function wireFamilyEditor(){
+    var epoch = userEpoch, graph = familyGraph, editor = el('familyEditor'), saveButton = el('fieldSave');
+    var selection = BoldProblemFamily.picker(editor, graph, id), previous = selection();
+    editor.querySelector('summary').focus();
+    saveButton.onclick = async function(){
+      if (familySaving) return;
+      familySaving = true; editor.disabled = true; saveButton.disabled = true; el('editCancel').disabled = true;
+      var errorBox = el('detailEditError'); errorBox.hidden = true;
+      try {
+        await call({action:'set_family', problem_id:id, family:selection(), previous:previous});
+      } catch (error) {
+        if (epoch !== userEpoch) return;
+        familySaving = false;
+        if (!editor.isConnected) return;
+        el('editCancel').disabled = false; editor.disabled = false;
+        errorBox.hidden = false;
+        if (/(^|\/)aborted$/.test(error.code || '')) {
+          errorBox.textContent = 'The saved links changed while you were editing. ';
+          var reload = document.createElement('button'); reload.type = 'button'; reload.className = 'btn-text';
+          reload.textContent = 'Discard these edits and load the saved links';
+          reload.onclick = function(){ editing = false; loadFamily(); }; errorBox.appendChild(reload);
+        } else { saveButton.disabled = false; errorBox.textContent = error.message || 'Could not save family links. Try again.'; }
+        return;
+      }
+      if (epoch !== userEpoch) return;
+      familySaving = false;
+      if (editing === 'family') editing = false;
+      loadFamily();
+      load().catch(function(){ if (epoch === userEpoch) alertLine(new Error('Family links saved. Reload the page to refresh the problem history.')); });
+    };
+  }
+
   function wire(){
+    if (el('retryFamily')) el('retryFamily').onclick = loadFamily;
     Array.prototype.forEach.call(document.querySelectorAll('.tab'), function(t, i, all){
       t.addEventListener('click', function(){ setTab(t.getAttribute('data-tab')); });
       t.addEventListener('keydown', function(e){
@@ -164,7 +224,7 @@
       });
     });
     Array.prototype.forEach.call(document.querySelectorAll('[data-edit]'), function(btn){
-      btn.addEventListener('click', function(){ if (canEdit() && !btn.disabled) { editing = btn.getAttribute('data-edit'); render(); } });
+      btn.addEventListener('click', function(){ if (canEdit() && !familySaving && !btn.disabled) { editing = btn.getAttribute('data-edit'); render(); } });
     });
     Array.prototype.forEach.call(document.querySelectorAll('[data-approve]'), function(b){
       b.addEventListener('click', function(){
@@ -199,6 +259,7 @@
     if (!editing) return;
     var input = el('fieldInput'), fail = failer();
     el('editCancel').addEventListener('click', function(){ editing = false; render(); });
+    if (editing === 'family') { wireFamilyEditor(); return; }
     if (editing === 'owner') BoldPeopleSelect.load().then(function(list){input.innerHTML=BoldPeopleSelect.options(list,p.owner_id,'Choose the problem definer');}).catch(function(e){fail(e.message);});
     if (input && input.focus) input.focus();
     el('fieldSave').addEventListener('click', function(){
@@ -214,19 +275,34 @@
 
   /* ---------- loading ---------- */
   function load(){
+    var epoch = userEpoch;
     return call({ action: 'get', problem_id: id }).then(function(data){
+      if (epoch !== userEpoch) return;
       p = data.problem; releases = data.versions || []; history = data.history || []; canApprove = !!data.can_approve; canRemind = !!data.can_manage_reminders; busy = false;
       render();
     });
+  }
+  function loadFamily(){
+    var request = ++familyRead;
+    familyError = ''; familyGraph = null;
+    if (p && !editing && tab === 'overview') render();
+    return call({action:'family'}).then(function(graph){ if (request === familyRead) familyGraph = graph; })
+      .catch(function(){ if (request === familyRead) familyError = 'unavailable'; })
+      .then(function(){ if (request === familyRead && p && !editing && tab === 'overview') render(); });
   }
   function loadUrls(){
     return BOLDRegistryLinks.loadServiceUrls().then(function(config){ urls = config; }).catch(function(){});
   }
   BOLD.onAccess(function(){ if (p && !editing) render(); });
   BOLD.onUser(function(user){
+    var epoch = ++userEpoch;
+    familyRead++; familyGraph = null; familyError = ''; familySaving = false; p = null; editing = false;
+    projects = []; projectsLoaded = false; el('problemBody').replaceChildren(); el('problemBody').hidden = true;
+    el('detailMsg').hidden = false; el('detailMsg').textContent = user ? 'Loading…' : 'Sign in to view this problem.';
     if (!user) return;
     if (!/^ak-[a-f0-9]{24}$/.test(id)) { el('detailMsg').textContent = 'No such problem.'; return; }
-    call({ action: 'projects' }).then(function(r){ projects = r.items; projectsLoaded=true; if (p && !editing) render(); }).catch(function(){});
-    Promise.all([loadUrls()]).then(load).catch(function(e){ el('detailMsg').textContent = 'Could not load this problem. ' + ((e && e.message) || ''); });
+    if (tab === 'overview') loadFamily();
+    call({ action: 'projects' }).then(function(r){ if (epoch !== userEpoch) return; projects = r.items; projectsLoaded=true; if (p && !editing) render(); }).catch(function(){});
+    loadUrls().then(function(){ if (epoch === userEpoch) return load(); }).catch(function(e){ if (epoch === userEpoch) el('detailMsg').textContent = 'Could not load this problem. ' + ((e && e.message) || ''); });
   });
 })();

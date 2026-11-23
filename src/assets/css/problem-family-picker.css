@@ -1,0 +1,14 @@
+.pb-family-choice {margin:.5rem 0; font: normal 14px/1.5 var(--sans); color:var(--ink);}
+.pb-family-choice summary {cursor:pointer; font-weight:600;}
+.pb-family-choice > label {display:block; margin:.5rem 0; color:var(--muted);}
+.pb-family-choice input[type=search] {display:block; width:100%; max-width:30rem; box-sizing:border-box; margin-top:3px; font:inherit; color:var(--ink); background:var(--surface); border:1px solid var(--line); border-radius:var(--radius); padding:7px 10px;}
+.pb-family-choice [data-choices] {max-height:14rem; overflow-y:auto;}
+.pb-family-choice label.pb-family-option {display:flex; align-items:baseline; gap:6px; margin:0; padding:3px 0; color:var(--ink); overflow-wrap:anywhere;}
+.pb-family-option input[type=checkbox] {width:auto; flex:none;}
+.pb-family-choice small, .pb-family-note {color:var(--muted); font-weight:400;}
+.pb-family-note:empty {display:none;}
+.pb-family-panel {margin:1.5rem 0;}
+.pb-family-panel h3 {margin:0 0 .5rem;}
+.pb-family-panel .detail-grid {margin:.5rem 0;}
+.pb-family-panel [data-edit] {margin-bottom:.4rem;}
+#familyEditor {margin:0; padding:0; border:0; min-width:0;}

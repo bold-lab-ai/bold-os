@@ -4,8 +4,8 @@ title: "Add a problem | BOLD Lab"
 description: "Define a research question for the Problem Bank."
 sdk: ["firestore", "functions"]
 css: "problems"
-styles: ["problem-steps"]
-scripts: ["people-select.js", "problem-projects.js", "pages/problem-new.js"]
+styles: ["problem-steps", "problem-family-picker"]
+scripts: ["people-select.js", "problem-projects.js", "problem-family-picker.js", "pages/problem-new.js"]
 permalink: "problem-new.html"
 nav: "problems.html"
 ---
@@ -24,6 +24,11 @@ nav: "problems.html"
       <div class="field"><details><summary>Projects <small>(optional)</small></summary><div id="pbProjects" class="pb-project-options"></div></details>
         <a href="projects.html" target="_blank" rel="noopener">All projects ↗</a></div>
       <div class="field"><label for="pbCollaborators">Collaborators <small>(optional)</small></label><input id="pbCollaborators" maxlength="8000" placeholder="Names"></div>
+      <section class="field" aria-label="Research family tree">
+        <strong>Research family tree <small>(optional)</small></strong>
+        <div id="pbFamily"></div><span id="pbFamilyStatus" role="status"></span>
+        <button type="button" id="pbFamilyRetry" class="btn-text" hidden>Reload family tree</button>
+      </section>
       <button type="submit" class="btn btn-primary">Save problem</button>
     </fieldset>
     <p role="status" id="pbStatus">Loading…</p>
