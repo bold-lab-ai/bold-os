@@ -5,12 +5,12 @@ function record(){return {schema:'bold.autokaggle.registration.v1',source_id:'au
  validation:{build:'passed',contract_coverage:'passed',code_review:'passed',synthetic:'passed',known_score:'passed',invalid_submission:'passed',clean_clone:'passed',research_data:'validated',research_evidence:{passed:true,mode:'research',commit:'a'.repeat(40),contract_sha256:'b'.repeat(64),reference_sha256:'c'.repeat(64),artifact_sha256:'d'.repeat(64),report_sha256:'e'.repeat(64),checked_by:'controlled-runtime:1234567890abcdef',checked_at:'2026-11-12T20:00:00Z',expected_fitness:1,observed_fitness:1,tolerance:1e-6,expected_basis:'Independent calculation on declared input.'}},
  human_approval:{commit:'a'.repeat(40),contract_sha256:'b'.repeat(64),research_report_sha256:'e'.repeat(64),approved_by:'f'.repeat(64),approved_at:'2026-11-12T20:01:00Z',note:'I reviewed the code and research evidence.'}};}
 function harness(){
- const data=new Map([['projects/diverging-runs',{title:'Diverging runs'}]]);
+ const data=new Map([['projects/diverging-runs',{title:'Diverging runs'}],['people/UDEFINER',{name:'Demo Researcher'}]]);
  const snap=p=>({id:p.split('/').pop(),exists:data.has(p),data:()=>structuredClone(data.get(p))});
  const doc=p=>({id:p.split('/').pop(),path:p,get:async()=>snap(p),collection:n=>col(p+'/'+n)});
  const kids=p=>[...data.keys()].filter(k=>k.startsWith(p+'/')&&k.split('/').length===p.split('/').length+1).map(snap);
  const col=p=>({get:async()=>({docs:kids(p)}),doc:id=>doc(p+'/'+id),orderBy:()=>({limit:()=>({get:async()=>({docs:[...data.keys()].filter(k=>k.startsWith(p+'/')&&k.split('/').length===p.split('/').length+1).map(snap)})})}),where:(key,op,value)=>({get:async()=>({docs:[...data.keys()].filter(k=>k.startsWith(p+'/')&&k.split('/').length===p.split('/').length+1&&data.get(k)[key]===value).map(snap)})})});
- const db={collection:col,runTransaction:async fn=>{const writes=[];const result=await fn({get:async ref=>snap(ref.path),set:(ref,x)=>writes.push(()=>data.set(ref.path,structuredClone(x))),update:(ref,x)=>writes.push(()=>data.set(ref.path,{...data.get(ref.path),...structuredClone(x)}))});writes.forEach(f=>f());return result;}};
+ const db={collection:col,runTransaction:async fn=>{const writes=[];const result=await fn({get:async ref=>ref.path?snap(ref.path):ref.get(),set:(ref,x)=>writes.push(()=>data.set(ref.path,structuredClone(x))),update:(ref,x)=>writes.push(()=>data.set(ref.path,{...data.get(ref.path),...structuredClone(x)}))});writes.forEach(f=>f());return result;}};
  class ErrorWithCode extends Error{constructor(code,message){super(message);this.code=code;}}
  let denied=false;
  const registry=factory({db,onCall:(_,fn)=>fn,callerEmail:r=>{if(!r.auth?.slack)throw new ErrorWithCode('unauthenticated','Slack required');return r.auth.email;},isFullWrite:async e=>e==='admin@example.invalid',access:{requireAccess:async()=>{if(denied)throw new ErrorWithCode('permission-denied','Access denied');},can:async()=>true},HttpsError:ErrorWithCode});
@@ -71,11 +71,11 @@ test('no credential or arbitrary session URL enters the record',()=>{
  assert.doesNotMatch(JSON.stringify(out),/SECRET|evil/);
  r.session.application='unknown';assert.throws(()=>factory.normalize(r),/session/);
 });
-const openProblem = { action:'create', project_id:'diverging-runs', title:'Estimate kinetics', objective:'Estimate rates from observations',
+const openProblem = { action:'create', projects:[{id:'diverging-runs'}], title:'Estimate kinetics', owner_id:'UDEFINER', difficulties:'Sparse observations',
  significance:'A faster measurement', existing_solutions:'Least squares on clean signals', reminders:true, request_id:'98c689be-0660-4a12-9e63-be3abce09910' };
-test('a definition needs a project, scientific context and an explicit reminder choice; retries save one record',async()=>{
+test('a definition needs a definer, scientific context and an explicit reminder choice; retries save one record',async()=>{
  const h=harness();
- for (const key of ['title','significance','existing_solutions','objective','project_id','reminders','request_id']) {
+ for (const key of ['title','significance','existing_solutions','difficulties','owner_id','reminders','request_id']) {
    const bad={...openProblem};delete bad[key];await assert.rejects(h.call(bad),e=>e.code==='invalid-argument');
  }
  const saved=await h.call(openProblem);assert.deepEqual(await h.call(openProblem),saved);
@@ -181,4 +181,24 @@ test('the research owner is one of the lab\'s people, by Slack ID, named as the 
  await h.call({...edit,owner_id:'UOWNER2'});
  p=(await h.call({action:'get',problem_id:r.problem_id})).problem;assert.equal(p.details.owner,'Sam Second');assert.equal(p.owner_id,'UOWNER2');
  await assert.rejects(h.call({action:'create',project_id:'diverging-runs',title:'Q',objective:'O',task_kind:'k',owner_id:'UOWNER1'},'admin@example.invalid'),e=>e.code==='invalid-argument');
+});
+
+test('define a problem first, add projects later, and release independent verifier contracts', async()=>{
+ const h=harness(); h.data.set('people/UOWNER1',{name:'Rae'});h.data.set('projects/second',{title:'Second project'});
+ const proposal={...openProblem,projects:[],owner_id:'UOWNER1',difficulties:'Sparse observations',collaborators:'Lin'};
+ delete proposal.objective;delete proposal.project_id;
+ for (const field of ['difficulties','owner_id','existing_solutions','significance']) await assert.rejects(h.call({...proposal,[field]:''}));
+ const {problem_id}=await h.call(proposal);
+ const view=()=>h.call({action:'get',problem_id});
+ assert.deepEqual((await view()).problem.projects,[]);assert.equal((await view()).problem.details.owner,'Rae');
+ await assert.rejects(h.call({action:'update',problem_id,changes:{projects:[{id:'missing'}]}}));
+ const change=changes=>h.call({action:'update',problem_id,changes});
+ await change({projects:[{id:'diverging-runs'},{id:'second'},{id:'second'}]});await change({difficulties:'Noisy traces'});
+ assert.equal((await view()).problem.projects.length,2);assert.equal((await view()).problem.details.collaborators,'Lin');
+ const reg={...record(),problem_id,project_id:'second',details:{data_assets:'Reference traces',metrics:'MAE',score_format:'JSON fitness',submission_format:'CSV',constraints:'CPU only'}};
+ await h.call({action:'register',registration:reg});
+ const result=await view();assert.equal(result.problem.project_id,'diverging-runs');assert.equal(result.problem.details.metrics,undefined);assert.deepEqual(result.versions[0].details,reg.details);
+ await assert.rejects(change({projects:[{id:'diverging-runs'}]}),/Keep the project/);
+ await assert.rejects(h.call({action:'register',registration:{...reg,idempotency_key:'8'.repeat(64),details:{metrics:'RMSE'}}}),/different evidence/);
+ assert.ok(!(await h.call({action:'open_choices'})).items.some(p=>p.id===problem_id));
 });

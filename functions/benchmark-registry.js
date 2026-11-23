@@ -41,7 +41,7 @@ function boardId(value){
 
 const CHECKS = ['build', 'contract_coverage', 'code_review', 'synthetic', 'known_score', 'invalid_submission', 'clean_clone', 'research_data'];
 const SOFTWARE = ['code_review', 'synthetic', 'known_score', 'invalid_submission', 'clean_clone'];
-const DETAIL_FIELDS = ['owner', 'collaborators', 'submission_format', 'metrics', 'run_command', 'dependencies', 'seeds', 'compute', 'data_assets', 'limitations', 'open_issues', 'next_action'];
+const DETAIL_FIELDS = ['owner', 'collaborators', 'submission_format', 'metrics', 'score_format', 'constraints', 'run_command', 'dependencies', 'seeds', 'compute', 'data_assets', 'limitations', 'open_issues', 'next_action'];
 
 function details(input){
   if (input == null) return {};
@@ -99,6 +99,26 @@ function normalize(input){
     reported_approval: reported ? { approved_by: a.approved_by, approved_at: text(a.approved_at, 80, 'the approval time'), note: text(a.note, 4000, 'the approval note') } : null,
   };
 }
+function storedProjects(p){
+  return p.projects || (p.project_id ? [{ id: p.project_id, board: p.project_board || '', title: p.project_title || p.project_id }] : []);
+}
+function sameProject(a, b){
+  if (a.id === b.id && (a.board || '') === (b.board || '')) return true;
+  const left = a.stable_id || (!a.board && a.id);
+  const right = b.stable_id || (!b.board && b.id);
+  return Boolean(left && left === right);
+}
+function linkedProjects(problem, choices){
+  const links = storedProjects(problem).map(link => choices.find(choice => sameProject(link, choice)) || link);
+  for (const choice of choices) {
+    if (choice.openProblemId === problem.id && !links.some(link => sameProject(link, choice))) links.push(choice);
+  }
+  return links;
+}
+function primary(links){
+  const first = links[0] || {};
+  return { project_id: first.id || '', project_board: first.board || '', project_title: first.title || '' };
+}
 // Pure: what makes a release itself; registering it again must match exactly.
 const releaseFingerprint = (data) => sha(canonical({ evaluator: data.evaluator, validation: data.validation, research: data.research, reported_approval: data.reported_approval, stage: data.stage }));
 
@@ -130,6 +150,20 @@ module.exports = function({ db, onCall, callerEmail, isFullWrite, access, HttpsE
     if (!person.exists) throw error('invalid-argument', 'Choose the research owner from the lab’s people.');
     return { owner_id: id, owner: person.data().name || 'A lab member' };
   }
+  function projectRefs(list){
+    if (!Array.isArray(list) || list.length > 100) throw error('invalid-argument','Choose up to 100 projects.');
+    return list.map(x => projectRef(x && x.id, x && x.board));
+  }
+  async function readLinks(tx, refs, list){
+    const docs = await Promise.all(refs.map(ref => tx.get(ref)));
+    const links = [];
+    docs.forEach((doc, i) => {
+      if (!doc.exists) throw error('failed-precondition','A selected project no longer exists.');
+      const link = { id: doc.id, board: list[i].board || '', title: doc.data().title || doc.id, stable_id: doc.data().projectId || doc.id };
+      if (!links.some(x => sameProject(x,link))) links.push(link);
+    });
+    return links;
+  }
   async function nameOf(email){
     const m = await db.collection('members').doc(email).get();
     return (m.exists && m.data().name) || 'A PI or admin';
@@ -137,20 +171,25 @@ module.exports = function({ db, onCall, callerEmail, isFullWrite, access, HttpsE
 
   async function run(request){
     const email = callerEmail(request), d = request.data || {}, action = d.action || 'list';
-    await access.requireAccess(email, 'projects', ['list', 'get', 'projects', 'search'].includes(action) ? 'view' : 'change');
+    const permission = action === 'open_choices' ? 'list' : ['list', 'get', 'projects', 'search'].includes(action) ? 'view' : 'change';
+    await access.requireAccess(email, 'projects', permission);
     const full = await isFullWrite(email);
     const mayEdit = full || await access.can(email, 'projects', 'change');
     const canEdit = (doc) => mayEdit && (full || doc.data().createdBy === email);
 
     if (action === 'projects') return { items: await projectChoices() };
 
+    if (action === 'open_choices') {
+      const snap = await db.collection('problemBank').where('stage','==','open').get();
+      return {items:snap.docs.filter(x => !x.data().archived).map(x => ({id:x.id,title:x.data().title})).sort((a,b)=>a.title.localeCompare(b.title))};
+    }
     if (action === 'search') {
       // For search.js and agents' search: problems not archived, and their releases.
       const [problems, releases] = await Promise.all([db.collection('problemBank').get(), db.collection('benchmarks').get()]);
       const live = new Set(problems.docs.filter((x) => !x.data().archived).map((x) => x.id));
       return { items: problems.docs.filter((x) => live.has(x.id)).map((x) => {
         const p = x.data();
-        return { kind: 'problems', problem_id: x.id, title: p.title, label: 'Problem Bank', text: [p.objective, p.significance, p.existing_solutions, p.task_kind, p.notes].filter(Boolean).join(' ') };
+        return { kind: 'problems', problem_id: x.id, title: p.title, label: 'Problem Bank', text: [p.objective, p.significance, p.existing_solutions, p.difficulties, (p.details || {}).owner, (p.details || {}).collaborators, p.task_kind, p.notes].filter(Boolean).join(' ') };
       }).concat(releases.docs.filter((x) => live.has(x.data().problem_id)).map((x) => {
         const b = x.data();
         return { kind: 'benchmarks', problem_id: b.problem_id, title: b.title, label: 'Evaluator version ' + b.evaluator.version,
@@ -159,27 +198,33 @@ module.exports = function({ db, onCall, callerEmail, isFullWrite, access, HttpsE
     }
 
     if (action === 'create') {
-      let definition;
+      const modern = d.projects !== undefined || d.difficulties !== undefined;
+      const owner = modern ? await ownerOf(d.owner_id) : null;
+      if (modern && !owner) throw error('invalid-argument','Choose the problem definer.');
+      let definition, collaborators;
       try {
-        definition = Object.fromEntries(['title', 'objective', 'significance', 'existing_solutions'].map(k =>
-          [k, text(d[k], k === 'title' ? 180 : 8000, k.replace(/_/g, ' '))]));
-      } catch (e) { throw error('invalid-argument', e.message); }
+        const required = modern ? ['title', 'significance', 'difficulties', 'existing_solutions'] : ['title', 'objective', 'significance', 'existing_solutions'];
+        definition = Object.fromEntries(required.map(k => [k, text(d[k], k === 'title' ? 180 : 8000, k)]));
+        collaborators = d.collaborators ? text(d.collaborators,8000,'collaborators') : '';
+      } catch (e) { throw error('invalid-argument',e.message); }
       if (typeof d.reminders !== 'boolean' || typeof d.request_id !== 'string' || !/^[a-f0-9]{8}-(?:[a-f0-9]{4}-){3}[a-f0-9]{12}$/.test(d.request_id))
         throw error('invalid-argument', 'Confirm the reminder choice and supply a request ID.');
-      const parent = projectRef(d.project_id, d.project_board);
+      const list = modern ? (d.projects === undefined ? [] : d.projects) : [{id:d.project_id,board:d.project_board || ''}];
+      const refs = projectRefs(list);
       const id = 'ak-' + sha('problem:' + email + ':' + d.request_id).slice(0, 24);
       const ref = db.collection('problemBank').doc(id), at = Date.now();
-      const fingerprint = sha(canonical([definition, d.project_id, d.project_board || '', d.reminders]));
+      const fingerprint = sha(canonical(modern ? [definition,owner.owner_id,collaborators,list,d.reminders] : [definition,d.project_id,d.project_board || '',d.reminders]));
       return db.runTransaction(async tx => {
-        const [project, previous] = await Promise.all([tx.get(parent), tx.get(ref)]);
+        const previous = await tx.get(ref);
         if (previous.exists) {
           if (previous.data().createFingerprint !== fingerprint) throw error('already-exists', 'This request already saved a different problem.');
           return { problem_id: id };
         }
-        if (!project.exists) throw error('failed-precondition', 'The linked BOLD OS project does not exist.');
+        if (!modern) throw error('invalid-argument', 'Reload the form to select the problem definer and describe the difficulties.');
+        const links = await readLinks(tx,refs,list);
         const row = { ...definition, origin: 'problem_bank', stage: 'open', archived: false, task_kind: '',
-          project_id: d.project_id, project_board: d.project_board || '', project_title: project.data().title || project.id,
-          details: {}, notes: '', createdBy: email, updatedBy: email, createdAt: at, updatedAt: at, reminders: d.reminders };
+          ...primary(links), projects:links, owner_id:owner ? owner.owner_id : null,
+          details:owner ? {owner:owner.owner,collaborators} : {}, notes: '', createdBy: email, updatedBy: email, createdAt: at, updatedAt: at, reminders: d.reminders };
         tx.set(ref, { ...row, createFingerprint: fingerprint, verifierNoticeDue: d.reminders ? at : null });
         tx.set(ref.collection('versions').doc('created'), { ...row, changeNote: 'Defined the open problem' });
         return { problem_id: id };
@@ -192,19 +237,26 @@ module.exports = function({ db, onCall, callerEmail, isFullWrite, access, HttpsE
         if (!/^[a-z0-9-]{1,100}$/.test(d.cursor)) throw error('invalid-argument', 'Invalid page cursor.');
         q = q.startAfter(d.cursor);
       }
-      const snap = await q.get();
-      return { items: snap.docs.map((doc) => publicRow(doc, canEdit(doc))), cursor: snap.size === 100 ? snap.docs[snap.size - 1].id : null };
+      const [snap, choices] = await Promise.all([q.get(), projectChoices ? projectChoices() : []]);
+      const items = snap.docs.map(doc => {
+        const p = publicRow(doc, canEdit(doc));
+        return { ...p, projects: linkedProjects(p, choices) };
+      });
+      return { items, cursor: snap.size === 100 ? snap.docs[snap.size - 1].id : null };
     }
 
     if (action === 'get') {
       if (!/^ak-[a-f0-9]{24}$/.test(d.problem_id || '')) throw error('invalid-argument', 'Supply the problem ID.');
       const ref = db.collection('problemBank').doc(d.problem_id), doc = await ref.get();
       if (!doc.exists) throw error('not-found', 'This problem is not registered.');
-      const [releases, history] = await Promise.all([
+      const [releases, history, choices] = await Promise.all([
         db.collection('benchmarks').where('problem_id', '==', d.problem_id).get(),
-        ref.collection('versions').orderBy('updatedAt', 'desc').limit(100).get(),
+        ref.collection('versions').orderBy('updatedAt', 'desc').limit(100).get(), projectChoices ? projectChoices() : [],
       ]);
-      return { can_manage_reminders: mayEdit && doc.data().createdBy === email, history: history.docs.map((x) => publicRow(x)), problem: publicRow(doc, canEdit(doc)), can_approve: full,
+      const problem = publicRow(doc,canEdit(doc));
+      problem.selected_projects = storedProjects(problem);
+      problem.projects = linkedProjects(problem,choices);
+      return { can_manage_reminders: mayEdit && doc.data().createdBy === email, history: history.docs.map((x) => publicRow(x)), problem, can_approve: full,
         versions: releases.docs.map((x) => publicRow(x)).sort((a, b) => b.createdAt - a.createdAt || b.evaluator.version - a.evaluator.version) };
     }
 
@@ -235,11 +287,12 @@ module.exports = function({ db, onCall, callerEmail, isFullWrite, access, HttpsE
         }
         // A release is written once: the same commit again must be the same release.
         if (b.exists) {
-          if (b.data().fingerprint !== release) throw error('already-exists', 'This commit is already registered with different evidence. Register the change as a new version.');
+          if (b.data().fingerprint !== release || (b.data().details !== undefined && canonical(b.data().details) !== canonical(data.details))) throw error('already-exists', 'This commit is already registered with different evidence. Register the change as a new version.');
           tx.set(receipt, { fingerprint, receipt: out, createdBy: email, createdAt: at });
           return out;
         }
-        if (linked && (prior.archived || prior.project_id !== data.project_id || (prior.project_board || '') !== data.project_board))
+        const target = {id:data.project_id, board:data.project_board, stable_id:project.data().projectId || data.project_id};
+        if (linked && (prior.archived || (!storedProjects(prior).some(link => sameProject(link,target)) && project.data().openProblemId !== pid)))
           throw error('failed-precondition', 'Choose an active problem in the same BOLD OS project.');
         const previousVersion = streamDoc.exists ? streamDoc.data().version : (prior.source_id === data.source_id ? prior.latest_version : 0);
         if (previousVersion >= data.evaluator.version) throw error('failed-precondition', 'Version ' + data.evaluator.version + ' or a newer one is already registered.');
@@ -252,14 +305,14 @@ module.exports = function({ db, onCall, callerEmail, isFullWrite, access, HttpsE
           archived: p.exists ? !!p.data().archived : false, notes: p.exists ? (p.data().notes || '') : '',
           createdBy: author, createdAt: p.exists ? p.data().createdAt : at, updatedBy: email, updatedAt: at };
         const benchmarkData = { problem_id: pid, source_id: data.source_id, title: data.title, task_kind: data.task_kind, evaluator: data.evaluator,
-          research: data.research, reported_approval: data.reported_approval, approval: null, stage: data.stage, validation: data.validation,
+          details: data.details, project_id:data.project_id, project_board:data.project_board, project_stable_id:target.stable_id, research: data.research, reported_approval: data.reported_approval, approval: null, stage: data.stage, validation: data.validation,
           fingerprint: release, createdBy: streamOwner || email, createdAt: at, updatedBy: email, updatedAt: at };
         // A verifier release cannot replace the scientific definition or its submitter.
         if (linked && !prior.has_linked_verifiers && prior.source_id && prior.source_id !== data.source_id) {
           const original = db.collection('benchmarkSources').doc('ak-' + sha(prior.source_id).slice(0, 24));
           tx.set(original, { problem_id: pid, createdBy: prior.createdBy, version: prior.latest_version });
         }
-        if (linked) Object.assign(problemData, { has_linked_verifiers: true, title: prior.title, objective: prior.objective, task_kind: prior.task_kind || '',
+        if (linked) Object.assign(problemData, { ...primary(storedProjects(prior)), has_linked_verifiers: true, title: prior.title, objective: prior.objective || '', task_kind: prior.task_kind || '',
           details: prior.details || {}, verifierNoticeDue: null });
         tx.set(stream, { problem_id: pid, version: data.evaluator.version, createdBy: streamOwner || email });
         tx.set(problem, { ...prior, ...problemData });
@@ -312,6 +365,62 @@ module.exports = function({ db, onCall, callerEmail, isFullWrite, access, HttpsE
       return { ok: true };
     }
 
+    if (action === 'update' && d.changes) {
+      let id;
+      try { id=problemId(d.problem_id); } catch (e){throw error('invalid-argument',e.message);}
+      const changes=d.changes, keys=Object.keys(changes);
+      if (!keys.length || keys.some(k=>!['title','significance','difficulties','existing_solutions','owner_id','collaborators','projects','archived'].includes(k)))
+        throw error('invalid-argument','Choose a problem field to edit.');
+      const owner='owner_id' in changes ? await ownerOf(changes.owner_id) : null;
+      if ('owner_id' in changes && !owner) throw error('invalid-argument','Choose the problem definer.');
+      const refs='projects' in changes ? projectRefs(changes.projects) : null;
+      const ref=db.collection('problemBank').doc(id);
+      await db.runTransaction(async tx=>{
+        const doc=await tx.get(ref);
+        if (!doc.exists) throw error('not-found','This problem no longer exists.');
+        if (!canEdit(doc)) throw error('permission-denied','Only the submitter or a PI/admin can edit the problem.');
+        const was = doc.data(), at = Date.now();
+        const patch = { updatedAt: at, updatedBy: email };
+        if ('title' in changes && was.stage !== 'open' && was.origin !== 'problem_bank')
+          throw error('failed-precondition', 'Change a released evaluator title through AutoKaggle.');
+        try {
+          for (const key of ['title', 'significance', 'difficulties', 'existing_solutions']) {
+            if (key in changes) patch[key] = text(changes[key], key === 'title' ? 180 : 8000, key);
+          }
+          if (owner || 'collaborators' in changes) {
+            patch.details = { ...was.details };
+            if (owner) {
+              patch.owner_id = owner.owner_id;
+              patch.details.owner = owner.owner;
+            }
+            if ('collaborators' in changes) patch.details.collaborators = changes.collaborators === '' ? '' : text(changes.collaborators, 8000, 'collaborators');
+          }
+        } catch (e) { throw error('invalid-argument', e.message); }
+        if (refs) {
+          const links = await readLinks(tx, refs, changes.projects);
+          if (was.evaluator) {
+            const versions = await tx.get(db.collection('benchmarks').where('problem_id', '==', id));
+            const pinned = versions.docs.map(doc => {
+              const version = doc.data();
+              return { id: version.project_id || was.project_id, board: version.project_board ?? was.project_board ?? '', stable_id:version.project_stable_id || '' };
+            });
+            const removed = storedProjects(was).filter(link => !links.some(x => sameProject(x, link)));
+            if (removed.some(link => pinned.some(x => sameProject(x, link))))
+              throw error('failed-precondition', 'Keep the project used by a registered verifier.');
+          }
+          Object.assign(patch, primary(links), { projects: links });
+        }
+        if ('archived' in changes) {
+          if (typeof changes.archived !== 'boolean') throw error('invalid-argument', 'Supply the archive choice.');
+          patch.archived = changes.archived;
+          if (patch.archived !== !!was.archived && was.reminders && !was.evaluator)
+            Object.assign(patch, { verifierNoticeDue: patch.archived ? null : at, verifierNoticeCycle: null });
+        }
+        tx.update(ref,patch);
+        tx.set(ref.collection('versions').doc(crypto.randomUUID()),{...was,...patch,changeNote:'Updated the problem definition'});
+      });
+      return {ok:true};
+    }
     if (action === 'update') {
       if (!/^ak-[a-f0-9]{24}$/.test(d.problem_id || '')) throw error('invalid-argument', 'Supply the problem ID.');
       if (typeof d.notes !== 'string' || d.notes.length > 8000 || typeof d.archived !== 'boolean') throw error('invalid-argument', 'Supply bounded notes and the archive choice.');
@@ -332,6 +441,8 @@ module.exports = function({ db, onCall, callerEmail, isFullWrite, access, HttpsE
         else delete metadata.owner;
         const update = { notes: d.notes.trim(), archived: d.archived, project_id: project.id, project_board: project.board, project_title: project.title,
           details: metadata, owner_id: owner ? owner.owner_id : (was.owner_id || null), updatedBy: email, updatedAt: Date.now() };
+        if (was.projects && (was.project_id !== project.id || (was.project_board || '') !== project.board))
+          update.projects = [project,...was.projects.filter(link=>!sameProject(link,project) && !(link.id===was.project_id && (link.board||'')===(was.project_board||'')))];
         if (was.has_linked_verifiers && (was.project_id !== project.id || (was.project_board || '') !== project.board))
           throw error('failed-precondition', 'A problem with registered verifiers must keep its project.');
         if (d.archived !== !!was.archived && was.reminders && !was.evaluator)

@@ -3554,6 +3554,7 @@ function allProjectsFromCards(boards, cards, unassigned, completedIds, startedId
     return {
       title: d.title || 'Untitled',
       abstract: d.abstractText || '',
+      openProblemId: d.openProblemId || '',
       slackChannel: d.slackChannel || '',
       keywords: Array.isArray(d.keywords) ? d.keywords : [],
       owner: (d.submittedBy && d.submittedBy.name) || '',
@@ -5413,10 +5414,10 @@ exports.projectWorkspace = onCall(
       const c = data.card && typeof data.card === 'object' ? Object.assign({}, data.card) : null;
       if (!c || typeof c.title !== 'string' || !c.title.trim()) throw new HttpsError('invalid-argument', 'The new card has no title.');
       const cardId = /^card-[a-z0-9-]{1,60}$/.test(String(c.id || '')) ? c.id : 'card-' + Date.now() + '-' + crypto.randomBytes(3).toString('hex');
-      ['id', 'setUpMeeting', 'setUpRepo', 'setUpDocs', 'setUpSkipped', 'announce'].forEach(function(k){ delete c[k]; });
+      ['id', 'openProblemId', 'setUpMeeting', 'setUpRepo', 'setUpDocs', 'setUpSkipped', 'announce'].forEach(function(k){ delete c[k]; });
       const now = Date.now();
       await db.collection('boards').doc(venue).collection('cards').doc(cardId).set(Object.assign(c, {
-        projectId: pid, status: 'register', outcome: '', createdAt: now, updatedAt: now,
+        ...(card.openProblemId ? {openProblemId:card.openProblemId} : {}), projectId: pid, status: 'register', outcome: '', createdAt: now, updatedAt: now,
         submittedBy: { name: request.auth.token.name || request.auth.token.email, email: request.auth.token.email, slackId: null }
       }));
       // A project without a venue moves onto the board: its venue-less card goes.
@@ -9485,7 +9486,7 @@ exports.benchmarkRegistry = require('./benchmark-registry')({ db, onCall, caller
     cardsSnap.docs.map(function(d){ return { boardId: d.ref.parent.parent.id, id: d.id, data: d.data() }; }),
     unassignedSnap.docs.map(function(d){ return { id: d.id, data: d.data() }; }), [], []);
   return [].concat(groups.proposed, groups.ongoing, groups.submission, groups.planned, groups.completed)
-    .map(function(i){ return { id: i.cardId || i.projectId, board: i.boardId || '', title: i.title, venue: i.boardLabel || '' }; })
+    .map(function(i){ return { id:i.cardId || i.projectId, stable_id:i.pid, board:i.boardId || '', title:i.title, venue:i.boardLabel || '', openProblemId:i.openProblemId || '' }; })
     .sort(function(a, b){ return a.title.localeCompare(b.title); });
 } }).benchmarkRegistry;
 

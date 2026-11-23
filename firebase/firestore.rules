@@ -428,7 +428,7 @@ service cloud.firestore {
         allow read: if may('ml-cycle', 'view') || seesProject(resource.data.get('projectId', cardId));
         // Only the server (projectWorkspace 'submit') files a card under another
         // card's project (`projectId`); nobody changes it afterwards.
-        allow create: if (may('ml-cycle', 'edit') || may('projects', 'edit')) && request.resource.data.get('projectId', cardId) == cardId;
+        allow create: if (may('ml-cycle', 'edit') || may('projects', 'edit')) && request.resource.data.get('projectId', cardId) == cardId && !('openProblemId' in request.resource.data);
         // A card can be changed only by whoever created it, a reviewer
         // assigned to it, or a PI/admin — same base condition as before.
         //
@@ -452,7 +452,7 @@ service cloud.firestore {
           request.resource.data.reviewers == resource.data.reviewers ||
           email() == resource.data.submittedBy.email ||
           hasFullWrite()
-        ) && request.resource.data.get('projectId', '') == resource.data.get('projectId', '');
+        ) && request.resource.data.get('openProblemId','') == resource.data.get('openProblemId','') && request.resource.data.get('projectId', '') == resource.data.get('projectId', '');
         allow delete: if (may('ml-cycle', 'edit') || may('projects', 'edit')) && (
           email() == resource.data.submittedBy.email ||
           email() == resource.data.reviewers.junior ||
@@ -483,12 +483,18 @@ service cloud.firestore {
     match /benchmarkSources/{id} { allow read, write: if false; }
     match /benchmarkReceipts/{id} { allow read, write: if false; }
 
+    function openBankProblem(id) {
+      return id is string && id.matches('ak-[a-f0-9]{24}') &&
+        get(/databases/$(database)/documents/problemBank/$(id)).data.stage == 'open' &&
+        get(/databases/$(database)/documents/problemBank/$(id)).data.get('archived', false) == false;
+    }
+
     match /projects/{projectId} {
       allow read: if seesProject(resource.data.get('projectId', projectId));
       // A new project is proposed (#226): within the standard compute allowance (proposal.more false, no GPU hours),
       // or asking for more (its GPU hours); onProjectRegistered approves it or sends it to the PIs and admins.
       allow create: if may('projects', 'edit') && request.resource.data.submittedBy.email == email() &&
-        request.resource.data.get('projectId', projectId) == projectId &&
+        request.resource.data.get('projectId', projectId) == projectId && openBankProblem(request.resource.data.openProblemId) &&
         request.resource.data.proposal.status == 'proposed' &&
         !('dueAt' in request.resource.data.proposal) && (
           (request.resource.data.proposal.get('more', true) == false && !('gpuHours' in request.resource.data.proposal)) ||
@@ -498,7 +504,7 @@ service cloud.firestore {
         email() == resource.data.submittedBy.email ||
         email() in resource.data.get('authorEmails', []) ||
         hasFullWrite()
-      ) && request.resource.data.get('projectId', '') == resource.data.get('projectId', '') &&
+      ) && request.resource.data.get('openProblemId','') == resource.data.get('openProblemId','') && request.resource.data.get('projectId', '') == resource.data.get('projectId', '') &&
         (hasFullWrite() || request.resource.data.get('proposal', null) == resource.data.get('proposal', null));
       allow delete: if may('projects', 'edit') && (
         email() == resource.data.submittedBy.email || hasFullWrite()

@@ -17,7 +17,7 @@ async function rules(path,method='GET',token,body){return fetch('http://'+proces
   const registration=record();registration.title='Registry integration test — synthetic evidence';
   registration.source_id='autokaggle:'+crypto.randomUUID();registration.idempotency_key=crypto.randomBytes(32).toString('hex');
   assert.equal((await api('register_benchmark',{registration},readToken)).status,403);
-  const create={request_id:crypto.randomUUID(),project_id:'diverging-runs',title:'Registry integration test — kinetics',objective:'Explain noisy trajectories',
+  const create={request_id:crypto.randomUUID(),projects:[{id:'diverging-runs'}],owner_id:'UTESTIN',title:'Registry integration test — kinetics',difficulties:'Noisy trajectories',
     significance:'Shorten calibration.',existing_solutions:'Clean-trace estimation.',reminders:false};
   const direct=await api('create_open_problem',create);
   assert.equal(direct.status,200,await direct.clone().text());

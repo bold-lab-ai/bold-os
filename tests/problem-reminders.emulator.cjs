@@ -17,7 +17,7 @@ const sweep = () => remindProblemVerifiers.run({});
     await pilot.set({ live:{'problem-verifier':true} }, { merge:true });
     await prefs.set({ slack:'all' });
     const result = await call({action:'create',request_id:crypto.randomUUID(),title:'Weekly reminder test',
-      project_id:'diverging-runs',objective:'Estimate decay rates',significance:'Test calibration',existing_solutions:'Least squares',reminders:true});
+      projects:[{id:'diverging-runs'}],owner_id:'UTESTIN',difficulties:'Short traces',significance:'Test calibration',existing_solutions:'Least squares',reminders:true});
     const ref = db.doc('problemBank/' + result.problem_id);
     const posts = async () => (await db.collection('slackOutbox').where('method','==','chat.postMessage').get()).docs
       .map(d=>d.data().args).filter(a=>a.text.includes('problem='+ref.id));

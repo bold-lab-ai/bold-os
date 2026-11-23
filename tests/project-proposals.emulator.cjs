@@ -1,7 +1,7 @@
 // Firestore rules for proposing a project (projects/{id} proposal), against the demo emulator.
 // npx firebase emulators:exec --only firestore --project demo-bold-os "node tests/project-proposals.emulator.cjs"
 const assert = require('node:assert/strict');
-if (process.env.FIRESTORE_EMULATOR_HOST !== '127.0.0.1:8080' || process.env.GCLOUD_PROJECT !== 'demo-bold-os') throw Error('Use the local demo-bold-os emulators.');
+if (!/^127\.0\.0\.1:\d+$/.test(process.env.FIRESTORE_EMULATOR_HOST || '') || process.env.GCLOUD_PROJECT !== 'demo-bold-os') throw Error('Use the local demo-bold-os emulators.');
 const admin = require('../functions/node_modules/firebase-admin');
 admin.initializeApp({ projectId: 'demo-bold-os' }); const db = admin.firestore();
 
@@ -18,7 +18,7 @@ function value(v) {
   return { stringValue: v };
 }
 function fields(o) { return Object.fromEntries(Object.entries(o).map(([k, v]) => [k, value(v)])); }
-const base = 'http://127.0.0.1:8080/v1/projects/demo-bold-os/databases/(default)/documents/';
+const base = 'http://'+process.env.FIRESTORE_EMULATOR_HOST+'/v1/projects/demo-bold-os/databases/(default)/documents/';
 async function req(path, method, token, body, mask) {
   const q = mask ? '?' + mask.map(f => 'updateMask.fieldPaths=' + f).join('&') : '';
   const r = await fetch(base + path + q, { method, headers: { ...(token ? { Authorization: 'Bearer ' + token } : {}), ...(body ? { 'Content-Type': 'application/json' } : {}) }, body: body ? JSON.stringify({ fields: fields(body) }) : undefined });
@@ -30,8 +30,12 @@ async function req(path, method, token, body, mask) {
   await db.doc('roles/pis').set({ emails: [PI] });
   await db.doc('roles/admins').set({ emails: [] });
   await db.doc('members/' + MEMBER).set({ category: 'internal' });
+  const run = Date.now(), id='ak-'+'3'.repeat(24), closed='ak-'+'4'.repeat(24);
+  await db.doc('problemBank/'+id).set({stage:'open',archived:false});
+  await db.doc('problemBank/'+closed).set({stage:'open',archived:true});
+  await db.doc('settings/access').set({projects:{view:'internal',edit:'internal'}},{merge:true});
   let n = 0;
-  const make = (proposal, by = MEMBER) => req('projects?documentId=p' + (++n), 'POST', jwt(by), { title: 'P', submittedBy: { email: by }, proposal });
+  const make = (proposal, by = MEMBER, link = id) => req('projects?documentId=p' + run + '-' + (++n), 'POST', jwt(by), { title: 'P', ...(link ? {openProblemId:link} : {}), submittedBy: { email: by }, proposal });
   const at = Date.now();
 
   assert.equal(await make({ status: 'proposed', more: false, at, by: MEMBER }), 200, 'within the standard allowance');
@@ -43,5 +47,7 @@ async function req(path, method, token, body, mask) {
   assert.equal(await make({ status: 'proposed', at, by: MEMBER }), 403, 'neither');
   assert.equal(await make({ status: 'approved', more: false, at, by: MEMBER }), 403, 'approved by its proposer');
   assert.equal(await make({ status: 'proposed', more: true, gpuHours: 2000, dueAt: at, at, by: MEMBER }), 403, 'its own deadline');
+  for (const link of [null, closed, 'ak-'+'5'.repeat(24)]) assert.equal(await make({status:'proposed',more:false,at,by:MEMBER},MEMBER,link),403);
+  assert.equal(await req('projects/p'+run+'-1','PATCH',jwt(MEMBER),{openProblemId:closed},['openProblemId']),403);
   console.log('project proposal rules: ok');
 })().catch((e) => { console.error(e); process.exit(1); });

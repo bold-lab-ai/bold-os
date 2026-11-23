@@ -414,8 +414,10 @@ module.exports = function(ctx){
       const more = a.gpu_hours !== undefined && a.gpu_hours !== null && a.gpu_hours !== '';
       const hours = more ? Number(String(a.gpu_hours).replace(/[,\s]/g, '')) : 0;
       if (more && (!isFinite(hours) || hours <= 0)) throw httpError(400, 'Give the GPU hours it needs (gpu_hours), or leave it out for the standard allowance.');
+      const problem=need(a.problem_id,'an open Problem Bank ID');
       const ch = await act(who, 'projectChannel', { name: need(a.slack_channel, 'its Slack channel (proj-…)'), mode: 'check' });
       const card = makeRegisteredCard(user, { title, abstractText: abstract, keywords: (a.keywords || []).map(String), slackChannel: '' });
+      card.openProblemId=problem;
       card.setUpChannel = '#' + ch.name;
       card.proposal = Object.assign({ status: 'proposed', more, at: Date.now(), by: who.email }, more ? { gpuHours: Math.round(hours) } : {});
       if (a.meeting) card.setUpMeeting = a.meeting;
@@ -792,18 +794,18 @@ module.exports = function(ctx){
         format: ACTIONS(['short', 'long']),
         location: str('Meeting location.'), label: str('Season label.'), regularTime: str('Season regular time.'),
         rotationDescription: str('Season rotation description.'), publicationState: ACTIONS(['draft', 'published']) }) },
-    { name: 'create_open_problem', description: 'Save an open research question under a project. Ask the submitter whether to send them a Slack reminder now and weekly until a verifier is registered.',
-      inputSchema: S({ project_id:str('BOLD OS project ID'),project_board:str('Board ID if applicable'),title:str('Problem title'),objective:str('Research question'),
-        significance:str('Why solving it matters'),existing_solutions:str('Current methods and their limits'),reminders:{type:'boolean'},request_id:str('Stable request UUID') },
-        ['project_id','title','objective','significance','existing_solutions','reminders','request_id']),
-      run: (who,a) => act(who,'benchmarkRegistry',{...a,action:'create'}) },
+    { name:'create_open_problem', description:'Save a scientific problem. Select its definer from the lab roster. Projects and collaborators are optional. Confirm Slack reminders before saving.',
+      inputSchema:S({title:str('Problem title'),owner_id:str('Slack ID of the problem definer'),significance:str('Why it matters'),
+        difficulties:str('What makes it difficult'),existing_solutions:str('Current frontier'),collaborators:str('Collaborator names'),
+        projects:{type:'array',items:{type:'object',properties:{id:str('Project ID'),board:str('Board ID if applicable')},required:['id']}},
+        reminders:{type:'boolean'},request_id:str('Stable request UUID')},['title','owner_id','significance','difficulties','existing_solutions','reminders','request_id']),
+      run:(who,a)=>act(who,'benchmarkRegistry',{...a,action:'create'}) },
     { name: 'register_benchmark', description: 'Register an implemented evaluator from AutoKaggle Lite in the Problem Bank, linked to an existing project and its Lite session. The server derives its stage from the evidence, shown as reported by AutoKaggle. Approval is a PI’s or admin’s, on the page; a release is written once. Retries reuse the same registration key. This saves lab records; it sends no messages or invitations.',
       inputSchema: S({registration:{type:'object',description:'The bold.autokaggle.registration.v1 record from the validated release.'}},['registration']),
       run: (who,a) => act(who,'benchmarkRegistry',{action:'register',registration:a.registration}) },
-    { name: 'edit_problem', description: 'Update a Problem Bank note or archive/restore its record, as on its page. Scientific definitions and benchmark evidence are immutable here; change them through AutoKaggle and register a new tested release.',
-      inputSchema: S({project_id:str('Required BOLD OS project ID'),project_board:str('Optional board ID'),details:{type:'object'},definition:{type:'object',description:'Title, objective and task_kind, for an open problem only.'},problem_id:str('Problem Bank ID'),notes:str('Notes, at most 8000 characters.'),archived:{type:'boolean'}},['problem_id','project_id','notes','archived']),
-      run: (who,a) => act(who,'benchmarkRegistry',{action:'update',problem_id:a.problem_id,project_id:a.project_id,project_board:a.project_board,details:a.details,definition:a.definition,notes:a.notes,archived:a.archived}) },
-
+    { name:'edit_problem',description:'Edit a field of a problem or archive it. A verifier contract belongs to its released version.',
+      inputSchema:S({problem_id:str('Problem Bank ID'),changes:{type:'object',description:'Only fields to change: title, owner_id, significance, difficulties, existing_solutions, projects, collaborators, archived.'}},['problem_id','changes']),
+      run:(who,a)=>act(who,'benchmarkRegistry',{...a,action:'update'}) },
     { name: 'comments', run: comments,
       description: 'Comment on the BOLDiquette or a guide, as on the page: add (on words quoted from a part), reply, on_proposal (discuss a proposed change: its conversation, started or added to), edit or delete your own, resolve, or to_conversation: make a thread a conversation (copied to Conversations with its replies, each by whoever wrote it; it goes on there and takes no more replies here: everyone who sees Conversations is told, so ask your person first). People tagged or replied to get Slack messages.',
       inputSchema: S({ action: ACTIONS(['add', 'reply', 'on_proposal', 'edit', 'resolve', 'delete', 'to_conversation']), page: str('"boldiquette" or a guide’s slug.'), part_id: str('add: the part (read_page).'),
@@ -825,7 +827,7 @@ module.exports = function(ctx){
         note: str('propose: what you changed and why.'), proposal_id: str('withdraw, accept, decline: the proposed change’s id.') }, ['action', 'page']) },
     { name: 'projects', run: projects,
       description: 'Projects, as on the Projects page and a project’s page: propose a new one (register: with its Slack channel, and gpu_hours only if it needs more than the standard compute allowance; once approved (at once for BOLD-internal and above within the allowance), the channel, created if new, its meeting, slides and notes are made), update its fields (a new Slack channel name renames the old channel), remove it, join or leave it, mark it ongoing (start: being worked on) or back to approved, not started (plan), mark it complete or reopen it, set, remove, pause or resume its weekly meeting, or submit it to a venue on the board.',
-      inputSchema: S({ action: ACTIONS(['register', 'update', 'remove', 'join', 'leave', 'start', 'plan', 'complete', 'reopen', 'set_meeting', 'remove_meeting', 'pause_meeting', 'resume_meeting', 'submit_to_venue']),
+      inputSchema: S({ problem_id:str('Required to register: an open Problem Bank ID.'), action: ACTIONS(['register', 'update', 'remove', 'join', 'leave', 'start', 'plan', 'complete', 'reopen', 'set_meeting', 'remove_meeting', 'pause_meeting', 'resume_meeting', 'submit_to_venue']),
         id: str('The project id (list_projects), for all but register.'), title: str(''), abstract: str(''), keywords: { type: 'array', items: { type: 'string' } },
         slack_channel: str('register, update: "proj-…".'), gpu_hours: { type: 'number', description: 'register: only if it needs more than the standard compute allowance, the GPU hours it needs' }, overleaf: str('update'), arxiv: str('update'), pitch: str('update: the pitch deck link'), compute: str('update: the compute estimate'),
         meeting: { type: 'object', description: 'register, set_meeting: London time.', properties: { day: ACTIONS(['MO', 'TU', 'WE', 'TH', 'FR', 'SA', 'SU']), time: str('HH:MM'), minutes: { type: 'integer', enum: [30, 45, 60, 90, 120] }, every: { type: 'integer', enum: [1, 2, 3, 4] }, until: str('YYYY-MM-DD (optional)') } },
