@@ -197,10 +197,12 @@
       (p.archived ? 'Restore problem' : 'Archive problem') + '</button>';
     html += '</div></div>';
     var links=p.projects;
-    html += '<ol class="pb-steps" aria-label="Problem onboarding"><li>Problem defined</li><li>';
+    // Its steps: defined; then its verifier (the current step until it has one), or none needed for a benchmark.
+    html += '<ol class="pb-steps" aria-label="Problem onboarding"><li class="is-done">Problem defined</li>';
     if (p.builds_benchmark) {
-      html += 'Verifier not required</li></ol>';
+      html += '<li class="is-done">Verifier not required</li></ol>';
     } else {
+      html += p.evaluator ? '<li class="is-done"><span>Verifier added</span>' : '<li aria-current="step"><span>Add a verifier</span>';
       if(links.length) html += '<label for="verifierProject">Project (optional)</label> <select id="verifierProject"><option value="">No project</option>' +
         links.map(function(x,i){return '<option value="'+i+'">'+esc(x.title)+'</option>';}).join('')+'</select> ';
       var blocked = verifierUnavailable();
