@@ -14,16 +14,12 @@
   var NOT_EDITOR = 'Only whoever added it, PIs and admins can do this';
   var CONTRACT = 'It’s the evaluator’s contract: change it in AutoKaggle and register a new version';
   var STAGES = { open: 'Open problem', implemented: 'Implemented', checked: 'Checked', validated: 'Validated' };
-  // The fields edited as text, in order: label, and whether it's one line.
-  var TEXT = [['collaborators', 'Collaborators'], ['submission_format', 'Submission format'], ['metrics', 'Metrics and score direction'],
-    ['run_command', 'Run command'], ['dependencies', 'Dependencies'], ['seeds', 'Seeds'], ['compute', 'Compute requirements'],
-    ['data_assets', 'Data and assets'], ['limitations', 'Known limitations'], ['open_issues', 'Open issues'], ['next_action', 'Next action']];
   // AutoKaggle's addresses (settings/problemBank, set on Settings › Problem Bank); these until they're saved.
   var urls = { autokaggleUrl: 'https://ecc962fa-2f4c-4a3f-96c4-179af273fb7a.k8s.civo.com/', autokaggleLiteUrl: 'https://lite.ecc962fa-2f4c-4a3f-96c4-179af273fb7a.k8s.civo.com/lite' };
 
-  var p = null, releases = [], history = [], canApprove = false, canRemind = false, projects = [], people = [], editing = false, busy = false;
+  var p = null, releases = [], history = [], canApprove = false, canRemind = false, projects = [], projectsLoaded = false, editing = false, busy = false;
   var tab = (location.hash.match(/[#&]tab=([^&]+)/) || [])[1];
-  var TABS = [['overview', 'Overview'], ['releases', 'Evaluator releases'], ['history', 'History']];
+  var TABS = [['overview', 'Overview'], ['releases', 'Verifiers'], ['history', 'History']];
   if (!TABS.some(function(t){ return t[0] === tab; })) tab = 'overview';
 
   /* ---------- the project page's pieces (pages/project.js) ---------- */
@@ -38,14 +34,14 @@
   function canEdit(){ return !!(p && p.can_edit); }
   function isOpen(){ return p && p.stage === 'open'; }
   function editableDefinition(){ return isOpen() || p.origin === 'problem_bank'; }
-  function verifierLink(){
+  function verifierLink(project){
     var url;
     try { url = new URL(urls.autokaggleLiteUrl); } catch (e){ return ''; }
     var localDemo = window.BOLD_TEST && url.protocol === 'http:' && ['localhost', '127.0.0.1'].includes(url.hostname);
     if ((!localDemo && url.protocol !== 'https:') || url.username || url.password) return '';
     url.pathname = (url.pathname.replace(/\/$/, '') || '/lite') + '/from-problem';
-    url.hash = new URLSearchParams({ problem: p.id, project: p.project_id, board: p.project_board || '',
-      title: p.title, question: (p.objective || '').slice(0, 4000) }).toString();
+    url.hash = new URLSearchParams({ problem: p.id, project: project.id, board: project.board || '',
+      title: p.title, question: [p.objective || p.title, p.significance && 'Why it matters: ' + p.significance, p.difficulties && 'Difficulties: ' + p.difficulties, p.existing_solutions && 'Frontier: ' + p.existing_solutions].filter(Boolean).join('\n').slice(0,4000) }).toString();
     return url.href;
   }
   function editButton(what, why){
@@ -61,11 +57,6 @@
     return editing === key ? row(label, editorHtml + saveCancelHtml()) : row(label, valueHtml + editButton(key, why));
   }
   function text(v){ return v ? BOLDRegistryLinks.formatText(String(v)) : missing(); }
-  function projectHref(){ return 'project.html#id=' + encodeURIComponent(p.project_id) + (p.project_board ? '&board=' + encodeURIComponent(p.project_board) : ''); }
-  function sessionUrl(handoff){
-    var base = p.session.application === 'lite' ? urls.autokaggleLiteUrl : urls.autokaggleUrl;
-    return base + '?project=' + encodeURIComponent(p.session.project_id) + (handoff ? '&review=handoff' : '');
-  }
   function external(href, label){ return '<a href="' + esc(href) + '" target="_blank" rel="noopener">' + esc(label) + ' ↗</a>'; }
 
   /* ---------- the tabs ---------- */
@@ -73,36 +64,26 @@
     overview: function(){
       var d = p.details || {};
       var html = '<dl class="detail-grid">';
-      html += editableRow('project', 'Project', '<a href="' + esc(projectHref()) + '">' + esc(p.project_title || p.project_id) + '</a>',
-        '<select id="fieldInput"><option value="">Loading projects…</option></select>', p.has_linked_verifiers ? 'Linked verifiers use this project.' : '');
-      html += editableRow('owner', 'Research owner',
-        d.owner ? (p.owner_id ? '<a href="person.html?id=' + encodeURIComponent(p.owner_id) + '">' + esc(d.owner) + '</a>' : esc(d.owner)) : missing(),
-        '<select id="fieldInput"><option value="">Loading the lab’s people…</option></select>');
-      html += editableRow('task_kind', 'Task type', p.task_kind ? esc(p.task_kind) : missing(),
-        '<input type="text" id="fieldInput" maxlength="80" value="' + esc(p.task_kind || '') + '">', isOpen() ? '' : CONTRACT);
-      ['significance', 'existing_solutions'].forEach(function(key){
-        if (!editableDefinition() && !p[key]) return;
-        html += editableRow(key, key === 'significance' ? 'Why it matters' : 'Existing methods and the gap', text(p[key]),
-          '<textarea class="no-tags" id="fieldInput" maxlength="8000">' + esc(p[key] || '') + '</textarea>', editableDefinition() ? '' : CONTRACT);
+      html += editableRow('owner','Problem definer', d.owner ? (p.owner_id ? '<a href="person.html?id=' + encodeURIComponent(p.owner_id) + '">' + esc(d.owner) + '</a>' : esc(d.owner)) : missing(),
+        '<select id="fieldInput" aria-label="Problem definer"></select>');
+      [['significance','Why it matters'],['difficulties','What are the difficulties?'],['existing_solutions','Where is the frontier?']].forEach(function(f){
+        html += editableRow(f[0],f[1],text(p[f[0]]),'<textarea id="fieldInput" aria-label="' + esc(f[1]) + '" maxlength="8000">' + esc(p[f[0]] || '') + '</textarea>');
       });
-      TEXT.forEach(function(f){
-        html += editableRow(f[0], f[1], text(d[f[0]]), '<div class="field"><textarea id="fieldInput" class="no-tags" maxlength="8000">' + esc(d[f[0]] || '') + '</textarea></div>');
-      });
-      if (p.session) html += row('AutoKaggle', external(sessionUrl(false), 'Resume the session') + ' · ' + external(sessionUrl(true), 'Manage its handoff'));
-      html += editableRow('notes', 'Notes', text(p.notes), '<div class="field"><textarea id="fieldInput" class="no-tags" maxlength="8000">' + esc(p.notes || '') + '</textarea></div>');
-      html += row('Added', p.createdAt ? esc(when(p.createdAt)) : missing());
+      html += editableRow('projects','Projects',(BoldProblemProjects.links(p.projects) || 'No linked projects') + ' · <a href="projects.html">All projects</a>',
+        '<div id="fieldInput" class="pb-project-options" role="group" aria-label="Projects">' + BoldProblemProjects.fields(projects,p.selected_projects,p.id) + '</div>',projectsLoaded ? '' : 'Loading projects');
+      html += editableRow('collaborators','Collaborators',text(d.collaborators),'<input id="fieldInput" aria-label="Collaborators" maxlength="8000" value="' + esc(d.collaborators || '') + '">');
       html += '</dl>';
-      // The research question, as a project's abstract.
-      html += editing === 'objective'
-        ? '<div class="detail-abstract"><div class="field"><label for="fieldInput">Research question</label><textarea id="fieldInput" class="no-tags" maxlength="8000">' + esc(p.objective || '') + '</textarea></div>' + saveCancelHtml() + '</div>'
-        : '<div class="detail-abstract"><div class="detail-abstract-label">Research question' + editButton('objective', editableDefinition() ? '' : CONTRACT) + '</div>' +
-          (p.objective ? '<div class="abstract-render">' + esc(p.objective) + '</div>' : missing()) + '</div>';
+      if (p.objective && p.objective !== p.title) html += '<p class="detail-abstract">' + text(p.objective) + '</p>';
       return html;
     },
     releases: function(){
       if (!releases.length) return '<p class="detail-muted">Registered verifiers and their checks will appear here.</p>';
       return '<ul class="talk-list">' + releases.map(function(r){
         var e = r.evaluator, a = r.approval, ra = r.reported_approval, v = r.research;
+        var details = r.details || (p.latest_benchmark === r.id && !p.has_linked_verifiers ? p.details : {}) || {};
+        var contract = [['Data and assets',details.data_assets],['Verifier repository',external(e.repository,'GitHub repository')],
+          ['Metrics and score format',[details.metrics,details.score_format].filter(Boolean).join(' · ')],['Submission format',details.submission_format],
+          ['Constraints',[details.constraints || details.compute,details.seeds,details.limitations].filter(Boolean).join(' · ')]];
         var checks = Object.keys(r.validation || {}).map(function(k){ return [k.replace(/_/g, ' '), r.validation[k]]; });
         if (v) checks = checks.concat([['Measured fitness', v.observed_fitness], ['Expected fitness', v.expected_fitness], ['Tolerance', v.tolerance], ['Expected-score basis', v.expected_basis],
           ['Reference SHA-256', v.reference_sha256], ['Artifact SHA-256', v.artifact_sha256], ['Report SHA-256', v.report_sha256], ['Controlled run', v.checked_by]]);
@@ -112,16 +93,17 @@
         return '<li><div class="talk-when">Registered ' + esc(when(r.createdAt)) + ' · ' + esc(STAGES[r.stage] || r.stage) + ', reported by AutoKaggle</div>' +
           '<div class="talk-title">' + esc(r.title) + ' · version ' + esc(String(e.version)) + '</div>' +
           '<div class="talk-when">' + (a ? 'Approved by ' + esc(a.name) + ', ' + esc(when(a.at)) + (a.note ? ': ' + esc(a.note) : '') : 'Not approved in BOLD.OS') + '</div>' +
-          '<div class="talk-actions">' + external(e.repository, 'Repository') + external(e.repository + '/tree/' + e.commit, 'Pinned code') + external(e.zip_url, 'ZIP') + external(urls.autokaggleLiteUrl + '?project=' + encodeURIComponent(r.source_id.slice(11)), 'Lite session') + approve + '</div>' +
+          '<dl class="detail-grid">' + contract.map(function(f){return row(f[0],f[0]==='Verifier repository' ? f[1] : text(f[1]));}).join('') + '</dl>' +
+          '<div class="talk-actions">' + external(e.repository + '/tree/' + e.commit, 'Pinned code') + external(e.zip_url, 'ZIP') + external(urls.autokaggleLiteUrl + '?project=' + encodeURIComponent(r.source_id.slice(11)), 'Lite session') + external(urls.autokaggleLiteUrl + '?project=' + encodeURIComponent(r.source_id.slice(11)) + '&review=handoff', 'Manage handoff access') + approve + '</div>' +
           '<details><summary class="detail-muted">Checks and evidence</summary><dl class="detail-grid">' +
-          [['Commit', e.commit], ['Contract SHA-256', e.contract_sha256]].concat(checks).map(function(x){ return row(x[0], text(x[1] == null ? '' : x[1])); }).join('') +
+          [['Commit', e.commit], ['Contract SHA-256', e.contract_sha256], ['Run command', details.run_command], ['Dependencies', details.dependencies]].concat(checks).map(function(x){ return row(x[0], text(x[1] == null ? '' : x[1])); }).join('') +
           '</dl></details></li>';
       }).join('') + '</ul>';
     },
     history: function(){
       if (!history.length) return '<p class="detail-muted">No changes yet.</p>';
       return '<ul class="talk-list">' + history.map(function(h){
-        return '<li><div class="talk-when">' + esc(new Date(h.updatedAt).toLocaleString()) + '</div><div class="talk-title">' + esc(h.changeNote || 'Changed') + '</div>' +
+        return '<li><div class="talk-when">' + esc(new Date(h.updatedAt).toLocaleString()) + '</div><div class="talk-title">' + esc(h.changeNote || 'Changed') + '</div>' + (h.notes ? '<p>' + text(h.notes) + '</p>' : '') +
           '<div class="talk-when">' + esc([STAGES[h.stage], h.project_title, h.latest_commit ? h.latest_commit.slice(0, 12) : ''].filter(Boolean).join(' · ')) + '</div></li>';
       }).join('') + '</ul>';
     }
@@ -140,15 +122,14 @@
     html += '<button class="btn-box detail-remove" type="button" id="archiveProblem"' + (canEdit() && !busy ? '' : ' disabled title="' + esc(canEdit() ? 'Saving…' : NOT_EDITOR) + '"') + '>' +
       (p.archived ? 'Restore problem' : 'Archive problem') + '</button>';
     html += '</div></div>';
-    // Under the title: its project, its owner, and where its stage comes from.
-    var owner = (p.details || {}).owner;
-    html += '<p class="detail-venue">Project: <a href="' + esc(projectHref()) + '">' + esc(p.project_title || p.project_id) + '</a>' +
-      (owner ? ' · ' + (p.owner_id ? '<a href="person.html?id=' + encodeURIComponent(p.owner_id) + '">' + esc(owner) + '</a>' : esc(owner)) : '') +
-      (isOpen() ? '' : ' · Latest verifier stage reported by AutoKaggle') + '</p>';
-    html += '<ol class="pb-steps" aria-label="Problem onboarding"><li>Problem defined</li><li>' +
-      (p.archived || !BOLD.can('projects', 'edit') ? '<button class="btn-box" disabled title="' + esc(p.archived ? 'Restore this problem first.' : BOLD.cannotReason('projects', 'edit')) + '">Add verifier</button>'
-        : '<button type="button" class="btn-primary btn-box" id="addVerifier">' + (p.evaluator ? 'Add another verifier' : 'Add verifier') + '</button>') +
-      '</li><li>Autoresearch baseline <small>Coming soon</small></li></ol>';
+    var links=p.projects;
+    html += '<ol class="pb-steps" aria-label="Problem onboarding"><li>Problem defined</li><li>';
+    if(links.length>1) html += '<label for="verifierProject">Verifier project</label> <select id="verifierProject"><option value="">Choose a project</option>' +
+      links.map(function(x,i){return '<option value="'+i+'">'+esc(x.title)+'</option>';}).join('')+'</select> ';
+    var blocked = p.archived ? 'Restore this problem first.' : !BOLD.can('projects','edit') ? BOLD.cannotReason('projects','edit') : !links.length ? 'Link a project first.' : '';
+    html += '<button type="button" class="btn-primary btn-box" id="addVerifier"' + (blocked ? ' disabled title="'+esc(blocked)+'"' : '')+'>' + (p.evaluator?'Add another verifier':'Add verifier') + '</button>';
+    if(!links.length) html += ' Link a project in Overview or <a href="projects.html">open All projects</a>.';
+    html += '</li><li>Autoresearch baseline <small>Coming soon</small></li></ol>';
     if (canRemind && !p.archived && !p.evaluator) html += '<p><button type="button" class="btn-text" id="toggleReminder">' +
       (p.reminders ? 'Turn off my weekly reminders' : 'Remind me to add a verifier') + '</button></p>';
     html += '<div class="tabs" role="tablist" aria-label="Problem">' + TABS.map(function(t){
@@ -171,19 +152,8 @@
   function history_replace(hash){ window.history.replaceState(null, '', location.pathname + location.search + hash); }
 
   /* ---------- editing one field at a time ---------- */
-  // The server takes the whole record; the field being edited is changed in it.
   function save(patch){
-    var d = Object.assign({}, p.details || {}); delete d.owner;
-    var data = { action: 'update', problem_id: p.id, project_id: p.project_id, project_board: p.project_board || '', details: d, owner_id: '', notes: p.notes || '', archived: !!p.archived };
-    if ('project' in patch) { data.project_id = patch.project[0]; data.project_board = patch.project[1] || ''; }
-    if ('owner_id' in patch) data.owner_id = patch.owner_id;
-    if ('notes' in patch) data.notes = patch.notes;
-    if ('archived' in patch) data.archived = patch.archived;
-    if ('details' in patch) Object.keys(patch.details).forEach(function(k){ if (patch.details[k]) d[k] = patch.details[k]; else delete d[k]; });
-    ['title', 'objective', 'task_kind', 'significance', 'existing_solutions'].forEach(function(k){
-      if (k in patch) { data.definition = data.definition || {}; data.definition[k] = patch[k]; }
-    });
-    return call(data).then(load);
+    return call({action:'update',problem_id:p.id,changes:patch}).then(load);
   }
   function failer(){ var e = el('detailEditError'); return function(msg){ if (e) { e.textContent = msg; e.hidden = false; } }; }
 
@@ -220,7 +190,9 @@
       } catch (e){ alertLine(e); } finally { button.disabled = false; }
     };
     if (el('addVerifier')) el('addVerifier').onclick = async function(){
-      var url = verifierLink();
+      var picker = el('verifierProject');
+      if (picker && picker.value===''){picker.focus();return alertLine(new Error('Choose the verifier project.'));}
+      var url = verifierLink(p.projects[picker ? Number(picker.value) : 0]);
       if (!url) return alertLine(new Error('Check the AutoKaggle Lite address in Settings.'));
       var ok = await BOLD.confirmAction({ title: 'Open AutoKaggle Lite?', always: true, go: 'Open Lite',
         effects: ['Share this title, research question, and project and problem IDs with AutoKaggle Lite to start a verifier.'] });
@@ -229,26 +201,18 @@
     if (!editing) return;
     var input = el('fieldInput'), fail = failer();
     el('editCancel').addEventListener('click', function(){ editing = false; render(); });
-    if (editing === 'project') {
-      input.innerHTML = '<option value="">Choose a project</option>' + projects.map(function(x){
-        var on = x.id === p.project_id && (x.board || '') === (p.project_board || '');
-        return '<option value="' + esc(JSON.stringify([x.id, x.board])) + '"' + (on ? ' selected' : '') + '>' + esc(x.title + (x.venue ? ' · ' + x.venue : '')) + '</option>';
-      }).join('');
-    }
-    if (editing === 'owner') BoldPeopleSelect.load().then(function(list){ input.innerHTML = BoldPeopleSelect.options(list, p.owner_id, 'Choose the research owner'); });
+    if (editing === 'owner') BoldPeopleSelect.load().then(function(list){input.innerHTML=BoldPeopleSelect.options(list,p.owner_id,'Choose the problem definer');}).catch(function(e){fail(e.message);});
     if (input && input.focus) input.focus();
     el('fieldSave').addEventListener('click', function(){
       var v = input.value, patch = {};
-      if (editing === 'project') { if (!v) return fail('Choose its project.'); patch.project = JSON.parse(v); }
-      else if (editing === 'owner') { if (!v) return fail('Choose the research owner.'); patch.owner_id = v; }
-      else if (editing === 'title' || editing === 'objective' || editing === 'task_kind' || editing === 'significance' || editing === 'existing_solutions') { if (!v.trim()) return fail('This can’t be empty.'); patch[editing] = v.trim(); }
-      else if (editing === 'notes') patch.notes = v;
-      else { patch.details = {}; patch.details[editing] = v.trim(); }
+      if (editing === 'projects') patch.projects=BoldProblemProjects.selected(input,projects);
+      else if (editing === 'owner') { if (!v) return fail('Choose the problem definer.'); patch.owner_id=v; }
+      else { if (!v.trim() && editing!=='collaborators') return fail('Enter a value.'); patch[editing]=v.trim(); }
       el('fieldSave').disabled = true;
       save(patch).then(function(){ editing = false; render(); }).catch(function(e){ el('fieldSave').disabled = false; fail((e && e.message) || 'Could not save — try again.'); });
     });
   }
-  function alertLine(e){ el('detailMsg').hidden = false; el('detailMsg').textContent = 'Could not save. ' + ((e && e.message) || ''); }
+  function alertLine(e){ el('detailMsg').hidden = false; el('detailMsg').textContent = (e && e.message) || 'Please try again.'; }
 
   /* ---------- loading ---------- */
   function load(){
@@ -266,7 +230,7 @@
   BOLD.onUser(function(user){
     if (!user) return;
     if (!/^ak-[a-f0-9]{24}$/.test(id)) { el('detailMsg').textContent = 'No such problem.'; return; }
-    call({ action: 'projects' }).then(function(r){ projects = r.items; if (editing === 'project') render(); }).catch(function(){});
+    call({ action: 'projects' }).then(function(r){ projects = r.items; projectsLoaded=true; if (p && !editing) render(); }).catch(function(){});
     Promise.all([loadUrls()]).then(load).catch(function(e){ el('detailMsg').textContent = 'Could not load this problem. ' + ((e && e.message) || ''); });
   });
 })();

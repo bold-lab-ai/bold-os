@@ -22,6 +22,8 @@ permalink: "projects-register.html"
       <label for="pfTitle">Title</label>
       <input type="text" id="pfTitle" maxlength="200" autocomplete="off">
     </div>
+    <div class="field"><label for="pfProblem">Open problem</label><select id="pfProblem" required><option value="">Choose an open problem</option></select>
+      <div class="field-hint"><span id="pfProblemStatus" role="status"></span> <a href="problem-new.html" target="_blank" rel="noopener">Add an open problem ↗</a> · <button class="btn-text" id="refreshProblems" type="button">Refresh list</button></div></div>
     <div id="abstractField"></div>
     <div class="field">
       <label class="check-row"><input type="checkbox" id="pfMore"> It needs more compute than the standard allowance</label>

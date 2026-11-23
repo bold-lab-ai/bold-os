@@ -2,33 +2,35 @@
   'use strict';
   var el = function(id){ return document.getElementById(id); };
   var form = el('pbCreate'), fields = el('pbInputs'), status = el('pbStatus');
-  var userId = null, epoch = 0, canWrite = false, projects = [], busy = false, submission = null;
+  var userId = null, epoch = 0, canWrite = false, ready = false, projects = [], busy = false, submission = null;
   function call(data){ return firebase.app().functions('europe-west2').httpsCallable('benchmarkRegistry')(data).then(function(r){ return r.data; }); }
   function controls(){
-    fields.disabled = !canWrite || !projects.length || busy;
+    fields.disabled = !canWrite || !ready || busy;
     fields.title = canWrite ? '' : BOLD.cannotReason('projects', 'edit');
   }
   BOLD.onAccess(function(){ canWrite = BOLD.can('projects', 'edit'); controls(); });
   BOLD.onUser(function(user){
     var generation = ++epoch;
-    userId = user && user.uid; projects = []; submission = null; busy = false; form.reset(); controls();
-    el('pbProject').length = 1;
+    userId = user && user.uid; ready = false; projects = []; submission = null; busy = false; form.reset(); controls();
+    el('pbProjects').replaceChildren();
     if (!user) { status.textContent = 'Sign in to add a problem.'; return; }
-    call({ action: 'projects' }).then(function(r){
+    Promise.all([call({ action:'projects' }), BoldPeopleSelect.load()]).then(function(results){
       if (epoch !== generation) return;
-      projects = r.items;
-      projects.forEach(function(p, i){ el('pbProject').add(new Option(p.title + (p.venue ? ' · ' + p.venue : ''), String(i))); });
-      status.textContent = projects.length ? '' : 'Add a BOLD OS project first.';
+      projects = results[0].items;
+      el('pbProjects').innerHTML = BoldProblemProjects.fields(projects,[]) || 'No projects yet.';
+      var matches = results[1].filter(function(p){return p.name === user.displayName;});
+      el('pbDefiner').innerHTML = BoldPeopleSelect.options(results[1],matches.length === 1 ? matches[0].id : null,'Choose a person');
+      ready = true; status.textContent = '';
       controls();
     }).catch(function(e){ if (epoch === generation) status.textContent = e.message; });
   });
   form.addEventListener('submit', async function(event){
     event.preventDefault();
     if (!userId || fields.disabled || !form.reportValidity()) return;
-    var generation = epoch, project = projects[Number(el('pbProject').value)];
-    var data = { action: 'create', project_id: project.id, project_board: project.board || '',
-      title: el('pbTitle').value.trim(), objective: el('pbQuestion').value.trim(),
-      significance: el('pbWhy').value.trim(), existing_solutions: el('pbExisting').value.trim() };
+    var generation = epoch;
+    var data = { action:'create', projects:BoldProblemProjects.selected(el('pbProjects'),projects),
+      title:el('pbTitle').value.trim(), owner_id:el('pbDefiner').value, collaborators:el('pbCollaborators').value.trim(),
+      significance:el('pbWhy').value.trim(), difficulties:el('pbDifficulties').value.trim(), existing_solutions:el('pbExisting').value.trim() };
     busy = true; controls();
     try {
       var choice = await BOLD.confirmAction({ title: 'Save this open problem?', go: 'Save problem', always: true,

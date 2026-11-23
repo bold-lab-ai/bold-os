@@ -4,6 +4,7 @@ firestore-debug.log
 ui-debug.log
 pglite-debug.log
 .firebase/
+.firebase-onboarding-test.json
 
 # Scratch/throwaway test fixtures (see docs/REFERENCE.md — never committed)
 _test_*.html

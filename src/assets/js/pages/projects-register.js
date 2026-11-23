@@ -5,7 +5,22 @@
   var el = function(id){ return document.getElementById(id); };
   var form = el('projectForm'), errorBox = el('projectError'), submitBtn = el('submitBtn');
   var me;
-  BOLD.onUser(function(user){ me = user; });
+  var problemGeneration=0;
+  async function loadProblems(){
+    var generation=++problemGeneration, select=el('pfProblem'), status=el('pfProblemStatus'), previous=select.value;
+    select.replaceChildren(new Option('Choose an open problem','')); select.disabled=true;
+    if(!me){status.textContent='Sign in to choose a problem.';return;}
+    status.textContent='Loading open problems…';
+    try{
+      var result=await firebase.app().functions('europe-west2').httpsCallable('benchmarkRegistry')({action:'open_choices'});
+      if(generation!==problemGeneration)return;
+      result.data.items.forEach(function(p){select.add(new Option(p.title,p.id));});
+      select.value=previous; select.disabled=!result.data.items.length;
+      status.textContent=select.disabled?'Add an open problem before proposing a project.':'';
+    }catch(e){if(generation===problemGeneration)status.textContent='Could not load open problems. Refresh to try again.';}
+  }
+  el('refreshProblems').onclick=loadProblems;
+  BOLD.onUser(function(user){me=user;loadProblems();});
 
   var db = null;
   try { db = firebase.firestore(BOLD.getApp()); } catch (e){}
@@ -47,6 +62,8 @@
     if (!me || !me.email || !db) return showError('Could not connect — reload, or check back shortly.');
     var title = el('pfTitle').value.trim();
     var abstractText = el('stageAbstractText').value.trim();
+    var problem=el('pfProblem').value;
+    if(el('pfProblem').disabled || !problem){el('pfProblem').focus();return showError('Choose an open problem for this project.');}
     if (!title) return showError('Give the project a title.');
     if (!abstractText) return showError('Add an abstract or pitch.');
     // More than the standard allowance: a whole number of GPU hours, more than none.
@@ -86,11 +103,11 @@
       if (noChannel) skip.channel = true;
       if (noMeeting) skip.meeting = true;
       if (!repo) skip.repo = true;
-      register(title, abstractText, channel, meeting, repo, skip, more, gpuHours);
+      register(title, abstractText, channel, meeting, repo, skip, more, gpuHours, problem);
     });
   });
 
-  function register(title, abstractText, channel, meeting, repo, skip, more, gpuHours){
+  function register(title, abstractText, channel, meeting, repo, skip, more, gpuHours, problem){
     submitBtn.disabled = true;
     // Its channel is made (or linked) once it's approved (projectProposal), under this name.
     Promise.resolve(null).then(function(){
@@ -99,6 +116,7 @@
       var card = makeRegisteredCard({ name: me.displayName, email: me.email }, {
         title: title, abstractText: abstractText, keywords: keywordField.get(), slackChannel: ''
       });
+      card.openProblemId=problem;
       card.setUpChannel = channel.name && !skip.channel ? '#' + channel.name : '';
       card.proposal = { status: 'proposed', more: more, at: Date.now(), by: me.email };
       if (more) card.proposal.gpuHours = gpuHours;

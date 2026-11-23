@@ -13,7 +13,6 @@
   var STAGES = { open: 'Open problem', implemented: 'Implemented', checked: 'Checked', validated: 'Validated' };
   var rows = [], cursor = null, q = '', loaded = false, generation = 0;
 
-  function projectHref(p){ return 'project.html#id=' + encodeURIComponent(p.project_id) + (p.project_board ? '&board=' + encodeURIComponent(p.project_board) : ''); }
   function tabOf(p){ return p.archived ? 'archived' : (STAGES[p.stage] ? p.stage : 'open'); }
   function badges(p){
     var out = [];
@@ -26,11 +25,11 @@
   /* ---------- the list ---------- */
   function matches(p){
     if (!q) return true;
-    var hay = [p.title, p.objective, p.significance, p.existing_solutions, p.task_kind, p.project_title, (p.details || {}).owner, (p.evaluator || {}).commit].join(' ').toLowerCase();
+    var hay = [p.title, p.objective, p.significance, p.difficulties, p.existing_solutions, (p.details || {}).collaborators, (p.projects || []).map(function(x){return x.title;}).join(' '), p.task_kind, p.project_title, (p.details || {}).owner, (p.evaluator || {}).commit].join(' ').toLowerCase();
     return q.toLowerCase().split(/\s+/).every(function(w){ return hay.indexOf(w) >= 0; });
   }
   function row(p){
-    var meta = ['<a href="' + esc(projectHref(p)) + '">' + esc(p.project_title || p.project_id) + '</a>'];
+    var links = BoldProblemProjects.links(p.projects || []), meta = links ? [links] : [];
     if ((p.details || {}).owner) meta.push(esc(p.details.owner));
     if (p.task_kind) meta.push(esc(p.task_kind));
     if (p.evaluator) meta.push('Latest verifier v' + esc(String(p.evaluator.version)));

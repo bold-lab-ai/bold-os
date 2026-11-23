@@ -244,6 +244,7 @@ function escapeHtml(s){ return BOLD.escapeHtml(s); }
     // What the project is.
     overview: function(){
       var html = '<dl class="detail-grid">';
+      if (card.openProblemId) html += '<dt>Open problem</dt><dd><a href="problem.html?problem=' + encodeURIComponent(card.openProblemId) + '">View in Problem Bank</a></dd>';
       html += '<dt>Authors</dt><dd>' + (editing === 'authors'
         ? '<div id="authorsWrap"></div>' +
           '<button class="btn-text" type="button" id="authorsAdd">+ Add author</button>' +

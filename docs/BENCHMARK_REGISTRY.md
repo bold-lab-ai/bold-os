@@ -4,12 +4,12 @@ The Research menu has one Problem Bank page. It holds research problems and thei
 
 ## Project and evidence requirements
 
-Every new problem and evaluator must name an existing BOLD OS project. The server checks the project in the same transaction as registration. Projects can be normal project records or publication-board cards. A free-text name is insufficient.
+An open problem can exist before a project starts. It can link to several BOLD OS projects. Every new project proposal must select an open, unarchived problem. Each verifier release must name one linked project. The server checks that project during registration.
 
 ## Onboard an open problem
 
-1. Select **Add problem** in the Problem Bank. Choose its BOLD OS project. Give the problem a title and record the question, why it matters, and what existing methods can do. Saving creates an open problem. Its card shows **No verifier**.
-2. Select **Add verifier** on the problem. Confirm the transfer to AutoKaggle Lite. The handoff includes the problem ID, project ID and board, title, and up to 4,000 characters of the research question. These travel in the browser's URL fragment. Lite asks for storage consent and creates a separate session for this verifier. A second session can define another verifier for the same problem. Each verifier has its own releases, checks and scores. The bank filters by the most recently registered release. Open the problem to see all releases.
+1. Select **Add problem**. Enter the title, select the person who defined it, and describe its significance, difficulties and current frontier. Link existing projects and name collaborators if applicable. Save the problem. To propose a new project, follow **All projects**, select **Propose a project**, and choose the open problem. The project then appears on the problem page.
+2. Select **Add verifier**. If several projects are linked, choose the one that will own this verifier. Confirm the transfer to AutoKaggle Lite. The handoff includes the problem and project IDs, title, and a research brief of up to 4,000 characters in the URL fragment. Lite asks for storage consent. Each verifier has its own session, releases, data and assets, repository, metrics and score format, submission format, and constraints. Open **Verifiers** to compare releases. Older releases can lack recorded contract details.
 3. **Autoresearch baseline** is planned. This release does not start a baseline run or send a result email.
 
 The submitter can accept or decline reminders when saving. People who submitted older problems can turn reminders on in their problem. The first reminder on a new problem is due at creation. It repeats every seven days until a verifier is registered. Opening Lite does not count. Archiving pauses delivery. Restoring resumes it when the submitter has reminders enabled. The submitter can change this choice on the problem.
@@ -32,13 +32,13 @@ The receiver checks that the evidence is complete and consistent. It doesn't rer
 
 ## Page and access
 
-`problems.html` is laid out as Projects: List or Grid, search, and tabs by stage (Open, Implemented, Checked, Validated, Archived). **Add problem** opens the definition form. The list and grid both mark problems without a verifier. Each problem has its own page, `problem.html?problem=<id>`, laid out and edited as a project's page (`project.css`): the title and its badges, a line with its project and owner, and the tabs Overview (each field edited in place, the research question as the abstract), Evaluator releases and History. A field that isn't filled in says **Not set**.
+`problems.html` is laid out as Projects: List or Grid, search, and tabs by stage (Open, Implemented, Checked, Validated, Archived). **Add problem** opens the definition form. The list and grid both mark problems without a verifier. Each problem has its own page, `problem.html?problem=<id>`, with tabs for the scientific overview, verifiers and history. Earlier research questions remain visible.
 
 Each release has a pinned evaluator repository, commit, ZIP, contract digest, check results, research evidence where available, and separate approval. Earlier releases and changes remain in history.
 
-The page uses the existing Projects access rules and Slack identity. The creator or a PI/admin can edit descriptive details, move a problem to another existing project, and archive or restore it. A problem with linked verifiers keeps its project. The submitter or a PI/admin can edit a bank-authored question after linking a verifier. Each released contract stays pinned. Change an evaluator contract through AutoKaggle and check the new version.
+The page uses the existing Projects access rules and Slack identity. The creator or a PI/admin can edit descriptive details, edit the project links, and archive or restore it. Keep links used by a registered verifier. The submitter or a PI/admin can edit a bank-authored question after linking a verifier. Each released contract stays pinned. Change an evaluator contract through AutoKaggle and check the new version.
 
-Resume links open the full or Lite AutoKaggle session. **Manage handoff access** opens that application's sharing controls. The bank stores no bearer handoff code. The session owner creates or revokes codes in AutoKaggle; existing session access checks still apply.
+The Lite session link on each verifier opens its saved interview. Use the sharing controls there to manage handoff access. The bank stores no bearer handoff code. The session owner creates or revokes codes in AutoKaggle; existing session access checks still apply.
 
 ## Registration interface
 
