@@ -123,9 +123,7 @@ function primary(links){
 // Pure: what makes a release itself; registering it again must match exactly.
 const releaseFingerprint = (data) => sha(canonical({ evaluator: data.evaluator, validation: data.validation, research: data.research, reported_approval: data.reported_approval, stage: data.stage }));
 
-// projectChoices(): one row per project, its latest card ({ id, board, title, venue }),
-// from functions/index.js (allProjectsFromCards, as the Projects page lists them).
-module.exports = function({ db, onCall, callerEmail, isFullWrite, access, HttpsError, projectChoices }){
+module.exports = function({ db, onCall, callerEmail, isFullWrite, access, HttpsError, readDirectory }){
   const error = (code, message) => new HttpsError(code, message);
   const family = require('./problem-family')(db,error);
   // What a page or agent sees of a document: no emails.
@@ -190,6 +188,13 @@ module.exports = function({ db, onCall, callerEmail, isFullWrite, access, HttpsE
     const full = await isFullWrite(email);
     const mayEdit = full || await access.can(email, 'projects', 'change');
     const canEdit = (doc) => mayEdit && (full || doc.data().createdBy === email);
+    async function problemDirectory(){
+      return readDirectory(await access.can(email,'ml-cycle','view'));
+    }
+    function withLinks(doc, directory){
+      const p = publicRow(doc,canEdit(doc));
+      return {...p,projects:linkedProjects(p,directory.projects),papers:directory.papers ? (directory.papers.get(p.id) || []) : null};
+    }
 
     if (action === 'create_project_proposal') {
       return require('./project-verification-plan').createProposal({db,error,fingerprint:value=>sha(canonical(value))},d,email,request.auth?.token?.name);
@@ -198,7 +203,7 @@ module.exports = function({ db, onCall, callerEmail, isFullWrite, access, HttpsE
     if (action === 'set_family') return family.setFamily(d,email,canEdit);
     if (action === 'save_moonshot') return family.saveMoonshot(d,email,full);
     if (action === 'benchmark_catalogue') return require('./benchmark-catalogue').listBenchmarkReleases(db,d,error);
-    if (action === 'projects') return { items: await projectChoices() };
+    if (action === 'projects') return { items:(await readDirectory(false)).projects };
 
     if (action === 'open_choices') return activeProblemChoices();
     if (action === 'search') {
@@ -261,11 +266,8 @@ module.exports = function({ db, onCall, callerEmail, isFullWrite, access, HttpsE
         if (!/^[a-z0-9-]{1,100}$/.test(d.cursor)) throw error('invalid-argument', 'Invalid page cursor.');
         q = q.startAfter(d.cursor);
       }
-      const [snap, choices] = await Promise.all([q.get(), projectChoices ? projectChoices() : []]);
-      const items = snap.docs.map(doc => {
-        const p = publicRow(doc, canEdit(doc));
-        return { ...p, projects: linkedProjects(p, choices) };
-      });
+      const [snap, directory] = await Promise.all([q.get(), problemDirectory()]);
+      const items = snap.docs.map(doc => withLinks(doc,directory));
       return { items, cursor: snap.size === 100 ? snap.docs[snap.size - 1].id : null };
     }
 
@@ -273,13 +275,12 @@ module.exports = function({ db, onCall, callerEmail, isFullWrite, access, HttpsE
       if (!/^ak-[a-f0-9]{24}$/.test(d.problem_id || '')) throw error('invalid-argument', 'Supply the problem ID.');
       const ref = db.collection('problemBank').doc(d.problem_id), doc = await ref.get();
       if (!doc.exists) throw error('not-found', 'This problem is not registered.');
-      const [releases, history, choices] = await Promise.all([
+      const [releases, history, directory] = await Promise.all([
         db.collection('benchmarks').where('problem_id', '==', d.problem_id).get(),
-        ref.collection('versions').orderBy('updatedAt', 'desc').limit(100).get(), projectChoices ? projectChoices() : [],
+        ref.collection('versions').orderBy('updatedAt', 'desc').limit(100).get(), problemDirectory(),
       ]);
-      const problem = publicRow(doc,canEdit(doc));
-      problem.selected_projects = storedProjects(problem);
-      problem.projects = linkedProjects(problem,choices);
+      const problem = withLinks(doc,directory);
+      problem.selected_projects = storedProjects(doc.data());
       return { can_manage_reminders: mayEdit && doc.data().createdBy === email, history: history.docs.map((x) => publicRow(x)), problem, can_approve: full,
         versions: releases.docs.map((x) => publicRow(x)).sort((a, b) => b.createdAt - a.createdAt || b.evaluator.version - a.evaluator.version) };
     }

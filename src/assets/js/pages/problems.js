@@ -31,10 +31,11 @@
   /* ---------- the list ---------- */
   function matches(p){
     if (!q) return true;
-    var hay = [p.title, p.objective, p.significance, p.difficulties, p.existing_solutions, (p.details || {}).collaborators, (p.projects || []).map(function(x){return x.title;}).join(' '), p.task_kind, p.project_title, (p.details || {}).owner, (p.evaluator || {}).commit].join(' ').toLowerCase();
+    var paperTerms = BoldProblemPapers.unavailableReason(p.papers) ? '' : p.papers.map(function(paper){ return paper.title + ' ' + paper.venue; }).join(' ');
+    var hay = [p.title, p.objective, p.significance, p.difficulties, p.existing_solutions, (p.details || {}).collaborators, (p.projects || []).map(function(x){return x.title;}).join(' '), paperTerms, p.task_kind, p.project_title, (p.details || {}).owner, (p.evaluator || {}).commit].join(' ').toLowerCase();
     return q.toLowerCase().split(/\s+/).every(function(w){ return hay.indexOf(w) >= 0; });
   }
-  function row(p){
+  function row(p, expanded){
     var links = BoldProblemProjects.links(p.projects || []), meta = links ? [links] : [];
     if ((p.details || {}).owner) meta.push(esc(p.details.owner));
     if (p.task_kind) meta.push(esc(p.task_kind));
@@ -46,19 +47,22 @@
       (missing ? '<span class="badge pb-missing">No verifier</span>' : '') + '</div>' +
       '<span class="proj-meta">' + meta.join(' · ') + '</span>' +
       (p.objective ? '<p class="proj-abstract">' + esc(p.objective) + '</p>' : '') +
+      (!BoldProblemPapers.unavailableReason(p.papers) && p.papers.length ? '<details class="pb-papers" data-problem="' + esc(p.id) + '"' + (expanded.has(p.id) ? ' open' : '') + '><summary>Papers (' + p.papers.length + ')</summary>' +
+        BoldProblemPapers.list(p.papers) + '</details>' : '') +
       (badges(p) ? '<div class="proj-badges">' + badges(p) + '</div>' : '') +
       (missing && !p.archived ? '<a class="pb-add-verifier" href="' + path + '#tab=releases">Add verifier →</a>' : '') + '</div></li>';
   }
   function familyView(name){return name === 'tree' || name === 'graph';}
   function renderList(){
-    if (familyView(view)) return;
     var groups = { open: [], implemented: [], checked: [], validated: [], archived: [] };
+    var expanded = new Set(Array.from(el('problems').querySelectorAll('.pb-papers[open]'), function(item){ return item.dataset.problem; }));
     rows.filter(matches).forEach(function(p){ groups[tabOf(p)].push(p); });
     Object.keys(groups).forEach(function(k){
       var cap = k.charAt(0).toUpperCase() + k.slice(1);
-      el('pb' + cap).innerHTML = groups[k].length ? groups[k].map(row).join('') : '<li class="proj-none"><p class="proj-empty">' + (q ? 'No problems match.' : 'No problems in this stage.') + '</p></li>';
+      el('pb' + cap).innerHTML = groups[k].length ? groups[k].map(function(p){ return row(p,expanded); }).join('') : '<li class="proj-none"><p class="proj-empty">' + (q ? 'No problems match.' : 'No problems in this stage.') + '</p></li>';
       el('cnt' + cap).textContent = groups[k].length || (q ? '0' : '');
     });
+    if (familyView(view)) return;
     el('pbClear').hidden = !q;
     el('pbMore').hidden = !cursor;
     el('pbMsg').hidden = true; el('problems').hidden = false;
@@ -191,6 +195,7 @@
   /* ---------- start ---------- */
   BOLD.onUser(function(user){
     generation++; signedIn = !!user; loaded = false; listPending = false; rows = []; cursor = null; listError = '';
+    el('problems').querySelectorAll('.proj-list').forEach(function(list){ list.replaceChildren(); });
     revealArchive = !!focusId;
     tree.reset();
     setView(view);
@@ -199,5 +204,6 @@
     var button = el('pbAdd'), allowed = BOLD.can('projects', 'edit');
     if (allowed) button.href = 'problem-new.html'; else button.removeAttribute('href');
     button.setAttribute('aria-disabled', String(!allowed)); button.title = allowed ? '' : BOLD.cannotReason('projects', 'edit');
+    if (loaded) renderList();
   });
 })();

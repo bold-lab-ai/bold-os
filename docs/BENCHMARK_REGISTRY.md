@@ -14,6 +14,8 @@ When proposing a project, select one or more registered verifier or benchmark re
 
 To record past work, open **Internal Review**, choose a venue, and select **Register paper**. Enter the paper title and choose the open problem it addresses. You can add a compute estimate and a note for reviewers. This form saves the paper directly on the venue board. The paper links back to the problem. It requires no verifier, benchmark, or AutoKaggle session.
 
+To find papers for a problem, expand **Papers** on its Problem Bank card or open the problem’s **Papers** tab. Each entry shows the paper title and venue. Select the title to open the paper on that venue’s board. These links use the current Internal Review records and require access to Internal Review.
+
 ## Research family tree
 
 Open **Problem Bank → By objective** to browse the three research pillars and named moonshots. Expand a branch to see the problems that contribute to it. Search across active problems at every verifier stage. **Include archived** shows historical links. The **Unclassified** branch holds problems without a broader link and their descendants.
@@ -48,7 +50,7 @@ The receiver checks that the evidence is complete and consistent. It doesn't rer
 
 ## Page and access
 
-`problems.html` is laid out as Projects: List or Grid, search, and tabs by stage (Open, Implemented, Checked, Validated, Archived). **Add problem** opens the definition form. The list and grid both mark problems without a verifier. Each problem has its own page, `problem.html?problem=<id>`, with tabs for the scientific overview, verifiers and history. Earlier research questions remain visible.
+`problems.html` is laid out as Projects: List or Grid, search, and tabs by stage (Open, Implemented, Checked, Validated, Archived). **Add problem** opens the definition form. The list and grid both mark problems without a verifier. Each problem has its own page, `problem.html?problem=<id>`, with tabs for the scientific overview, registered papers, verifiers and history. Earlier research questions remain visible.
 
 Each release has a pinned evaluator repository, commit, ZIP, contract digest, check results, research evidence where available, and separate approval. Earlier releases and changes remain in history.
 

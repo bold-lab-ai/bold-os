@@ -4,7 +4,7 @@ function record(){return {schema:'bold.autokaggle.registration.v1',source_id:'au
  evaluator:{repository:'https://github.com/example/evaluator',commit:'a'.repeat(40),version:1,contract_sha256:'b'.repeat(64),zip_url:'https://github.com/example/evaluator/archive/'+'a'.repeat(40)+'.zip'},
  validation:{build:'passed',contract_coverage:'passed',code_review:'passed',synthetic:'passed',known_score:'passed',invalid_submission:'passed',clean_clone:'passed',research_data:'validated',research_evidence:{passed:true,mode:'research',commit:'a'.repeat(40),contract_sha256:'b'.repeat(64),reference_sha256:'c'.repeat(64),artifact_sha256:'d'.repeat(64),report_sha256:'e'.repeat(64),checked_by:'controlled-runtime:1234567890abcdef',checked_at:'2026-11-12T20:00:00Z',expected_fitness:1,observed_fitness:1,tolerance:1e-6,expected_basis:'Independent calculation on declared input.'}},
  human_approval:{commit:'a'.repeat(40),contract_sha256:'b'.repeat(64),research_report_sha256:'e'.repeat(64),approved_by:'f'.repeat(64),approved_at:'2026-11-12T20:01:00Z',note:'I reviewed the code and research evidence.'}};}
-function harness(allowed = () => true){
+function harness(allowed = () => true, readDirectory = async includePapers => ({projects:[],papers:includePapers ? new Map() : null})){
  const data=new Map([['projects/diverging-runs',{title:'Diverging runs'}],['people/UDEFINER',{name:'Demo Researcher'}]]);
  const snap=p=>({id:p.split('/').pop(),exists:data.has(p),data:()=>structuredClone(data.get(p))});
  const doc=p=>({id:p.split('/').pop(),path:p,get:async()=>snap(p),collection:n=>col(p+'/'+n)});
@@ -13,12 +13,38 @@ function harness(allowed = () => true){
  const db={collection:col,runTransaction:async fn=>{const writes=[];const result=await fn({get:async ref=>ref.path?snap(ref.path):ref.get(),set:(ref,x)=>writes.push(()=>data.set(ref.path,structuredClone(x))),delete:ref=>writes.push(()=>data.delete(ref.path)),update:(ref,x)=>writes.push(()=>data.set(ref.path,{...data.get(ref.path),...structuredClone(x)}))});writes.forEach(f=>f());return result;}};
  class ErrorWithCode extends Error{constructor(code,message){super(message);this.code=code;}}
  let denied=false;
- const registry=factory({db,onCall:(_,fn)=>fn,callerEmail:r=>{if(!r.auth?.slack)throw new ErrorWithCode('unauthenticated','Slack required');return r.auth.email;},isFullWrite:async e=>e==='admin@example.invalid',access:{requireAccess:async(email,page,op)=>{if(denied || !allowed(page,op))throw new ErrorWithCode('permission-denied','Access denied');},can:async(email,page,op)=>!denied && allowed(page,op)},HttpsError:ErrorWithCode});
+ const registry=factory({db,readDirectory,onCall:(_,fn)=>fn,callerEmail:r=>{if(!r.auth?.slack)throw new ErrorWithCode('unauthenticated','Slack required');return r.auth.email;},isFullWrite:async e=>e==='admin@example.invalid',access:{requireAccess:async(email,page,op)=>{if(denied || !allowed(page,op))throw new ErrorWithCode('permission-denied','Access denied');},can:async(email,page,op)=>!denied && allowed(page,op)},HttpsError:ErrorWithCode});
  const call=(value,email='owner@example.invalid')=>registry.run({auth:{slack:true,email},data:value});
  return {call,data,db,registry,deny:()=>{denied=true;}};
 }
 for(const change of ['research','approval','commit','reference','score','zip','mode','extra_url'])test('registration rejects '+change,()=>{
  const r=record();if(change==='research')r.validation.research_data='not_run';if(change==='approval')r.human_approval={commit:'bad'};if(change==='commit')r.validation.research_evidence.commit='0'.repeat(40);if(change==='reference')delete r.validation.research_evidence.reference_sha256;if(change==='score')r.validation.research_evidence.observed_fitness=2;if(change==='zip')r.evaluator.zip_url='https://github.com/example/evaluator/archive/main.zip';if(change==='mode')r.validation.research_evidence.mode='synthetic';if(change==='extra_url')r.evaluator.repository+='?token=private';assert.throws(()=>factory.normalize(r));
+});
+test('list and detail expose separate paper links only with Internal Review access', async()=>{
+ const {papersByProblem} = require('../functions/past-paper');
+ const first='ak-'+'a'.repeat(24), second='ak-'+'b'.repeat(24);
+ const boards=[{id:'a',label:'Venue A'},{id:'z',label:'Venue Z',status:'approved'},{id:'p',status:'pending'},{id:'archived',archived:true}];
+ const card=(id,boardId,openProblemId,extra={})=>({id,boardId,data:{title:'Same title',registrationKind:'past_paper',openProblemId,reviewNotes:'Private notes',...extra}});
+ const cards=[card('z-card','z',first),card('a-card','a',first),card('other-card','a',second),
+   card('pending','p',first),card('old','archived',first),card('deleted-venue','missing',first),card('project-card','a',first,{registrationKind:undefined})];
+ const linkedProject={id:'project-card',title:'Existing project',openProblemId:first,board:'a'};
+ let mayReadPapers=true;
+ const h=harness((page,op)=>page!=='ml-cycle' || (op==='view' && mayReadPapers),async includePapers=>({
+   projects:[linkedProject],papers:includePapers ? papersByProblem(boards,cards) : null
+ }));
+ for(const id of [first,second]) h.data.set('problemBank/'+id,{title:'Open question',projects:[]});
+ const expected=[{id:'a-card',board:'a',venue:'Venue A',title:'Same title'},{id:'z-card',board:'z',venue:'Venue Z',title:'Same title'}];
+ const list=await h.call({action:'list'}), detail=await h.call({action:'get',problem_id:first});
+ assert.deepEqual(list.items[0].papers,expected);
+ assert.deepEqual(detail.problem.papers,expected);
+ assert.equal(list.items[1].papers[0].id,'other-card');
+ assert.deepEqual(detail.problem.projects,[linkedProject]);assert.deepEqual(detail.versions,[]);
+ assert.deepEqual(detail.problem.selected_projects,[]);
+ cards.splice(0,cards.length);
+ assert.deepEqual((await h.call({action:'get',problem_id:first})).problem.papers,[]);
+ mayReadPapers=false;
+ assert.equal((await h.call({action:'get',problem_id:first})).problem.papers,null);
+ assert.ok((await h.call({action:'list'})).items.every(p=>p.papers===null));
 });
 test('one transaction registers both records, retries return one receipt, and changed evidence conflicts',async()=>{
  const h=harness(),registration=record(),first=await h.call({action:'register',registration});

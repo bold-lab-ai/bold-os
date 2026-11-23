@@ -20,7 +20,7 @@
   var userEpoch = 0, familyGraph = null, familyError = '', familySaving = false, familyRead = 0;
   var tab = (location.hash.match(/[#&]tab=([^&]+)/) || [])[1];
   var initialRelease = tab === 'releases' ? new URLSearchParams(location.hash.slice(1)).get('release') : null;
-  var TABS = [['overview', 'Overview'], ['releases', 'Verifiers'], ['history', 'History']];
+  var TABS = [['overview', 'Overview'], ['papers', 'Papers'], ['releases', 'Verifiers'], ['history', 'History']];
   if (!TABS.some(function(t){ return t[0] === tab; })) tab = 'overview';
 
   /* ---------- the project page's pieces (pages/project.js) ---------- */
@@ -93,6 +93,9 @@
       if (p.objective && p.objective !== p.title) html += '<p class="detail-abstract">' + text(p.objective) + '</p>';
       return html + familySection();
     },
+    papers: function(){
+      return p.papers.length ? BoldProblemPapers.list(p.papers) : '<p class="detail-muted">No papers registered for this problem.</p>';
+    },
     releases: function(){
       if (!releases.length) return '<p class="detail-muted">Registered verifiers and their checks will appear here.</p>';
       return '<ul class="talk-list">' + releases.map(function(r){
@@ -127,6 +130,12 @@
   };
 
   function render(){
+    var paperReason = BoldProblemPapers.unavailableReason(p.papers);
+    if (tab === 'papers' && paperReason) {
+      if (Array.isArray(p.papers) && !BOLD.myGroup()) return; // Wait for this viewer's access.
+      tab = 'overview'; history_replace('');
+      if (!familyGraph && !familyError) return loadFamily();
+    }
     var html = '<div class="detail-head">' + (editing === 'title'
       ? '<div class="detail-title-edit"><input type="text" id="fieldInput" maxlength="180" value="' + esc(p.title || '') + '" aria-label="Title">' + saveCancelHtml() + '</div>'
       : '<h2>' + esc(p.title) + editButton('title', editableDefinition() ? '' : CONTRACT) + '</h2>');
@@ -151,10 +160,12 @@
       (p.reminders ? 'Turn off my weekly reminders' : 'Remind me to add a verifier') + '</button></p>';
     html += '<div class="tabs" role="tablist" aria-label="Problem">' + TABS.map(function(t){
       var on = t[0] === tab;
-      return '<button class="tab' + (on ? ' active' : '') + '" type="button" role="tab" data-tab="' + t[0] + '" aria-selected="' + on + '"' + (on ? '' : ' tabindex="-1"') + '>' +
-        t[1] + (t[0] === 'releases' && releases.length ? '<span class="proj-count">' + releases.length + '</span>' : '') + '</button>';
+      var disabled = t[0] === 'papers' && paperReason;
+      var count = t[0] === 'papers' && !disabled ? p.papers.length : t[0] === 'releases' ? releases.length : 0;
+      return '<button class="tab' + (on ? ' active' : '') + '" type="button" role="tab" id="tab-' + t[0] + '" data-tab="' + t[0] + '" aria-controls="problemPanel" aria-selected="' + on + '"' + (on ? '' : ' tabindex="-1"') + (disabled ? ' disabled title="' + esc(paperReason) + '"' : '') + '>' +
+        t[1] + (count ? '<span class="proj-count"> ' + count + '</span>' : '') + '</button>';
     }).join('') + '</div>';
-    html += '<div class="tab-panel" id="problemPanel">' + PANELS[tab]() + '</div>';
+    html += '<div class="tab-panel" id="problemPanel" role="tabpanel" aria-labelledby="tab-' + tab + '">' + PANELS[tab]() + '</div>';
     el('problemBody').innerHTML = html; el('problemBody').hidden = false; el('detailMsg').hidden = true;
     document.title = p.title + ' | BOLD Lab';
     wire();
@@ -217,7 +228,7 @@
 
   function wire(){
     if (el('retryFamily')) el('retryFamily').onclick = loadFamily;
-    Array.prototype.forEach.call(document.querySelectorAll('.tab'), function(t, i, all){
+    Array.prototype.forEach.call(el('problemBody').querySelectorAll('.tab:not(:disabled)'), function(t, i, all){
       t.addEventListener('click', function(){ setTab(t.getAttribute('data-tab')); });
       t.addEventListener('keydown', function(e){
         var d = e.key === 'ArrowRight' ? 1 : e.key === 'ArrowLeft' ? -1 : 0;

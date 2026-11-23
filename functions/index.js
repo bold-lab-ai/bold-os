@@ -45,7 +45,7 @@ const admin = require('firebase-admin');
 const crypto = require('crypto');
 const { createPhotoService } = require('./profile-photos');
 const { createServiceDesk } = require('./service-desk');
-const { isPastPaper } = require('./past-paper');
+const { isPastPaper, papersByProblem } = require('./past-paper');
 
 admin.initializeApp();
 const db = admin.firestore();
@@ -9489,16 +9489,23 @@ exports.remindProblemVerifiers = onSchedule({ schedule: 'every 15 minutes', secr
 });
 
 // Validated problems and benchmark releases; the same callable serves the pages and acting API.
-// projectChoices: the Problem Bank's project picker, one row per project as Projects lists them.
-exports.benchmarkRegistry = require('./benchmark-registry')({ db, onCall, callerEmail, isFullWrite, access, HttpsError, projectChoices: async function(){
-  const [boardsSnap, cardsSnap, unassignedSnap] = await Promise.all([db.collection('boards').get(), db.collectionGroup('cards').get(), db.collection('projects').get()]);
-  const groups = allProjectsFromCards(
-    boardsSnap.docs.map(function(d){ return { id: d.id, label: d.data().label, status: d.data().status || 'approved' }; }),
-    cardsSnap.docs.map(function(d){ return { boardId: d.ref.parent.parent.id, id: d.id, data: d.data() }; }),
-    unassignedSnap.docs.map(function(d){ return { id: d.id, data: d.data() }; }), [], []);
-  return [].concat(groups.proposed, groups.ongoing, groups.submission, groups.planned, groups.completed)
+// Projects and registered papers share board cards. Read only the fields used for
+// grouping and public links, once per request, regardless of the number of problems.
+exports.benchmarkRegistry = require('./benchmark-registry')({ db, onCall, callerEmail, isFullWrite, access, HttpsError, readDirectory: async function(includePapers){
+  const fields = ['title','openProblemId','projectId','registrationKind','createdAt','updatedAt','status','outcome','proposal.status'];
+  const [boardsSnap,cardsSnap,unassignedSnap] = await Promise.all([
+    db.collection('boards').select('label','status','archived').get(),
+    db.collectionGroup('cards').select(...fields).get(),
+    db.collection('projects').select(...fields).get()
+  ]);
+  const boards = boardsSnap.docs.map(d => ({id:d.id,...d.data()}));
+  const cards = cardsSnap.docs.filter(d => /^boards\/[^/]+\/cards\/[^/]+$/.test(d.ref.path))
+    .map(d => ({boardId:d.ref.parent.parent.id,id:d.id,data:d.data()}));
+  const groups = allProjectsFromCards(boards,cards,unassignedSnap.docs.map(d => ({id:d.id,data:d.data()})),[],[]);
+  const projects = [].concat(groups.proposed, groups.ongoing, groups.submission, groups.planned, groups.completed)
     .map(function(i){ return { id:i.cardId || i.projectId, stable_id:i.pid, board:i.boardId || '', title:i.title, venue:i.boardLabel || '', openProblemId:i.openProblemId || '' }; })
     .sort(function(a, b){ return a.title.localeCompare(b.title); });
+  return {projects, papers:includePapers ? papersByProblem(boards,cards) : null};
 } }).benchmarkRegistry;
 
 // BOLD.OS for agents: personal tokens (apiTokens) and the read-only API and MCP

@@ -39,6 +39,20 @@ async function patch(path,key,value,expected){
     const row = (await card.get()).data();assert.equal(row.registrationKind,'past_paper');
     assert.equal(row.submittedBy.email,email);assert.equal(row.openProblemTitle,'Existing scientific question');
     for(const field of ['projectId','proposal','verificationPlan']) assert.equal(row[field],undefined);
+    const readPapers = async()=> (await call('benchmarkRegistry',{action:'get',problem_id:problemId},200)).result.problem.papers;
+    const expected = [{id,board,venue:board,title:req.title}];
+    const unrelatedCard=db.doc('paperDirectoryTests/'+board+'/cards/unrelated');
+    clean.unshift(unrelatedCard);
+    await unrelatedCard.set({registrationKind:'past_paper',openProblemId:problemId,title:'Unrelated collection'});
+    assert.deepEqual(await readPapers(),expected);
+    let cursor=null, listed;
+    do {
+      const page=(await call('benchmarkRegistry',{action:'list',cursor},200)).result;
+      listed=page.items.find(p=>p.id===problemId);cursor=page.cursor;
+    } while(!listed && cursor);
+    assert.deepEqual(listed.papers,expected);
+    await venue.update({archived:true});assert.deepEqual(await readPapers(),[]);
+    await venue.update({archived:false,label:'Named venue'});
     await call('benchmarkRegistry',{...req,title:'Other title'},409);
     await call('benchmarkRegistry',{...req,request_id:randomUUID(),proposal:{status:'approved'}},400);
     await problem.update({archived:true});
@@ -54,11 +68,14 @@ async function patch(path,key,value,expected){
     await patch(card.path,'openProblemId',{stringValue:'ak-'+'a'.repeat(24)},403);
     await patch(card.path,'proposal',{mapValue:{fields:{status:{stringValue:'approved'}}}},403);
     await patch(card.path,'title',{stringValue:'Revised paper title'},200);
+    assert.deepEqual(await readPapers(),[{id,board,venue:'Named venue',title:'Revised paper title'}]);
     const raw = await fetch(store+venue.path+'/cards?documentId=raw-card',{method:'POST',headers,body:JSON.stringify({fields:{title:{stringValue:'raw'}}})});
     assert.equal(raw.status,403);
     assert.equal((await db.doc('projects/'+id).get()).exists,false);
     assert.equal((await db.doc('projectWorkspaces/'+id).get()).exists,false);
-    console.log('Verified authenticated registration, concurrent retry, archived problem, read-only provenance, ordinary paper edits, and separation from project resources.');
+    await card.delete();
+    assert.deepEqual(await readPapers(),[]);
+    console.log('Verified authenticated paper registration, project separation and current paper links on the Problem Bank list and detail.');
   } finally {
     await Promise.all(clean.map(ref=>ref.delete()));
     await admin.app().delete();

@@ -3,6 +3,21 @@
 const makeRegisteredCard = require('./make-registered-card');
 const isPastPaper = card => card?.registrationKind === 'past_paper';
 
+// The venue card is the source of the current paper title and problem link.
+function papersByProblem(boards, cards) {
+  const venues = new Map(boards.filter(b => !b.archived && (b.status || 'approved') === 'approved')
+    .map(b => [b.id,b.label || b.id]));
+  const papers = new Map();
+  for (const {boardId,id,data} of cards) {
+    if (!isPastPaper(data) || !data.openProblemId || !venues.has(boardId)) continue;
+    if (!papers.has(data.openProblemId)) papers.set(data.openProblemId,[]);
+    papers.get(data.openProblemId).push({id, board:boardId, venue:venues.get(boardId), title:data.title || 'Untitled paper'});
+  }
+  for (const rows of papers.values())
+    rows.sort((a,b) => a.title.localeCompare(b.title) || a.venue.localeCompare(b.venue) || a.board.localeCompare(b.board) || a.id.localeCompare(b.id));
+  return papers;
+}
+
 async function registerPastPaper({db, error, fingerprint}, data, email, name) {
   const keys = ['action','request_id','board','problem_id','title','compute_estimate','note'];
   if (Object.keys(data).some(key => !keys.includes(key)))
@@ -46,4 +61,4 @@ async function registerPastPaper({db, error, fingerprint}, data, email, name) {
     return result;
   });
 }
-module.exports = {isPastPaper,registerPastPaper};
+module.exports = {isPastPaper,registerPastPaper,papersByProblem};
