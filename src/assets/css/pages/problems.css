@@ -92,6 +92,8 @@ a.btn{display:inline-block; text-decoration:none;}
    and beside it what the Problem Bank needs, each ticked once BOLD has it from what they said ---------- */
 .pb-talk{display:grid; grid-template-columns:minmax(0, 1fr) 220px; column-gap:48px; align-items:start; margin-top:8px;}
 .pb-talk-box{font-family:var(--sans); max-width:var(--article-max, 40em);}
+/* The reply box can be made taller by dragging its bottom-right corner (the browser's grip). */
+.pb-talk-box .ha-form textarea{resize:vertical; min-height:3.4em; max-height:70vh;}
 .pb-talk-box .ha-saved{margin:12px 0 0; font-size:12px; color:var(--muted);}
 .pb-needs{position:sticky; top:24px; font-family:var(--sans); font-size:12.5px; line-height:1.45;}
 .pb-needs .home-box-title{margin:0 0 10px; font-size:10.5px; font-weight:600; letter-spacing:.12em; text-transform:uppercase; color:var(--muted);}
