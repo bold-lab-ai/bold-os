@@ -1,12 +1,17 @@
 /* The Problem Bank's steps (the bank, adding a problem, a problem's page): numbered marks joined by a hairline, in
    Cabin; the current step in the accent, a finished one ticked (as the checklist beside the conversation). */
 .pb-steps{list-style:none; counter-reset:pb-step; display:grid; grid-auto-flow:column; grid-auto-columns:minmax(0, 1fr); margin:22px 0 30px; padding:0; font-family:var(--sans);}
-.pb-steps > li{counter-increment:pb-step; position:relative; display:flex; flex-direction:column; align-items:flex-start; gap:8px; padding-right:18px; font-size:13.5px; line-height:1.35; color:var(--muted);}
+.pb-steps > li{counter-increment:pb-step; position:relative; display:flex; flex-direction:column; align-items:center; gap:8px; padding:0; text-align:center; font-size:13.5px; line-height:1.35; color:var(--muted);}
 .pb-steps > li[hidden]{display:none;}
 .pb-steps > li::before{content:counter(pb-step); position:relative; z-index:1; display:grid; place-items:center; width:24px; height:24px; box-sizing:border-box;
   border:1px solid var(--line); border-radius:50%; background:var(--paper); font-size:11px; font-weight:600; color:var(--muted);}
-/* The hairline to the next step, from this mark to the next one's. */
-.pb-steps > li::after{content:''; position:absolute; top:12px; left:32px; right:8px; height:1px; background:var(--line);}
+/* Justified: the first step at the page's left edge, the last at its right, the others centred. The hairline runs
+   from this mark to the next one's: a mark 12px in at either end, at the centre in between. */
+.pb-steps > li:first-child{align-items:flex-start; text-align:left;}
+.pb-steps > li:last-child, .pb-steps > li:has(+ li[hidden]:last-child){align-items:flex-end; text-align:right;}
+.pb-steps > li::after{content:''; position:absolute; top:12px; left:calc(50% + 20px); right:calc(-50% + 20px); height:1px; background:var(--line);}
+.pb-steps > li:first-child::after{left:32px;}
+.pb-steps > li:nth-last-child(2)::after, .pb-steps > li:has(+ li + li[hidden]:last-child)::after{right:calc(-100% + 32px);}
 .pb-steps > li:last-child::after, .pb-steps > li:has(+ li[hidden]:last-child)::after{display:none;}
 .pb-steps > li[aria-current="step"]{color:var(--ink); font-weight:600;}
 .pb-steps > li[aria-current="step"]::before{border-color:var(--accent); color:var(--accent); box-shadow:0 0 0 3px color-mix(in srgb, var(--accent) 14%, transparent);}
@@ -21,7 +26,7 @@
 .pb-steps .btn-primary{background:var(--accent); border-color:var(--accent); color:var(--on-fill);}
 @media (max-width:640px){
   .pb-steps{grid-auto-flow:row; grid-auto-columns:auto; row-gap:14px;}
-  .pb-steps > li{flex-direction:row; flex-wrap:wrap; align-items:center; gap:10px; padding-right:0;}
+  .pb-steps > li, .pb-steps > li:first-child, .pb-steps > li:last-child, .pb-steps > li:has(+ li[hidden]:last-child){flex-direction:row; flex-wrap:wrap; align-items:center; gap:10px; text-align:left;}
   .pb-steps > li::after{display:none;}
 }
 #problemBody .detail-head{display:grid; grid-template-columns:minmax(0,1fr) auto;}
