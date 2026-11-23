@@ -172,12 +172,6 @@ Every point where the site differs from BOLDiquette: the paper-submission toolin
 
 ---
 
-## 18. Open problems and benchmarks (proposed)
-
-The [Research Project Lifecycle](https://bold-lab-ai.github.io/bold-os/boldiquette.html#research-project-lifecycle) covers early problem selection, project registration and provenance. The review branch adds a required open problem to project proposals and a Benchmarks entry point for AutoKaggle Lite. The proposed family tree allows a problem to contribute to several objectives. The [draft handbook section](PROBLEM_RELATIONSHIPS.md#draft-for-the-boldiquette) records these additions for review.
-
----
-
 ## Reconciled — no longer a difference
 
 - **arXiv affiliation.** Guide now uses "BOLD, {University of Oxford / Imperial College / UCL}", matching BOLDiquette exactly (was Oxford-only). *Fixed 2026-09-10.*
