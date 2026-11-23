@@ -255,112 +255,65 @@
     return out;
   }
 
-  // ---------- Topics, as Prezi: frames within frames ----------
-  // The topic tree: all → topics → (a big topic's) sub-topics → its stepping stones. A topic of more than `max`
-  // (8) is split again, its sub-topics named without its own words, down to three levels. → { id: 'all', name,
-  // children: [{ id, name, terms, children }] }, a leaf { id: 'p:<pid>', pid, item }.
-  function topicTree(items, max){
-    max = max || 8;
-    var leaf = function(i){ return { id: 'p:' + i.pid, pid: i.pid, item: i }; };
-    var byTitle = function(a, b){ return String(a.title).localeCompare(String(b.title)); };
-    var split = function(list, depth, parentTerms, prefix){
-      list = list.slice().sort(byTitle);
-      if ((depth > 0 && list.length <= max) || depth >= 3 || list.length < 3) return list.map(leaf);
-      var cl = clusters(list, depth === 0 ? undefined : Math.max(2, Math.min(5, Math.round(Math.sqrt(list.length / 2)))), parentTerms);
-      var groups = cl.clusters.map(function(c, j){ return { c: c, list: list.filter(function(i){ return cl.of[i.pid] === j; }) }; }).filter(function(g){ return g.list.length; });
-      if (groups.length < 2) return list.map(leaf);
-      groups.sort(function(a, b){ return b.list.length - a.list.length; });
-      return groups.map(function(g, j){
-        var terms = g.c.terms.length ? g.c.terms : ['other'];
-        return { id: prefix + '.' + j, name: terms.join(' \u00b7 '), terms: terms, children: split(g.list, depth + 1, (parentTerms || []).concat(terms), prefix + '.' + j) };
-      });
-    };
-    return { id: 'all', name: 'All topics', terms: [], children: split(items, 0, [], 't') };
+  // ---------- Topics: the meaning map ----------
+  // Classical multidimensional scaling into two dimensions: the top two eigenvectors of the doubly-centred squared
+  // distances (cosine: 2 − 2·similarity), by power iteration from fixed starts (the same every time). → [[x, y]].
+  function mds(list){
+    var n = list.length;
+    if (n === 1) return [[0, 0]];
+    var D = list.map(function(a){ return list.map(function(b){ return Math.max(0, 2 - 2 * dot(a, b)); }); });
+    var rm = D.map(function(r){ return r.reduce(function(x, y){ return x + y; }, 0) / n; }), gm = rm.reduce(function(x, y){ return x + y; }, 0) / n;
+    var B = D.map(function(r, a){ return r.map(function(d, b){ return -0.5 * (d - rm[a] - rm[b] + gm); }); });
+    var comps = [];
+    for (var c = 0; c < 2; c++) {
+      var v = list.map(function(x, k){ return Math.cos(k * (c + 1) * 1.7 + c); }), lam = 0;
+      for (var it = 0; it < 300; it++) {
+        var nv = B.map(function(r){ return r.reduce(function(x, y, k){ return x + y * v[k]; }, 0); });
+        comps.forEach(function(p){ var d = nv.reduce(function(x, y, k){ return x + y * p.v[k]; }, 0); nv = nv.map(function(y, k){ return y - d * p.v[k]; }); });
+        var nn = Math.sqrt(nv.reduce(function(x, y){ return x + y * y; }, 0));
+        if (!nn) break;
+        lam = nn; v = nv.map(function(y){ return y / nn; });
+      }
+      comps.push({ v: v, lam: lam });
+    }
+    var pts = list.map(function(x, k){ return [comps[0].v[k] * Math.sqrt(comps[0].lam), comps[1].v[k] * Math.sqrt(comps[1].lam)]; });
+    var spread = pts.reduce(function(m, p){ return Math.max(m, Math.abs(p[0]) + Math.abs(p[1])); }, 0);
+    if (!(spread > 1e-6)) pts = list.map(function(x, k){ return [Math.cos(k * 2 * Math.PI / n), Math.sin(k * 2 * Math.PI / n)]; });
+    return pts;
   }
-  // Topics as sets, where distance means something: each topic (and sub-topic) a circle, as large as how many it
-  // holds, placed by how alike the topics are; inside, each stepping stone at a point placed by how alike it is to
-  // the others (classical multidimensional scaling of their text's cosine distance, then nudged apart so none
-  // overlap). → { id: { x, y, r } } for every node of `tree` (a leaf's r: the room it has); the root fills w × h.
-  function topicGraph(tree, items, w, h){
-    var vs = vectors(items), vec = {}, out = {};
-    items.forEach(function(i, x){ vec[i.pid] = vs[x]; });
-    var leavesOf = function(n){ return n.children ? [].concat.apply([], n.children.map(leavesOf)) : [n.pid]; };
-    var meanOf = function(n){
-      var sum = {}, len = 0;
-      leavesOf(n).forEach(function(pid){ var v = vec[pid] || {}; for (var t in v) sum[t] = (sum[t] || 0) + v[t]; });
-      for (var t in sum) len += sum[t] * sum[t];
-      len = Math.sqrt(len) || 1;
-      for (var u in sum) sum[u] /= len;
-      return sum;
-    };
-    // Classical MDS into two dimensions: the top two eigenvectors of the doubly-centred squared distances, by
-    // power iteration from fixed starts (the same every time).
-    var mds = function(list){
-      var n = list.length, i, j;
-      if (n === 1) return [[0, 0]];
-      var D = list.map(function(a){ return list.map(function(b){ return Math.max(0, 2 - 2 * dot(a, b)); }); });
-      var rm = D.map(function(r){ return r.reduce(function(x, y){ return x + y; }, 0) / n; }), gm = rm.reduce(function(x, y){ return x + y; }, 0) / n;
-      var B = D.map(function(r, a){ return r.map(function(d, b){ return -0.5 * (d - rm[a] - rm[b] + gm); }); });
-      var comps = [];
-      for (var c = 0; c < 2; c++) {
-        var v = list.map(function(x, k){ return Math.cos(k * (c + 1) * 1.7 + c); }), lam = 0;
-        for (var it = 0; it < 200; it++) {
-          var nv = B.map(function(r){ return r.reduce(function(x, y, k){ return x + y * v[k]; }, 0); });
-          comps.forEach(function(p){ var d = nv.reduce(function(x, y, k){ return x + y * p.v[k]; }, 0); nv = nv.map(function(y, k){ return y - d * p.v[k]; }); });
-          var nn = Math.sqrt(nv.reduce(function(x, y){ return x + y * y; }, 0));
-          if (!nn) break;
-          lam = nn; v = nv.map(function(y){ return y / nn; });
-        }
-        comps.push({ v: v, lam: lam });
+  // The meaning map: every stepping stone a point, the distance between two as near as two dimensions allow to how
+  // different they are (mds), scaled to fill w × h, then nudged apart just enough that none overlap. `vecs` (pid → a
+  // vector) says what each means; without it, its words (vectors: keywords, title, abstract). → { pid: { x, y, r } }
+  // (r: the room each has).
+  function meaningMap(items, w, h, vecs){
+    var out = {}, n = items.length;
+    if (!n) return out;
+    var vs = vecs ? items.map(function(i){ return vecs[i.pid] || {}; }) : vectors(items);
+    var pts = mds(vs);
+    var mx = pts.reduce(function(s, p){ return s + p[0]; }, 0) / n, my = pts.reduce(function(s, p){ return s + p[1]; }, 0) / n;
+    // Scaled by most of them (the 90th percentile of how far out they are), so one outlier doesn't squeeze the rest;
+    // the room each has small, so nudging them apart barely moves them.
+    var dists = pts.map(function(p){ return Math.hypot(p[0] - mx, p[1] - my); }).sort(function(a, b){ return a - b; });
+    var far = dists[Math.min(n - 1, Math.floor(n * 0.9))] || dists[n - 1] || 1;
+    var R = Math.min(w, h) * 0.46, r = Math.min(R * 0.08, R * 0.36 / Math.sqrt(n));
+    var P = pts.map(function(p){ return { x: (p[0] - mx) / far * (R - r), y: (p[1] - my) / far * (R - r) }; });
+    for (var it = 0; it < 2000; it++) {
+      var moved = false;
+      for (var a = 0; a < n; a++) for (var b = a + 1; b < n; b++) {
+        var dx = P[b].x - P[a].x, dy = P[b].y - P[a].y, d = Math.hypot(dx, dy);
+        if (d < 1e-6) { var ang = (a * 7 + b * 13) % 360 * Math.PI / 180; dx = Math.cos(ang) * 1e-3; dy = Math.sin(ang) * 1e-3; d = 1e-3; }
+        if (d < 2 * r) { var push = (2 * r - d) / 2 + 0.01; P[a].x -= dx / d * push; P[a].y -= dy / d * push; P[b].x += dx / d * push; P[b].y += dy / d * push; moved = true; }
       }
-      var pts = list.map(function(x, k){ return [comps[0].v[k] * Math.sqrt(comps[0].lam), comps[1].v[k] * Math.sqrt(comps[1].lam)]; });
-      // Nothing to tell them apart (no words in common): round a circle.
-      var spread = pts.reduce(function(m, p){ return Math.max(m, Math.abs(p[0]) + Math.abs(p[1])); }, 0);
-      if (!(spread > 1e-6)) pts = list.map(function(x, k){ return [Math.cos(k * 2 * Math.PI / n), Math.sin(k * 2 * Math.PI / n)]; });
-      return pts;
-    };
-    // Scaled to fit radius R, then pushed apart until no two circles overlap and each stays inside.
-    var fit = function(pts, radii, R, spreadTo){
-      var mx = pts.reduce(function(s, p){ return s + p[0]; }, 0) / pts.length, my = pts.reduce(function(s, p){ return s + p[1]; }, 0) / pts.length;
-      var far = pts.reduce(function(m, p){ return Math.max(m, Math.hypot(p[0] - mx, p[1] - my)); }, 0) || 1;
-      var P = pts.map(function(p){ return { x: (p[0] - mx) / far * spreadTo, y: (p[1] - my) / far * spreadTo }; });
-      for (var it = 0; it < 3000; it++) {
-        var moved = false;
-        for (var a = 0; a < P.length; a++) for (var b = a + 1; b < P.length; b++) {
-          var dx = P[b].x - P[a].x, dy = P[b].y - P[a].y, d = Math.hypot(dx, dy), need = radii[a] + radii[b];
-          // On the same spot (the same words): apart in a fixed direction of their own.
-          if (d < 1e-6) { var ang = (a * 7 + b * 13) % 360 * Math.PI / 180; dx = Math.cos(ang) * 1e-3; dy = Math.sin(ang) * 1e-3; d = 1e-3; }
-          if (d < need) { var push = (need - d) / 2 + 0.01; P[a].x -= dx / d * push; P[a].y -= dy / d * push; P[b].x += dx / d * push; P[b].y += dy / d * push; moved = true; }
-        }
-        P.forEach(function(p, k){ var d = Math.hypot(p.x, p.y), lim = R - radii[k]; if (d > lim && d > 0) { p.x *= lim / d; p.y *= lim / d; } });
-        if (!moved) break;
-        if (it % 150 === 149) radii = radii.map(function(r){ return r * 0.97; });   // too tight: a little smaller
-      }
-      return { P: P, radii: radii };
-    };
-    var place = function(node, cx, cy, R){
-      out[node.id] = { x: cx, y: cy, r: R };
-      var kids = node.children || [];
-      if (!kids.length) return;
-      var inner = node.id === 'all' ? R : R * 0.86;
-      if (!kids[0].children) {
-        var lr = Math.min(inner * 0.22, inner * 0.82 / Math.sqrt(kids.length));
-        var f = fit(mds(kids.map(function(k){ return vec[k.pid] || {}; })), kids.map(function(){ return lr; }), inner, inner - lr);
-        kids.forEach(function(k, i){ out[k.id] = { x: cx + f.P[i].x, y: cy + f.P[i].y, r: f.radii[i] }; });
-        return;
-      }
-      var sizes = kids.map(function(k){ return leavesOf(k).length; }), total = sizes.reduce(function(a, b){ return a + b; }, 0);
-      // About half the room for the sets, so they can sit where they belong without overlapping.
-      var radii = sizes.map(function(n){ return inner * 0.72 * Math.sqrt(n / total); });
-      var g = fit(mds(kids.map(meanOf)), radii, inner, inner * 0.72);
-      kids.forEach(function(k, i){ place(k, cx + g.P[i].x, cy + g.P[i].y, g.radii[i]); });
-    };
-    place(tree, w / 2, h / 2, Math.min(w, h) * 0.48);
+      // Kept on the canvas: within its circle.
+      P.forEach(function(p){ var d = Math.hypot(p.x, p.y), lim = R - r; if (d > lim) { p.x *= lim / d; p.y *= lim / d; } });
+      if (!moved) break;
+    }
+    items.forEach(function(i, k){ out[i.pid] = { x: w / 2 + P[k].x, y: h / 2 + P[k].y, r: r }; });
     return out;
   }
-  // Each stepping stone's `k` most alike others (cosine similarity over `min`), each pair once: { a, b, s }.
-  function nearLinks(items, k, min){
-    var vs = vectors(items), seen = {}, out = [];
+  // Each stepping stone's `k` most alike others (cosine similarity over `min`; `vecs` as meaningMap's), each pair once: { a, b, s }.
+  function nearLinks(items, k, min, vecs){
+    var vs = vecs ? items.map(function(i){ return vecs[i.pid] || {}; }) : vectors(items), seen = {}, out = [];
     items.forEach(function(i, x){
       items.map(function(j, y){ return { y: y, s: y === x ? -1 : dot(vs[x], vs[y]) }; }).sort(function(p, q){ return q.s - p.s; }).slice(0, k || 2)
         .forEach(function(o){
@@ -372,6 +325,6 @@
     return out;
   }
 
-  return { words: words, clusters: clusters, topicBoard: topicBoard, topicTree: topicTree, topicGraph: topicGraph, nearLinks: nearLinks, LEVELS: LEVELS, NAMES: NAMES, PLURAL: PLURAL, MAX_LINKS: MAX_LINKS, levelOf: levelOf, parentLevel: parentLevel, childLevel: childLevel,
+  return { words: words, clusters: clusters, topicBoard: topicBoard, mds: mds, meaningMap: meaningMap, nearLinks: nearLinks, LEVELS: LEVELS, NAMES: NAMES, PLURAL: PLURAL, MAX_LINKS: MAX_LINKS, levelOf: levelOf, parentLevel: parentLevel, childLevel: childLevel,
     normalizeLinks: normalizeLinks, linkIssue: linkIssue, linked: linked, buildMap: buildMap, lineage: lineage };
 });

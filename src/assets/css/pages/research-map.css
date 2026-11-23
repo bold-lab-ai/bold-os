@@ -69,18 +69,11 @@ main{max-width:var(--content-max); margin:0 auto; padding:8px var(--gutter) 24px
 /* A moonshot's link up to its northstar: quieter (Lineage has them plainly), lit when chosen. */
 .rm-topics .cx-edge.rm-up:not(.is-lit){opacity:.16; stroke-dasharray:2 4;}
 
-/* Topics, as Prezi (#248): sets within sets on the page's paper, each topic in its hue, nearer is more alike;
-   names show by size on screen and room (is-tiny, is-named, is-open: detailLevel in pages/research-map.js). */
+/* Topics (#248): every stepping stone a point, nearer the more alike, in its topic's hue; names show by size on
+   screen and room, a card when flown to (is-named, is-open: detailLevel in pages/research-map.js). */
 .rz-svg{display:block; width:100%; overflow:hidden; cursor:grab; user-select:none;}
 .is-dragging .rz-svg{cursor:grabbing;}
-.rz-set{cursor:zoom-in;}
-.rz-set.is-focus{cursor:default;}
-.rz-ring{fill:color-mix(in srgb, currentColor 6%, transparent); stroke:color-mix(in srgb, currentColor 40%, transparent); stroke-width:1.2; vector-effect:non-scaling-stroke; transition:stroke .2s;}
-.rz-set:hover > .rz-ring{stroke:currentColor;}
-.rz-title{font-family:var(--sans); font-weight:700; letter-spacing:.06em; text-transform:uppercase; fill:currentColor; transition:opacity .2s;}
-.rz-count{font-weight:400; fill:var(--muted); letter-spacing:0;}
-.rz-set.is-tiny .rz-title{opacity:0;}
-.rz-link{stroke:var(--ink); stroke-width:1; vector-effect:non-scaling-stroke;}
+.rz-set:hover > .rz-set.is-tiny .rz-link{stroke:var(--ink); stroke-width:1; vector-effect:non-scaling-stroke;}
 .rz-link.is-lit{stroke:var(--accent); opacity:.9 !important; stroke-width:1.6;}
 .rz-point{cursor:zoom-in;}
 .rz-dot{fill:color-mix(in srgb, currentColor 30%, var(--paper)); stroke:currentColor; stroke-width:1.4; vector-effect:non-scaling-stroke; transition:fill .15s;}
@@ -106,3 +99,5 @@ main{max-width:var(--content-max); margin:0 auto; padding:8px var(--gutter) 24px
 .rz-here{color:var(--ink); font-weight:600;}
 .rz-sep{color:var(--muted); background:none !important;}
 .rz-back{margin-right:6px;}
+/* In Topics a stepping stone takes its topic's hue. */
+.rz-svg .cx-node.rm-project.rm-hue-accent{color:var(--accent);} .rz-svg .cx-node.rm-project.rm-hue-teal{color:var(--teal);} .rz-svg .cx-node.rm-project.rm-hue-plum{color:var(--plum);} .rz-svg .cx-node.rm-project.rm-hue-amber{color:var(--amber);} .rz-svg .cx-node.rm-project.rm-hue-green{color:var(--green);} .rz-svg .cx-node.rm-project.rm-hue-brown{color:var(--brown);} .rz-svg .cx-node.rm-project.rm-hue-danger-text{color:var(--danger-text);}

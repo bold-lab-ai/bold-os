@@ -99,27 +99,23 @@ test('Topics: projects about the same thing cluster together, the same way every
   assert.ok(Math.abs(m.y - (board.pos.a.y + board.pos.b.y) / 2) < 40, 'beside its stepping stones');
 });
 
-test('Topics as Prezi: a tree of topics (a big one split again), framed inside each other', () => {
+test('Topics: the meaning map puts alike projects nearer, none overlapping, inside the canvas', () => {
   const items = [];
-  ['eggroll', 'robotics', 'co-scientist'].forEach((k, j) => { for (let i = 0; i < (j === 0 ? 12 : 4); i++) items.push({ pid: k + i, title: k + ' project ' + i + (i % 2 ? ' theory' : ' practice'), keywords: [k, i % 2 ? 'theory' : 'practice'] }); });
-  const tree = R.topicTree(items);
-  assert.strictEqual(tree.id, 'all');
-  const leaves = []; const walk = (n) => n.children ? n.children.forEach(walk) : leaves.push(n.pid);
-  walk(tree);
-  assert.deepStrictEqual(leaves.slice().sort(), items.map((i) => i.pid).sort(), 'every stepping stone, once');
-  // No topic shows more than 8 stepping stones at once: a bigger one is split into sub-topics, not named by its words.
-  const atMost = (n, depth) => { if (!n.children) return; if (depth > 0 && depth < 3) assert.ok(n.children.filter((c) => !c.children).length <= 8 || n.children.every((c) => !c.children) && n.children.length <= 8, n.id); n.children.forEach((c) => atMost(c, depth + 1)); };
-  atMost(tree, 0);
-  const many = items.slice(0, 12).map((i, x) => Object.assign({}, i, { pid: 'b' + x }));
-  const one = R.topicTree(many.concat([{ pid: 'z1', title: 'robots', keywords: ['robotics'] }, { pid: 'z2', title: 'robots two', keywords: ['robotics'] }, { pid: 'z3', title: 'robots three', keywords: ['robotics'] }]));
-  one.children.forEach((t) => { if (t.children.some((x) => x.children)) t.children.forEach((sub) => sub.terms.forEach((w) => assert.ok(!t.terms.includes(w)))); });
-  // As sets: every element inside its set, sets inside theirs, no two siblings overlapping; nearer is more alike.
-  const at = R.topicGraph(tree, items, 1600, 1000);
-  const inside = (a, b) => Math.hypot(a.x - b.x, a.y - b.y) + a.r <= b.r + 0.5;
-  const check = (n) => (n.children || []).forEach((c) => { if (n.id !== 'all') assert.ok(inside(at[c.id], at[n.id]), c.id + ' inside ' + n.id); check(c); });
-  check(tree);
-  const sibs = (n) => { const k = n.children || []; k.forEach((a, i) => k.forEach((b, j) => { if (i < j) assert.ok(Math.hypot(at[a.id].x - at[b.id].x, at[a.id].y - at[b.id].y) >= at[a.id].r + at[b.id].r - 0.5, a.id + ' and ' + b.id + ' overlap'); })); k.forEach(sibs); };
-  sibs(tree);
+  ['eggroll', 'robotics', 'co-scientist'].forEach((k) => { for (let i = 0; i < 5; i++) items.push({ pid: k + i, title: k + ' study ' + i, keywords: [k] }); });
+  const m = R.meaningMap(items, 1600, 1000);
+  assert.deepStrictEqual(Object.keys(m).sort(), items.map((i) => i.pid).sort());
+  const d = (a, b) => Math.hypot(m[a].x - m[b].x, m[a].y - m[b].y);
+  Object.values(m).forEach((p) => assert.ok(p.x - p.r >= 0 && p.x + p.r <= 1600 && p.y - p.r >= 0 && p.y + p.r <= 1000));
+  items.forEach((a, i) => items.forEach((b, j) => { if (i < j) assert.ok(d(a.pid, b.pid) >= 2 * m[a.pid].r - 0.5, 'overlap'); }));
+  // On average, a project is nearer those with its keyword than those without.
+  const mean = (xs) => xs.reduce((x, y) => x + y, 0) / xs.length;
+  const same = [], other = [];
+  items.forEach((a, i) => items.forEach((b, j) => { if (i < j) (a.keywords[0] === b.keywords[0] ? same : other).push(d(a.pid, b.pid)); }));
+  assert.ok(mean(same) < mean(other));
+  // Given what each means (vectors), it uses them: the same vector, the same place (but for the nudge apart).
+  const vecs = {}; items.forEach((i) => { vecs[i.pid] = { [i.pid.startsWith('e') ? 'a' : 'b']: 1 }; });
+  const m2 = R.meaningMap(items, 1600, 1000, vecs);
+  assert.ok(Math.hypot(m2.eggroll0.x - m2.robotics0.x, m2.eggroll0.y - m2.robotics0.y) > Math.hypot(m2.robotics0.x - m2['co-scientist0'].x, m2.robotics0.y - m2['co-scientist0'].y));
   const links = R.nearLinks(items, 2, 0.12);
   assert.ok(links.length && links.every((l) => l.s >= 0.12 && l.a !== l.b));
 });
