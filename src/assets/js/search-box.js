@@ -12,7 +12,7 @@ window.BoldSearch = (function(){
     { key: 'skills', label: 'Agent skills', pages: /^skills?\.html$/ },
     { key: 'events', label: 'Events', pages: /^(events?|session|talk|calendar|event-.*)\.html$/ },
     { key: 'rota', label: 'Group meetings', pages: /^group-meetings\.html$/ },
-    { key: 'projects', label: 'Projects', pages: /^(projects?|project-meetings|projects-register|research-map)\.html$/ },
+    { key: 'projects', label: 'Projects', pages: /^(projects?|project-meetings|projects-register)\.html$/ },
     { key: 'problems', label: 'Problem Bank', pages: /^problems\.html$/ },
     { key: 'benchmarks', label: 'Evaluator releases', pages: /^problems\.html$/ },
     { key: 'people', label: 'People', pages: /^(people|join-requests)\.html$/ },

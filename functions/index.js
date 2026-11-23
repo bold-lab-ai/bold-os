@@ -3718,7 +3718,7 @@ exports.getAllProjects = onCall(
 
 // ---------- The Map: northstars, moonshots and stepping stones (#248) ----------
 // Every project with its level, what it's part of and its people's names, and the Problem Bank's problems,
-// for the Map (research-map.html), the register form's and a project's page's "Part of" pickers.
+// for the register form's and a project's page's "Part of" pickers.
 // Whoever sees Projects' titles sees the map's; its people only for what they see in full (as getAllProjects).
 // → { items: [{ pid, title, level, parents, problems, connection, group, projectId, cardId, boardId, people, titleOnly }],
 //     problems: [{ id, title, project, stage }] }
