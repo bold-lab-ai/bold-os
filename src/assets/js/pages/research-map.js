@@ -100,10 +100,10 @@
       rest.forEach(function(id){ if (!shown[id]) walk(id, 1, at); });
     }
     if (!rows.length) return '<p class="proj-msg">Nothing yet.</p>';
-    var COL = 34, ROW = 26, TOP = 16;
+    var COL = 36, ROW = 30, TOP = 18;
     var width = rows.reduce(function(w, r){
       var n = r.head ? null : map.byId[r.id], extra = n ? peopleText(n).length * 6.5 : 0;
-      return Math.max(w, 24 + r.depth * COL + 14 + (r.head ? r.head.length : String(n.title).length) * 8 + (extra ? 16 + extra : 0));
+      return Math.max(w, 24 + r.depth * COL + 14 + (r.head ? r.head.length : String(n.title).length) * 8.6 + (extra ? 16 + extra * 1.1 : 0));
     }, 0);
     var W = Math.max(760, Math.ceil(width) + 20), H = TOP + rows.length * ROW + 10;
     rows.forEach(function(r, i){ r.x = 24 + r.depth * COL; r.y = TOP + i * ROW + ROW / 2; });
@@ -123,7 +123,7 @@
         (who && !r.again ? '<tspan class="cx-moves" dx="10">' + esc(who) + '</tspan>' : '') + '</text>' +
         '<title>' + tip(n) + '</title></g>';
     }).join('');
-    return '<div class="cx-graph cx-scroll"><svg class="cx-svg cx-lineage rm-svg' + (on ? ' has-selected' : '') + '" viewBox="0 0 ' + W + ' ' + H + '" style="min-width:' + Math.min(W, 1100) + 'px" role="img" aria-label="Northstars, their moonshots and their stepping stones">' +
+    return '<div class="cx-graph cx-scroll"><svg class="cx-svg cx-lineage rm-svg' + (on ? ' has-selected' : '') + '" viewBox="0 0 ' + W + ' ' + H + '" style="width:' + W + 'px; max-width:none" role="img" aria-label="Northstars, their moonshots and their stepping stones">' +
       lines + nodes + '</svg></div>';
   }
 
@@ -191,7 +191,9 @@
   // zooming in gives them room; and only the labels with room show, the most telling first: what's chosen and
   // lit, the topics' names, northstars, moonshots, then the rest. A hidden one shows on hover.
   function fitLabels(svg){
-    var k = vb.w / TW, sc = 'scale(' + k.toFixed(4) + ')', taken = [];
+    // One map unit is 1/s pixels on screen: marks and labels drawn at their size in pixels.
+    var b0 = svg.getBoundingClientRect(), s0 = b0.width && b0.height ? Math.min(b0.width / vb.w, b0.height / vb.h) : TW / vb.w;
+    var k = 1 / s0, sc = 'scale(' + k.toFixed(4) + ')', taken = [];
     var groups = svg.querySelectorAll('.rm-s');
     for (var i = 0; i < groups.length; i++) groups[i].setAttribute('transform', sc);
     var all = [];
