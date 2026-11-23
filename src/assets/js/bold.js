@@ -710,6 +710,8 @@
     { head: 'New' },
     { label: 'Open problem', href: 'problem-new.html', can: may('projects', 'edit') },
     { label: 'Project', href: 'projects-register.html', can: may('projects', 'edit') },
+    { label: 'Moonshot', href: 'projects-register.html#level=moonshot', can: may('projects', 'edit') },
+    { label: 'Northstar', href: 'projects-register.html#level=northstar', can: may('projects', 'edit') },
     { label: 'Event series', href: 'series.html?new', can: may('events', 'edit') },
     { label: 'Guide', href: 'guide.html?new', can: pi },
     // Skills and tools are both for agents (MCP): side by side, named so.

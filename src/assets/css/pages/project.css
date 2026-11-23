@@ -353,3 +353,7 @@
 .wk-page .wk-labels-row .wk-label-add{margin:0;}
 .wk-page .wk-label-open{cursor:pointer; font-weight:600; padding:0 8px;}
 .wk-page .wk-label-open:hover{background:color-mix(in srgb, var(--accent) 16%, transparent);}
+/* Its level and Part of (#248): the editor's picker (research-picker.js, styles in bold.css). */
+.part-picker{margin:8px 0;}
+#partConnection{width:100%; font-family:var(--sans); font-size:14px; color:var(--ink); background:var(--surface); border:1px solid var(--line); border-radius:var(--radius); padding:8px 10px; margin-top:4px;}
+#partLevel{font-family:var(--sans); font-size:14px;}

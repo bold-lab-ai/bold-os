@@ -52,6 +52,15 @@ async function req(path, method, token, body, mask) {
       assert.equal(await req(path,'PATCH',auth,{title:'Edited title'},['title']),200,'existing owners still edit ordinary fields');
     }
     assert.equal(await req(project,'PATCH',auth,{proposal:{status:'declined'}},['proposal']),403);
+    // Its level and what it's part of (#248): an older project stays editable; changing its links needs them linked.
+    const old = 'projects/' + dbid + '-levels';
+    await db.doc(old).set(core);
+    assert.equal(await req(old,'PATCH',auth,{parents:[]},['parents']),403,'its links changed to nothing');
+    assert.equal(await req(old,'PATCH',auth,{parents:['m1'],connection:'how'},['parents','connection']),200,'linked up');
+    assert.equal(await req(old,'PATCH',auth,{level:'northstar',parents:[]},['level','parents']),200,'made a northstar');
+    assert.equal(await req(old,'PATCH',auth,{level:'moonshot'},['level']),403,'a moonshot part of nothing');
+    assert.equal(await req(old,'PATCH',auth,{level:'galaxy'},['level']),403,'no such level');
+    await db.doc(old).delete();
     console.log('Project proposal rules passed for project creation, venue cards, legacy edits and verification plan protection.');
   } finally {
     await Promise.all([db.doc(project),db.doc(card),db.doc(legacy),...seeded].map(ref=>ref.delete()));

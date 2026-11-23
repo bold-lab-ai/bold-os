@@ -454,7 +454,7 @@ service cloud.firestore {
           hasFullWrite()
         ) && !request.resource.data.diff(resource.data).affectedKeys().hasAny(
           ['verificationPlan', 'openProblemId', 'openProblemTitle', 'projectId', 'registrationKind']
-        ) && (resource.data.get('registrationKind','') != 'past_paper' || !request.resource.data.keys().hasAny(['proposal']));
+        ) && (resource.data.get('registrationKind','') != 'past_paper' || !request.resource.data.keys().hasAny(['proposal'])) && researchLinksOk();
         allow delete: if (may('ml-cycle', 'edit') || may('projects', 'edit')) && (
           email() == resource.data.submittedBy.email ||
           email() == resource.data.reviewers.junior ||
@@ -492,16 +492,35 @@ service cloud.firestore {
     match /projectProposalReceipts/{id} { allow read, write: if false; }
     match /paperRegistrationReceipts/{id} { allow read, write: if false; }
 
+    // A project's level and what it's part of (#248, functions/research-map.js): a northstar is part of
+    // nothing; a moonshot of northstars; a stepping stone (no level, as from before) of moonshots or problems.
+    function researchLinksShape(d){
+      return d.get('level', 'project') in ['northstar', 'moonshot', 'project'] &&
+        d.get('parents', []) is list && d.get('parents', []).size() <= 20 &&
+        d.get('problems', []) is list && d.get('problems', []).size() <= 20 &&
+        d.get('connection', '') is string && d.get('connection', '').size() <= 2000;
+    }
+    function researchLinked(d){
+      return d.get('level', 'project') == 'northstar' || d.get('parents', []).size() > 0 ||
+        (d.get('level', 'project') == 'project' && d.get('problems', []).size() > 0);
+    }
+    // On an update: the shape always; linked up once its level or links change (older ones stay editable meanwhile).
+    function researchLinksOk(){
+      return researchLinksShape(request.resource.data) && (
+        !request.resource.data.diff(resource.data).affectedKeys().hasAny(['level', 'parents', 'problems']) ||
+        researchLinked(request.resource.data));
+    }
     match /projects/{projectId} {
       allow read: if seesProject(resource.data.get('projectId', projectId));
-      // The callable validates the scientific problem and every selected release atomically.
+      // The callable validates the scientific problem, every selected release and its level and links (#248) atomically.
       allow create: if false;
       allow update: if may('projects', 'edit') && (
         email() == resource.data.submittedBy.email ||
         email() in resource.data.get('authorEmails', []) ||
         hasFullWrite()
       ) && request.resource.data.get('registrationKind','') == resource.data.get('registrationKind','') && request.resource.data.get('verificationPlan',null) == resource.data.get('verificationPlan',null) && request.resource.data.get('openProblemId','') == resource.data.get('openProblemId','') && request.resource.data.get('projectId', '') == resource.data.get('projectId', '') &&
-        (hasFullWrite() || request.resource.data.get('proposal', null) == resource.data.get('proposal', null));
+        (hasFullWrite() || request.resource.data.get('proposal', null) == resource.data.get('proposal', null)) &&
+        researchLinksOk();
       allow delete: if may('projects', 'edit') && (
         email() == resource.data.submittedBy.email || hasFullWrite()
       );

@@ -249,3 +249,9 @@ a.btn.is-off:hover{border-color:var(--line); color:var(--muted);}
 .sdc-error{margin-top:10px;}
 .sdc-about{margin-top:32px; font-family:var(--serif); font-size:17px; line-height:1.6; max-width:var(--article-max);}
 .sdc-about img{max-width:100%; height:auto; border:1px solid var(--line);}
+/* Stepping stones, moonshots, northstars (#248), and the Map. */
+.proj-levels{display:flex; align-items:center; flex-wrap:wrap; margin-top:18px;}
+.proj-levels .view-btn{border:1px solid var(--line);}
+.proj-levels .view-btn + .view-btn{border-left:none;}
+.proj-levels .proj-count{margin-left:6px; color:var(--muted); font-weight:400;}
+.proj-levels .proj-count:empty{display:none;}

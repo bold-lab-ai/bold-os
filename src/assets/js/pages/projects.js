@@ -74,7 +74,7 @@
       return l;
     };
     if (p.titleOnly) {
-      parts.push(textNode(p.talk ? 'Its people see it: talk to the lead, who adds you if it fits' : p.ask ? 'Its people see it: ask to join, and its owner decides' : 'Join it to see it'));
+      parts.push(textNode(levelOf(p) !== 'project' ? 'Join one of its stepping stones' : p.talk ? 'Its people see it: talk to the lead, who adds you if it fits' : p.ask ? 'Its people see it: ask to join, and its owner decides' : 'Join it to see it'));
     } else if (p.boardId) {
       var inVenue = document.createElement('span');
       inVenue.appendChild(textNode('In: '));
@@ -87,6 +87,17 @@
       parts.push(textNode((p.proposal.status === 'declined' ? 'Declined' : 'Waiting for a PI or admin') + ' \u00b7 ' + (p.proposal.more && p.proposal.gpuHours ? p.proposal.gpuHours.toLocaleString('en-GB') + ' GPU hours' : 'standard compute')));
     } else {
       parts.push(textNode('No venue yet'));
+    }
+    // What it's part of (#248), or that it isn't linked yet.
+    if (window.BoldResearch) {
+      var ups = (p.parents || []).map(function(id){ return byPid[id]; }).filter(Boolean);
+      if (ups.length) {
+        var partOf = document.createElement('span');
+        partOf.appendChild(textNode('Part of: '));
+        ups.forEach(function(u, i){ if (i) partOf.appendChild(textNode(', ')); partOf.appendChild(u.titleOnly ? textNode(u.title) : linkNode(u.title, 'project.html#id=' + encodeURIComponent(u.projectId || u.cardId) + (u.boardId ? '&board=' + encodeURIComponent(u.boardId) : ''))); });
+        parts.push(partOf);
+      } else if ((p.problems || []).length) parts.push(textNode('Explores ' + p.problems.length + ' problem' + (p.problems.length > 1 ? 's' : '')));
+      else if (!BoldResearch.linked(p)) { var nl = document.createElement('span'); nl.className = 'level-badge lv-unlinked'; nl.textContent = 'Not linked yet'; nl.title = 'Say what it\u2019s part of, on its page'; parts.push(nl); }
     }
     if (p.slackChannel && !p.titleOnly) parts.push(p.slackUrl ? linkNode(p.slackChannel, p.slackUrl) : textNode(p.slackChannel));
     if (p.owner) parts.push(textNode(p.owner));
@@ -127,6 +138,8 @@
       main.appendChild(row);
     }
     li.appendChild(main);
+    // A northstar or moonshot isn't joined (#248): its stepping stones are.
+    if (levelOf(p) !== 'project') return li;
     // Makes the signed-in user a member: invited to its meeting and Slack channel,
     // and able to edit its slides and notes (projectWorkspace).
     var join = document.createElement('button');
@@ -209,13 +222,14 @@
 
   /* ---------- search and filters ---------- */
   var current = null;                                  // the last list from the function
-  var filters = { q: '', author: '', keyword: '' };
+  var byPid = {};                                      // every project by its id, for Part of
+  var filters = { q: '', author: '', keyword: '', level: 'project' };   // level (#248): northstar, moonshot or project
   var autoTab = false;                                 // arrived with a filter: open a tab that has matches
   var myKey = '';                                      // the signed-in email: the author filter's Yours ('mine')
 
   // Older cached lists have no `authors`, no `submission` group or no `joined` (`v` 2); refetch those.
   function hasAuthors(d){
-    return d.v >= 3 && Array.isArray(d.submission) && ['ongoing', 'submission', 'completed', 'planned'].every(function(g){
+    return d.v >= 4 && Array.isArray(d.submission) && ['ongoing', 'submission', 'completed', 'planned'].every(function(g){
       // …and lists from before projects spanned venues (no `pid`): refetch those too.
       return (d[g] || []).every(function(p){ return (p.titleOnly || Array.isArray(p.authors)) && p.pid; });
     });
@@ -231,7 +245,9 @@
     return out;
   }
 
+  function levelOf(p){ return window.BoldResearch ? BoldResearch.levelOf(p) : 'project'; }
   function matches(p){
+    if (levelOf(p) !== filters.level) return false;
     if (filters.keyword && (p.keywords || []).indexOf(filters.keyword) === -1) return false;
     if (filters.author === 'mine') { if (!p.joined && !people(p).some(function(o){ return o.key === myKey; })) return false; }
     else if (filters.author && !people(p).some(function(o){ return o.key === filters.author; })) return false;
@@ -275,6 +291,7 @@
     var parts = [];
     if (tab && tab.getAttribute('data-tab') !== 'ongoing') parts.push(tab.getAttribute('data-tab'));
     ['q', 'author', 'keyword'].forEach(function(k){ var v = String(filters[k]).trim(); if (v) parts.push(k === 'author' && v === 'mine' ? 'mine' : k + '=' + encodeURIComponent(v)); });
+    if (filters.level !== 'project') parts.push('level=' + filters.level);
     try { history.replaceState(null, '', location.pathname + location.search + (parts.length ? '#' + parts.join('&') : '')); } catch (e){}
   }
 
@@ -295,6 +312,8 @@
 
   function renderProjects(data){
     current = data;
+    byPid = {};
+    ['proposed', 'ongoing', 'submission', 'completed', 'planned'].forEach(function(g){ (data[g] || []).forEach(function(p){ byPid[p.pid] = p; }); });
     fillOptions();
     renderLists();
     el('projMsg').hidden = true;
@@ -319,6 +338,13 @@
       items.forEach(function(p){ ul.appendChild(renderProject(p, g[3])); });
     });
     el('projClear').hidden = !filtering();
+    // How many of each level there are (whatever the tab and filters).
+    var counts = { project: 0, moonshot: 0, northstar: 0 };
+    Object.keys(byPid).forEach(function(k){ counts[levelOf(byPid[k])]++; });
+    el('lvProject').textContent = counts.project || ''; el('lvMoonshot').textContent = counts.moonshot || ''; el('lvNorthstar').textContent = counts.northstar || '';
+    levelBtns.forEach(function(b){ b.setAttribute('aria-pressed', String(b.getAttribute('data-level') === filters.level)); });
+    var add = document.querySelector('.proj-add');
+    if (add) add.href = 'projects-register.html' + (filters.level === 'project' ? '' : '#level=' + filters.level);
     if (autoTab) {
       autoTab = false;
       var active = tabs.filter(function(t){ return t.classList.contains('active'); })[0];
@@ -334,10 +360,14 @@
   el('projAuthor').addEventListener('change', function(){ setFilter('author', el('projAuthor').value); });
   el('projKeyword').addEventListener('change', function(){ setFilter('keyword', el('projKeyword').value); });
   el('projClear').addEventListener('click', function(){
-    filters = { q: '', author: '', keyword: '' };
+    filters = { q: '', author: '', keyword: '', level: filters.level };
     el('projSearch').value = ''; el('projAuthor').value = ''; el('projKeyword').value = '';
     renderLists(); syncHash();
   });
+
+  /* ---------- stepping stones, moonshots, northstars (#248) ---------- */
+  var levelBtns = Array.prototype.slice.call(document.querySelectorAll('.proj-levels [data-level]'));
+  levelBtns.forEach(function(b){ b.addEventListener('click', function(){ autoTab = true; setFilter('level', b.getAttribute('data-level')); }); });
 
   /* ---------- list / grid ---------- */
   BOLD.mountViewToggle(document.querySelector('.view-toggle'), el('projects'), VIEW_KEY);
@@ -377,6 +407,7 @@
       if (tok === 'mine') { filters.author = 'mine'; return; }
       if (kv.length === 1 && tabs.some(function(t){ return t.getAttribute('data-tab') === tok; })) return setTab(tok);
       if (kv[0] === 'q' || kv[0] === 'author' || kv[0] === 'keyword') filters[kv[0]] = decodeURIComponent(kv.slice(1).join('='));
+      if (kv[0] === 'level' && /^(northstar|moonshot|project)$/.test(kv[1])) filters.level = kv[1];
     });
     el('projSearch').value = filters.q;
     autoTab = filtering();

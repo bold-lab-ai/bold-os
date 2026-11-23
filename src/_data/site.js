@@ -50,6 +50,7 @@ export default {
     { label: 'Research', href: 'projects.html', area: 'projects', areaWhat: 'titles', links: [
       { label: 'Problem Bank', href: 'problems.html', area: 'projects' },
       { label: 'Projects', href: 'projects.html', area: 'projects', areaWhat: 'titles' },
+      // Northstars, moonshots and stepping stones, and how they connect (#248).
       { label: 'Internal review', href: 'audit-board.html', area: 'ml-cycle' },
     ] },
     { label: 'Calendar', href: 'calendar.html', links: [], separatorAfter: true, area: 'calendar' },

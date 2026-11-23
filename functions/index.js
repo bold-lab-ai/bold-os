@@ -40,6 +40,7 @@ const accessLib = require('./access');
 // Three-way merges for proposals (#177): shared with the pages (assets/js/merge.js).
 const merge = require('./merge');
 const guideAnchors = require('./guide-anchors');
+const research = require('./research-map');
 const { setGlobalOptions } = require('firebase-functions/v2');
 const logger = require('firebase-functions/logger');
 const admin = require('firebase-admin');
@@ -3572,7 +3573,10 @@ function allProjectsFromCards(boards, cards, unassigned, completedIds, startedId
       ownerEmail: (d.submittedBy && d.submittedBy.email) || '',
       authors: (Array.isArray(d.authors) ? d.authors : []).map(function(a){ return { name: (a && a.name) || '', email: (a && a.email) || '' }; }),
       badges: badgesForCard(d),
-      proposal: d.proposal ? { status: d.proposal.status || 'proposed', more: asksForMore(d.proposal), gpuHours: Number(d.proposal.gpuHours) || 0, dueAt: d.proposal.dueAt || 0 } : null
+      proposal: d.proposal ? { status: d.proposal.status || 'proposed', more: asksForMore(d.proposal), gpuHours: Number(d.proposal.gpuHours) || 0, dueAt: d.proposal.dueAt || 0 } : null,
+      // Its level and what it's part of (#248): research-map.js.
+      level: research.levelOf(d), parents: research.normalizeLinks(d).parents, problems: research.normalizeLinks(d).problems,
+      connection: research.normalizeLinks(d).connection
     };
   };
   cards.forEach(function(c){
@@ -3626,7 +3630,7 @@ function projectTitlesOnly(groups, mine, ask){
   const out = {};
   Object.keys(groups).forEach(function(g){
     out[g] = groups[g].map(function(i){
-      return mine[i.pid] ? i : Object.assign({ pid: i.pid, title: i.title, projectId: i.projectId, cardId: i.cardId, boardId: i.boardId, slackChannel: i.slackChannel, titleOnly: true }, ask ? { ask: true } : {});
+      return mine[i.pid] ? i : Object.assign({ pid: i.pid, title: i.title, projectId: i.projectId, cardId: i.cardId, boardId: i.boardId, slackChannel: i.slackChannel, level: i.level, parents: i.parents, problems: i.problems, titleOnly: true }, ask ? { ask: true } : {});
     });
   });
   return out;
@@ -3639,7 +3643,7 @@ function markJoined(shown, mine){
   ['proposed', 'ongoing', 'submission', 'completed', 'planned'].forEach(function(g){
     (shown[g] || []).forEach(function(i){ if (mine[i.pid]) i.joined = true; });
   });
-  shown.v = 3;   // 3: with `proposed` (#226)
+  shown.v = 4;   // 3: with `proposed` (#226); 4: with `level` and `parents` (#248)
   return shown;
 }
 
@@ -3716,6 +3720,45 @@ exports.getAllProjects = onCall(
     const links = await slackLinksFor(Array.from(new Set(items.map(function(i){ return i.slackChannel; }).filter(Boolean))));
     items.forEach(function(i){ if (links[i.slackChannel]) i.slackUrl = links[i.slackChannel]; });
     return shown;
+  }
+);
+
+// ---------- The Map: northstars, moonshots and stepping stones (#248) ----------
+// Every project with its level, what it's part of and its people's names, and the Problem Bank's problems,
+// for the register form's and a project's page's "Part of" pickers.
+// Whoever sees Projects' titles sees the map's; its people only for what they see in full (as getAllProjects).
+// → { items: [{ pid, title, level, parents, problems, connection, group, projectId, cardId, boardId, people, titleOnly }],
+//     problems: [{ id, title, project, stage }] }
+exports.researchMap = onCall(
+  async (request) => {
+    const email = signedInEmail(request).toLowerCase();
+    await access.requireAccess(email, 'projects', 'list');   // Who can see what
+    const full = await access.can(email, 'projects', 'view');
+    const [boardsSnap, cardsSnap, unassignedSnap, wsSnap, peopleSnap, problemSnap] = await Promise.all([
+      db.collection('boards').get(), db.collectionGroup('cards').get(), db.collection('projects').get(),
+      db.collection('projectWorkspaces').get(), db.collection('people').get(), db.collection('problemBank').get()
+    ]);
+    const groups = allProjectsFromCards(
+      boardsSnap.docs.map((d) => ({ id: d.id, label: d.data().label, status: d.data().status || 'approved' })),
+      cardsSnap.docs.map((d) => ({ boardId: d.ref.parent.parent.id, id: d.id, data: d.data() })),
+      unassignedSnap.docs.map((d) => ({ id: d.id, data: d.data() })),
+      wsSnap.docs.filter((d) => d.data().completedAt > 0).map((d) => d.id),
+      wsSnap.docs.filter((d) => workspaceStarted(d.data())).map((d) => d.id));
+    const names = {};
+    peopleSnap.docs.forEach((d) => { const p = d.data(); if (p.email && p.name) names[String(p.email).toLowerCase()] = p.name; });
+    const members = {}, mine = {};
+    wsSnap.docs.forEach((d) => { const m = d.data().members || []; members[d.id] = m; if (m.indexOf(email) >= 0) mine[d.id] = true; });
+    const items = [];
+    Object.keys(groups).forEach((g) => (groups[g] || []).forEach((i) => {
+      if (g === 'proposed' && (!i.proposal || i.proposal.status === 'declined')) return;   // only what's proposed or decided
+      const sees = full || mine[i.pid];
+      items.push({ pid: i.pid, title: i.title, level: i.level, parents: i.parents, problems: i.problems, connection: sees ? i.connection : '', group: g,
+        projectId: i.projectId || null, cardId: i.cardId || null, boardId: i.boardId || null, titleOnly: !sees,
+        people: sees ? (members[i.pid] || []).map((e) => names[e] || '').filter(Boolean).sort() : [] });
+    }));
+    const problems = problemSnap.docs.map((d) => ({ id: d.id, title: d.data().title || d.id, project: d.data().project_id || '', stage: d.data().stage || 'open', archived: !!d.data().archived }))
+      .filter((p) => !p.archived).map((p) => ({ id: p.id, title: p.title, project: p.project, stage: p.stage }));
+    return { items, problems };
   }
 );
 
@@ -4398,6 +4441,8 @@ function projectGroupForCards(cards, completed, started){
   if (cards.length && proposalPending(cards[0].data)) return 'proposed';
   if (completed || cards.some(function(c){ return projectGroupForCard(c.data) === 'completed'; })) return 'completed';
   const last = cards[cards.length - 1];
+  // A northstar or moonshot (#248) is never planned or in submission: approved, it's under way.
+  if (research.levelOf(last.data) !== 'project') return 'ongoing';
   return projectGroupForCard(last.data, false, !!last.boardId, started);
 }
 
@@ -4908,14 +4953,16 @@ const ACTIVE_PROJECTS_CHANNEL = 'all-active-projects';
 function projectAnnouncement(card, url){
   const who = slackText((card.submittedBy && (card.submittedBy.name || card.submittedBy.email)) || 'Someone');
   const abstract = String(card.abstractText || '').trim().replace(/\s+/g, ' ');
-  const lines = ['🆕 ' + linkedTitle(slackText(card.title || 'Untitled project'), url) + ' — registered by ' + who];
+  const level = research.levelOf(card), kind = level === 'project' ? '' : ' (a new ' + research.NAMES[level].toLowerCase() + ')';
+  const lines = ['🆕 ' + linkedTitle(slackText(card.title || 'Untitled project'), url) + kind + ' — registered by ' + who];
   if (abstract) lines.push('> ' + slackText(abstract.length > 400 ? abstract.slice(0, 400).replace(/\s+\S*$/, '') + '…' : abstract));
   const keywords = (card.keywords || []).filter(Boolean);
   if (keywords.length) lines.push('Keywords: ' + keywords.map(slackText).join(', '));
   if (card.slackChannel) lines.push('Channel: ' + slackText(card.slackChannel));
   // Opens the project's page, which joins whoever clicked (pages/project.js, &join=1):
   // its channel, meeting, notes, slides and repository.
-  lines.push('<' + url + '&join=1|Join the project>');
+  // A northstar or moonshot isn't joined (#248): its stepping stones are.
+  if (research.levelOf(card) === 'project') lines.push('<' + url + '&join=1|Join the project>');
   return lines.join('\n');
 }
 
@@ -5447,6 +5494,8 @@ exports.projectWorkspace = onCall(
 
     if (data.action === 'join' || data.action === 'leave'){
       const joining = data.action === 'join';
+      // Northstars and moonshots aren't joined (#248): their stepping stones are. Leaving one is fine.
+      if (joining && research.levelOf(card) !== 'project') throw new HttpsError('failed-precondition', 'Only a stepping stone is joined: join one of its stepping stones.');
       if (!joining && projectMembers(card, []).indexOf(email) >= 0) {
         throw new HttpsError('failed-precondition', 'Its submitter and authors stay on the project — remove yourself from the authors first.');
       }
@@ -7554,6 +7603,7 @@ exports.projectInvite = onCall(
       const snap = await readProjectCard(id, board);
       if (!snap.exists) throw new HttpsError('not-found', 'That project isn’t there any more.');
       const card = snap.data(), pid = projectIdOf(card, id);
+      if (research.levelOf(card) !== 'project') throw new HttpsError('failed-precondition', 'Only a stepping stone is joined: join one of its stepping stones.');
       const ws = (await db.collection('projectWorkspaces').doc(pid).get()).data() || {};
       if ((ws.members || []).map(lowerEmail).indexOf(email) >= 0) throw new HttpsError('already-exists', 'You’re already on it.');
       const dup = await col.where('pid', '==', pid).where('email', '==', email).get();
@@ -7570,6 +7620,7 @@ exports.projectInvite = onCall(
       if (!snap.exists) throw new HttpsError('not-found', 'That project isn’t there any more.');
       const card = snap.data(), pid = projectIdOf(card, id);
       if (!(await canEditCard(email, card))) throw new HttpsError('permission-denied', 'Only the project’s submitter, authors, PIs and admins invite people to it.');
+      if (d.action === 'invite' && research.levelOf(card) !== 'project') throw new HttpsError('failed-precondition', 'Only a stepping stone has people invited to it: invite them to one of its stepping stones.');
       if (d.action === 'list') {
         const all = await col.where('pid', '==', pid).get();
         return { invites: all.docs.map((x) => Object.assign({ id: x.id }, x.data())).sort((a, b) => (a.status === 'open' ? 0 : 1) - (b.status === 'open' ? 0 : 1) || b.at - a.at).slice(0, 50) };

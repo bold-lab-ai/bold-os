@@ -91,6 +91,38 @@
       : 'It\u2019s approved at once.';
   }
   el('pfMore').addEventListener('change', moreHint);
+
+  /* ---------- its level and what it's part of (#248: research-map.js, research-picker.js) ---------- */
+  var R = window.BoldResearch, map = null, picker = null;
+  var levelNow = function(){ var r = form.querySelector('input[name="pfLevel"]:checked'); return r ? r.value : 'project'; };
+  var HEADINGS = { project: 'Propose a new project', moonshot: 'Propose a new moonshot', northstar: 'Propose a new northstar' };
+  function showLevel(){
+    var level = levelNow(), chosen = picker ? picker.read() : {};
+    form.setAttribute('data-level', level);
+    el('prHeading').textContent = HEADINGS[level];
+    el('pfPartField').hidden = level === 'northstar';
+    el('pfConnectionField').hidden = level === 'northstar';
+    el('pfPartHint').textContent = level === 'moonshot' ? 'One or more northstars.' : 'One or more moonshots. If it\u2019s exploratory, its open problem is enough.';
+    if (map) picker = BoldResearchPicker.mount(el('pfPart'), map, level, level === 'project' ? chosen : { parents: [] }, null, { noProblems: true });
+  }
+  form.querySelectorAll('input[name="pfLevel"]').forEach(function(r){ r.addEventListener('change', showLevel); });
+  // #level=moonshot (Projects' + New…) chooses it; #part=<id> ticks what it's part of.
+  var want = (location.hash.match(/[#&]level=(northstar|moonshot|project)/) || [])[1], partOf = (location.hash.match(/[#&]part=([A-Za-z0-9_-]+)/) || [])[1];
+  if (want) form.querySelector('input[name="pfLevel"][value="' + want + '"]').checked = true;
+  showLevel();
+  // The + menu's Moonshot or Northstar, from this page: only the address's hash changes.
+  window.addEventListener('hashchange', function(){
+    var l = (location.hash.match(/[#&]level=(northstar|moonshot|project)/) || [])[1] || 'project';
+    form.querySelector('input[name="pfLevel"][value="' + l + '"]').checked = true;
+    showLevel();
+  });
+  BOLD.onUser(function(u){
+    if (!u || map) return;
+    BoldResearchPicker.load().then(function(m){
+      map = m;
+      picker = BoldResearchPicker.mount(el('pfPart'), map, levelNow(), { parents: partOf ? [partOf] : [] }, null, { noProblems: true });
+    }).catch(function(err){ console.error('[BOLD Lab] loading the map failed', err); el('pfPart').innerHTML = '<p class="field-hint">Couldn\u2019t load them: reload the page.</p>'; });
+  });
   BOLD.onAccess(moreHint);
   moreHint();
 
@@ -100,14 +132,21 @@
     var submitter = me.uid;
     var title = el('pfTitle').value.trim();
     var abstractText = el('stageAbstractText').value.trim();
-    var problem=el('pfProblem').value;
-    if(el('pfProblem').disabled || !problem){el('pfProblem').focus();return showError('Choose an open problem for this project.');}
+    var level = levelNow(), project = level === 'project';
+    // Only a stepping stone explores an open problem and has a verifier (#41).
+    var problem = project ? el('pfProblem').value : '';
+    if (project && (el('pfProblem').disabled || !problem)) { el('pfProblem').focus(); return showError('Choose an open problem for this project.'); }
     if (!title) return showError('Give the project a title.');
     if (!abstractText) return showError('Add an abstract or pitch.');
-    var decision = verifier.read();
+    if (level !== 'northstar' && !picker) return showError('Wait for what it can be part of to load.');
+    // A stepping stone explores its open problem (#41) and is part of moonshots; a moonshot of northstars (#248).
+    var links = R.normalizeLinks({ level: level, connection: el('pfConnection').value, parents: picker ? picker.read().parents : [], problems: project ? [problem] : [] });
+    var issue = R.linkIssue(links);
+    if (issue) return showError(issue);
+    var decision = project ? verifier.read() : { plan: null };
     if (decision.error){ el(decision.field).focus(); return showError(decision.error); }
     // More than the standard allowance: a whole number of GPU hours, more than none.
-    var more = el('pfMore').checked, gpuHours = 0;
+    var more = project && el('pfMore').checked, gpuHours = 0;
     if (more) {
       gpuHours = Math.round(Number(String(el('pfGpuHours').value).replace(/[,\s]/g, '')));
       if (!isFinite(gpuHours) || gpuHours <= 0) return showError('Give the GPU hours it needs.');
@@ -115,12 +154,12 @@
     }
     // A project led elsewhere may have its channel in another Slack and its meetings
     // organised by another group: left empty, BOLD.OS makes neither (#169).
-    var noChannel = !channelInput.value.trim(), noMeeting = !el('pmTime').value;
+    var noChannel = !channelInput.value.trim(), noMeeting = !project || !el('pmTime').value;
     var channel = noChannel ? { name: '' } : normalizeProjectChannel(channelInput.value);
     if (channel.error) return showError(channel.error);
     var meeting = noMeeting ? null : readMeetingEntry();
     if (meeting && meeting.error) return showError(meeting.error);
-    var repo = readRepoEntry();
+    var repo = project ? readRepoEntry() : null;
     if (repo && repo.error) return showError(repo.error);
     keywordField.addTyped();
     errorBox.hidden = true;
@@ -129,18 +168,19 @@
     // Approved at once, or once a PI or admin approves it (or 7 days pass): the rest happens then.
     var now = internal() && !more, asks = more ? gpuHours.toLocaleString('en-GB') + ' GPU hours' : 'the standard compute allowance';
     var later = function(t){ return now ? t : 'Once approved: ' + t.charAt(0).toLowerCase() + t.slice(1); };
-    var first = now ? 'Register it, with the standard compute allowance: it\u2019s approved at once'
+    var first = !project ? (now ? 'Register it: it\u2019s approved at once' : 'Send it to the PIs and admins to approve')
+      : now ? 'Register it, with the standard compute allowance: it\u2019s approved at once'
       : internal() ? 'Send it to the PIs and admins, asking for ' + asks + ': approved by itself if nobody decides within 7 days'
       : 'Send it to the PIs and admins to approve, asking for ' + asks;
     var plan = decision.plan;
-    var verifierSummary = plan.mode === 'linked'
+    var verifierSummary = !plan ? null : plan.mode === 'linked'
       ? 'Link ' + plan.releaseIds.length + (plan.releaseIds.length === 1 ? ' verifier release' : ' verifier releases') + ' to this project'
       : plan.mode === 'benchmark' ? 'Record that this project is building a benchmark and needs no separate verifier'
       : 'Record the reason for deferral and the expected verifier onboarding time (' + plan.expectedOnboarding + ')';
-    BOLD.confirmAlways({ title: (now ? 'Register' : 'Propose') + ' \u201c' + title + '\u201d?', go: now ? 'Register' : 'Propose', effects: [{ text: first }, {text:verifierSummary}].concat(channelEffects.map(function(t){ return { key: 'channel', text: later(t) }; })).concat([
+    BOLD.confirmAlways({ title: (now ? 'Register' : 'Propose') + ' \u201c' + title + '\u201d?', go: now ? 'Register' : 'Propose', effects: [{ text: first }].concat(verifierSummary ? [{ text: verifierSummary }] : [], channelEffects.map(function(t){ return { key: 'channel', text: later(t) }; })).concat([
       { key: 'announce', text: later('Announce it in #all-active-projects on Slack') },
       meeting ? { key: 'meeting', text: later('Make its meeting on Google Calendar, ' + meetingText(meeting) + ', ' + meetVia(meeting) + ' (Google emails you the invitation)') } : null,
-      { key: 'docs', text: later('Make its slides and notes on Google Drive') },
+      project ? { key: 'docs', text: later('Make its slides and notes on Google Drive') } : null,
       repo && repo.template ? { key: 'repo', text: later('Make its GitHub repository in bold-lab-ai, from the ' + repo.template + ' template') }
         : repo && repo.name ? { key: 'repo', text: later('Link bold-lab-ai/' + repo.name.replace(/^.*\//, '') + ' and give the project\u2019s people with GitHub write access to it') } : null].filter(Boolean)) }).then(function(ok){
       if (!ok || !me || me.uid !== submitter) return;
@@ -148,14 +188,15 @@
       if (noChannel) skip.channel = true;
       if (noMeeting) skip.meeting = true;
       if (!repo) skip.repo = true;
-      register(title, abstractText, channel, meeting, repo, skip, more, gpuHours, problem, plan);
+      if (!project) skip.docs = true;
+      register(title, abstractText, channel, meeting, repo, skip, more, gpuHours, project ? problem : '', plan, links);
     });
   });
 
-  function register(title, abstractText, channel, meeting, repo, skip, more, gpuHours, problem, plan){
+  function register(title, abstractText, channel, meeting, repo, skip, more, gpuHours, problem, plan, links){
     submitBtn.disabled = true;
     var keywords = keywordField.get();
-    var key = JSON.stringify([me.uid, title, abstractText, keywords, channel.name, meeting, repo, skip, more, gpuHours, problem, plan]);
+    var key = JSON.stringify([me.uid, title, abstractText, keywords, channel.name, meeting, repo, skip, more, gpuHours, problem, plan, links]);
     // Its channel is made (or linked) once it's approved (projectProposal), under this name.
     Promise.resolve(null).then(function(){
       // A project is a card (card-model.js) \u2014 the same one "+ Register paper" makes.
@@ -163,9 +204,11 @@
       var card = makeRegisteredCard({ name: me.displayName, email: me.email }, {
         title: title, abstractText: abstractText, keywords: keywords, slackChannel: ''
       });
-      card.openProblemId=problem;
-      card.verificationPlan=plan;
+      if (problem) { card.openProblemId = problem; card.verificationPlan = plan; }
       card.setUpChannel = channel.name && !skip.channel ? '#' + channel.name : '';
+      // Its level (none for a stepping stone, as every project from before) and what it's part of.
+      if (links.level !== 'project') card.level = links.level;
+      card.parents = links.parents; card.problems = links.problems; card.connection = links.connection;
       card.proposal = { status: 'proposed', more: more, at: Date.now(), by: me.email };
       if (more) card.proposal.gpuHours = gpuHours;
       // The server sets up the meeting, slides, notes and repository from these (onProjectWritten),
@@ -190,9 +233,9 @@
       var code = err && err.code;
       var recovery = '';
       if (code === 'functions/failed-precondition') {
-        var updated = await Promise.all([loadProblems(), plan.mode === 'linked' ? verifier.refresh() : null]);
+        var updated = await Promise.all([loadProblems(), plan && plan.mode === 'linked' ? verifier.refresh() : null]);
         recovery = updated[1];
-        if (updated[0] && !Array.from(el('pfProblem').options).some(function(option){ return option.value === problem; })) {
+        if (problem && updated[0] && !Array.from(el('pfProblem').options).some(function(option){ return option.value === problem; })) {
           recovery = 'The selected problem is no longer open. Choose another problem.';
         }
       }
