@@ -175,19 +175,21 @@
   });
   window.addEventListener('pointerup', function(){ if (drag && drag.moved) graph.dataset.dragged = '1'; drag = null; graph.classList.remove('is-dragging'); });
 
-  /* ---------- Topics, as Prezi: frames within frames, flown into ---------- */
+  /* ---------- Topics, as Prezi: sets within sets, flown into ---------- */
   // The stepping stones as a topic tree (research-map.js topicTree: topics, a big one's sub-topics, then the
-  // projects), each a frame inside its parent's (frameLayout). Clicking a frame flies into it; clicking a project
-  // flies into its card (its abstract, people, what it's part of). Esc or Back flies out a level; the arrows go to
-  // the next or previous at the same level; the breadcrumb says where you are. The wheel and dragging roam freely.
-  // What's drawn in full depends on how big it is on screen (detailLevel): a frame's name, a project's title, its card.
+  // projects), drawn as sets (topicGraph): each topic a circle, placed by how alike the topics are; inside, each
+  // stepping stone a point, placed by how alike it is to the others, so nearer is more alike; faint lines join each
+  // to its most alike (nearLinks). Clicking a set flies into it; clicking a point flies to it and opens its card.
+  // Esc, Back or the empty canvas flies out a level; the arrows go to the next or previous at the same level; the
+  // breadcrumb says where you are. The wheel and dragging roam freely. Names show once they're big enough to read,
+  // and only where there's room (detailLevel).
   var prezi = null, focus = 'all', flying = 0;
   var PW = 1600, PH = 1000;
   function preziData(){
-    var items = map.nodes.filter(function(n){ return n.kind === 'project'; });
+    var items = map.nodes.filter(function(n){ return n.kind === 'project'; }).map(function(n){ return Object.assign({}, n, { pid: n.id }); });
     var key = items.map(function(n){ return n.id; }).join(',');
     if (prezi && prezi.key === key) return prezi;
-    var tree = R.topicTree(items.map(function(n){ return Object.assign({}, n, { pid: n.id }); }));
+    var tree = R.topicTree(items);
     var parent = {}, byId = {}, hue = {};
     var walk = function(node, up, h){
       byId[node.id] = node; parent[node.id] = up;
@@ -195,75 +197,123 @@
       (node.children || []).forEach(function(c, i){ walk(c, node.id, up === undefined ? i % HUES.length : h); });
     };
     walk(tree, undefined, undefined);
-    prezi = { key: key, tree: tree, rect: R.frameLayout(tree, PW, PH), parent: parent, byId: byId, hue: hue };
+    prezi = { key: key, tree: tree, at: R.topicGraph(tree, items, PW, PH), links: R.nearLinks(items, 2, 0.12), parent: parent, byId: byId, hue: hue };
     if (!byId[focus]) focus = 'all';
     return prezi;
   }
   function preziSvg(){
     var P = preziData(), on = lit(), f = function(n){ return n.toFixed(2); };
-    var frames = '', leaves = '';
+    var sets = '', points = '', cards = '';
+    var count = function(x){ return x.children ? x.children.reduce(function(s, c){ return s + count(c); }, 0) : 1; };
     var walk = function(node, depth){
-      var r = P.rect[node.id], hue = P.hue[node.id] !== undefined ? ' rm-hue-' + HUES[P.hue[node.id]] : '';
+      var c = P.at[node.id], hue = P.hue[node.id] !== undefined ? ' rm-hue-' + HUES[P.hue[node.id]] : '';
       if (node.children && node.id !== 'all') {
-        var count = (function n(x){ return x.children ? x.children.reduce(function(s, c){ return s + n(c); }, 0) : 1; })(node);
-        // Its name as large as its band allows and as fits its width (capitals, spaced: about 0.78em a letter).
-        var fs = Math.min(r.h * 0.07, r.w * 0.92 / (node.name.length * 0.78));
-        frames += '<g class="rz-frame' + hue + (focus === node.id ? ' is-focus' : '') + '" data-node="' + esc(node.id) + '" data-w="' + f(r.w) + '" data-depth="' + depth + '">' +
-          '<rect class="rz-box" x="' + f(r.x) + '" y="' + f(r.y) + '" width="' + f(r.w) + '" height="' + f(r.h) + '" rx="' + f(r.w * 0.015) + '"></rect>' +
-          '<text class="rz-title" x="' + f(r.x + r.w * 0.04) + '" y="' + f(r.y + r.h * 0.1) + '" style="font-size:' + f(fs) + 'px">' + esc(node.name) + '</text>' +
-          '<text class="rz-count" x="' + f(r.x + r.w * 0.04) + '" y="' + f(r.y + r.h * 0.1 + Math.max(fs * 0.95, r.h * 0.045)) + '" style="font-size:' + f(Math.min(r.h * 0.04, fs * 0.8)) + 'px">' + count + (count === 1 ? ' project' : ' projects') + '</text></g>';
+        // A topic by its two main words (a sub-topic by all of its): its tooltip and the breadcrumb say all three.
+        var name = depth === 1 ? node.terms.slice(0, 2).join(' \u00b7 ') : node.name, label = name + '  \u00b7 ' + count(node);
+        // As wide as its circle at most; a topic's (the top level) never smaller than reads when it all fits.
+        var fs = Math.min(c.r * 0.16, c.r * 1.9 / (label.length * 0.74));
+        if (depth === 1) fs = Math.max(fs, 17);
+        sets += '<g class="rz-set' + hue + (focus === node.id ? ' is-focus' : '') + '" data-node="' + esc(node.id) + '" data-w="' + f(2 * c.r) + '" data-fs="' + f(fs) + '">' +
+          '<circle class="rz-ring" cx="' + f(c.x) + '" cy="' + f(c.y) + '" r="' + f(c.r) + '"></circle>' +
+          '<text class="rz-title" x="' + f(c.x) + '" y="' + f(c.y - c.r - fs * 0.45) + '" text-anchor="middle" style="font-size:' + f(fs) + 'px" data-len="' + label.length + '"><title>' + esc(node.name) + '</title>' + esc(name) +
+          '<tspan class="rz-count">  · ' + count(node) + '</tspan></text></g>';
       }
-      (node.children || []).forEach(function(c){ walk(c, depth + 1); });
+      (node.children || []).forEach(function(k){ walk(k, depth + 1); });
       if (!node.children) {
-        var n = node.item, k = r.w / 400, href = hrefOf(map.byId[n.id] || n);
+        var n = node.item, dot = c.r * 0.3, fsz = c.r * 0.5;
+        points += '<g class="rz-point cx-node rm-project' + hue + (on && on[n.id] ? ' is-lit' : '') + (selected === n.id ? ' is-selected' : '') + (focus === node.id ? ' is-focus' : '') +
+          '" data-node="' + esc(node.id) + '" data-id="' + esc(n.id) + '" data-r="' + f(c.r) + '" data-x="' + f(c.x) + '" data-y="' + f(c.y) + '">' +
+          '<circle class="rz-dot" cx="' + f(c.x) + '" cy="' + f(c.y) + '" r="' + f(dot) + '"></circle>' +
+          '<text class="rz-name" x="' + f(c.x + dot * 1.5) + '" y="' + f(c.y + fsz * 0.35) + '" style="font-size:' + f(fsz) + 'px">' + esc(short(n.title, 34)) + '</text>' +
+          '<title>' + esc(n.title) + '</title></g>';
+        // Its card, beside it: shown when it's flown to.
+        var k = c.r * 4.4 / 400, href = hrefOf(map.byId[n.id] || n), abs = String(n.abstract || '').replace(/\s+/g, ' ').trim();
         var ups = (n.parents || []).map(function(id){ return map.byId[id]; }).filter(Boolean).map(function(x){ return esc(x.title); }).join(', ');
-        var abs = String(n.abstract || '').replace(/\s+/g, ' ').trim();
-        leaves += '<g class="rz-leaf cx-node rm-project' + hue + (on && on[n.id] ? ' is-lit' : '') + (selected === n.id ? ' is-selected' : '') + '" data-node="' + esc(node.id) + '" data-id="' + esc(n.id) + '" data-w="' + f(r.w) + '" data-depth="' + depth + '">' +
-          '<rect class="rz-card-box" x="' + f(r.x) + '" y="' + f(r.y) + '" width="' + f(r.w) + '" height="' + f(r.h) + '" rx="' + f(r.w * 0.03) + '"></rect>' +
-          '<g transform="translate(' + f(r.x) + ',' + f(r.y) + ') scale(' + k.toFixed(5) + ')">' +
-          '<foreignObject class="rz-card" width="400" height="300"><div xmlns="http://www.w3.org/1999/xhtml" class="rz-card-in">' +
+        cards += '<g class="rz-cardg' + hue + '" data-card="' + esc(node.id) + '" transform="translate(' + f(c.x + c.r * 0.6) + ',' + f(c.y - c.r * 1.6) + ') scale(' + k.toFixed(5) + ')">' +
+          '<rect class="rz-card-box" width="400" height="300" rx="12"></rect>' +
+          '<foreignObject width="400" height="300"><div xmlns="http://www.w3.org/1999/xhtml" class="rz-card-in">' +
             '<h3>' + esc(n.title) + '</h3>' +
             ((n.people || []).length ? '<p class="rz-people">' + n.people.map(esc).join(', ') + '</p>' : '') +
             (abs ? '<p class="rz-abs">' + esc(abs.length > 420 ? abs.slice(0, 420).replace(/\s+\S*$/, '') + '…' : abs) + '</p>' : n.titleOnly ? '<p class="rz-abs">Its people see it: join it from Projects.</p>' : '') +
             '<p class="rz-part">' + (ups ? 'Part of ' + ups : 'Not linked yet') + '</p>' +
             (href ? '<a class="rz-open" href="' + esc(href) + '">Open →</a>' : '') +
-          '</div></foreignObject></g><title>' + esc(n.title) + '</title></g>';
+          '</div></foreignObject></g>';
       }
     };
     walk(P.tree, 0);
+    // How alike: a line from each to its most alike, darker the more alike.
+    var links = P.links.map(function(l){
+      var a = P.at['p:' + l.a], b = P.at['p:' + l.b];
+      if (!a || !b) return '';
+      var hot = on && on[l.a] && on[l.b];
+      return '<line class="rz-link' + (hot ? ' is-lit' : '') + '" x1="' + f(a.x) + '" y1="' + f(a.y) + '" x2="' + f(b.x) + '" y2="' + f(b.y) + '" style="opacity:' + Math.min(0.4, 0.04 + l.s * 0.5).toFixed(2) + '"><title>' + Math.round(l.s * 100) + '% alike</title></line>';
+    }).join('');
     return '<div class="cx-graph rm-zoom rz"><nav class="rz-crumbs" aria-label="Where you are"></nav>' +
       '<div class="rm-zoom-ctl view-toggle" role="group" aria-label="Zoom">' +
       '<button type="button" class="view-btn" data-zoom="in" aria-label="Zoom in">+</button><button type="button" class="view-btn" data-zoom="out" aria-label="Zoom out">−</button>' +
       '<button type="button" class="view-btn" data-zoom="fit" aria-label="All topics">⤢</button></div>' +
-      '<p class="rm-zoom-hint">Click a topic to fly in · Esc to fly out · ← → next</p>' +
+      '<p class="rm-zoom-hint">Nearer is more alike · click to fly in · Esc to fly out · ← → next</p>' +
       '<svg class="cx-svg rm-svg rz-svg rm-zoomable' + (on ? ' has-selected' : '') + '" viewBox="' + box() + '" style="height:' + Math.round(TH) + 'px; max-height:78vh"' +
-      ' preserveAspectRatio="xMidYMin meet" role="img" aria-label="Stepping stones by topic: click a topic to zoom into it">' +
-      '<g>' + frames + '</g><g>' + leaves + '</g></svg></div>';
+      ' preserveAspectRatio="xMidYMin meet" role="img" aria-label="Stepping stones by topic, nearer the more alike: click a topic to zoom into it">' +
+      '<g>' + sets + '</g><g>' + links + '</g><g>' + points + '</g><g>' + cards + '</g></svg></div>';
   }
-  // What shows depends on its size on screen: a frame's name once it's big enough to read; a project, a dot,
-  // then its title, then its whole card.
+  // What shows depends on its size on screen: a set's name once it's big enough to read; a point's name once its
+  // text is, and only where it has room (the focus's and the lit first, then the larger); a card when flown to.
   function detailLevel(){
     var svg = graph.querySelector('.rz-svg');
     if (!svg) return;
     var b = svg.getBoundingClientRect(), s = b.width ? Math.min(b.width / vb.w, (b.height || 1e9) / vb.h) : TW / vb.w;
-    svg.querySelectorAll('[data-w]').forEach(function(g){
-      var px = (+g.getAttribute('data-w')) * s, leaf = g.classList.contains('rz-leaf');
-      g.classList.toggle('is-tiny', px < (leaf ? 46 : 110));
-      if (leaf) { g.classList.toggle('is-titled', px >= 46 && px < 230); g.classList.toggle('is-open', px >= 230); }
+    // A set's name: from big enough to read to too big to be of use (it's around you then).
+    // …and only where it doesn't run into another's, the larger first.
+    var named = [];
+    Array.prototype.slice.call(svg.querySelectorAll('.rz-set')).sort(function(a, b){ return (+b.getAttribute('data-w')) - (+a.getAttribute('data-w')); }).forEach(function(g){
+      var fs = +g.getAttribute('data-fs'), px = fs * s, t = g.querySelector('.rz-title'), x = +t.getAttribute('x'), y = +t.getAttribute('y'), half = (+t.getAttribute('data-len')) * fs * 0.39;
+      var bx = [x - half, y - fs, x + half, y + fs * 0.3];
+      var ok = (+g.getAttribute('data-w')) * s >= 120 && px >= 9 && px <= 46 && !named.some(function(o){ return bx[0] < o[2] && bx[2] > o[0] && bx[1] < o[3] && bx[3] > o[1]; });
+      if (ok) named.push(bx);
+      g.classList.toggle('is-tiny', !ok);
+    });
+    // A point's name doesn't run into a set's either.
+    var taken = named.slice(), pts = Array.prototype.slice.call(svg.querySelectorAll('.rz-point'));
+    // Every dot is in the way of every name but its own.
+    var dots = pts.map(function(g){ var r = +g.getAttribute('data-r') * 0.35, x = +g.getAttribute('data-x'), y = +g.getAttribute('data-y'); return { g: g, b: [x - r, y - r, x + r, y + r] }; });
+    var inView = function(x, y){ return x > vb.x && x < vb.x + vb.w && y > vb.y && y < vb.y + vb.h; };
+    pts.sort(function(p, q){
+      var rank = function(g){ return g.classList.contains('is-focus') || g.classList.contains('is-selected') ? 0 : g.classList.contains('is-lit') ? 1 : 2; };
+      return rank(p) - rank(q) || (+q.getAttribute('data-r')) - (+p.getAttribute('data-r'));
+    });
+    pts.forEach(function(g){
+      var r = +g.getAttribute('data-r'), x = +g.getAttribute('data-x'), y = +g.getAttribute('data-y'), t = g.querySelector('.rz-name');
+      // Readable, and not so big it's in the way (or its card is open).
+      var readable = r * 0.5 * s >= 10 && r * 0.5 * s <= 30 && !(g.classList.contains('is-focus') && r * 4.4 * s >= 220), len = 0;
+      try { len = t.getComputedTextLength(); } catch (e){}
+      if (!len) len = t.textContent.length * r * 0.5 * 0.55;
+      var bx = [x - r * 0.3, y - r * 0.4, x + r * 0.45 + len, y + r * 0.4];
+      var hit = function(o){ return bx[0] < o[2] && bx[2] > o[0] && bx[1] < o[3] && bx[3] > o[1]; };
+      var free = readable && inView(x, y) && !taken.some(hit) && !dots.some(function(d){ return d.g !== g && hit(d.b); });
+      if (free) taken.push(bx);
+      g.classList.toggle('is-named', free);
+    });
+    svg.querySelectorAll('.rz-cardg').forEach(function(g){
+      var id = g.getAttribute('data-card'), r = prezi && prezi.at[id] ? prezi.at[id].r : 0;
+      g.classList.toggle('is-open', id === focus && r * 4.4 * s >= 220);
     });
   }
-  // The box that shows `id` whole, with a margin, at the map's shape.
+  // The box that shows `id` whole, with a margin, at the map's shape: a set's circle; a point with its card.
   function boxOf(id){
-    var r = prezi.rect[id], m = id === 'all' ? 0 : 0.06, w = r.w * (1 + 2 * m), h = r.h * (1 + 2 * m);
+    var c = prezi.at[id], leaf = !prezi.byId[id].children;
+    var cx = leaf ? c.x + c.r * 2.4 : c.x, cy = c.y, half = id === 'all' ? null : leaf ? c.r * 3.2 : c.r * 1.12;
+    if (!half) return { x: 0, y: 0, w: PW, h: PH };
+    var w = 2 * half, h = 2 * half * (leaf ? 0.75 : 1.08);
     if (w / h < TW / TH) w = h * TW / TH; else h = w * TH / TW;
-    return { x: r.x + r.w / 2 - w / 2, y: r.y + r.h / 2 - h / 2, w: w, h: h };
+    return { x: cx - w / 2, y: cy - h / 2 - (leaf ? 0 : half * 0.06), w: w, h: h };
   }
   // Flies to `id`: the middle moves and the width zooms (in proportion), eased in and out.
   function flyTo(id){
-    if (!prezi || !prezi.rect[id]) return;
+    if (!prezi || !prezi.at[id]) return;
     focus = id;
     crumbs();
-    graph.querySelectorAll('.rz-frame').forEach(function(g){ g.classList.toggle('is-focus', g.getAttribute('data-node') === id); });
+    graph.querySelectorAll('.rz-set, .rz-point').forEach(function(g){ g.classList.toggle('is-focus', g.getAttribute('data-node') === id); });
     var from = { x: vb.x, y: vb.y, w: vb.w, h: vb.h }, to = boxOf(id), t0 = 0, run = ++flying;
     var reduce = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches, D = reduce ? 1 : 650;
     var step = function(t){
@@ -397,16 +447,16 @@
     if (graph.dataset.dragged) { delete graph.dataset.dragged; return; }
     if (opts.view === 'topics') {
       // A link on a card goes where it says; a frame or a card flies into it; the empty canvas flies out a level.
-      if (e.target.closest('a')) return;
+      if (e.target.closest('a') || e.target.closest('[data-card]')) return;
       var fr = e.target.closest('[data-node]');
       if (fr) {
         var id = fr.getAttribute('data-node');
-        if (id === focus && fr.classList.contains('rz-leaf')) { selected = fr.getAttribute('data-id'); detail(); return; }
+        if (id === focus && fr.classList.contains('rz-point')) { selected = fr.getAttribute('data-id'); detail(); return; }
         // From far off, one level at a time: into the frame on the way to it under where you are.
         var path = [], x = id;
         while (x !== undefined && x !== focus) { path.unshift(x); x = prezi.parent[x]; }
         flyTo(x === focus && path.length ? path[0] : id);
-        if (fr.classList.contains('rz-leaf') && (x !== focus || path.length === 1)) { selected = fr.getAttribute('data-id'); detail(); }
+        if (fr.classList.contains('rz-point') && (x !== focus || path.length === 1)) { selected = fr.getAttribute('data-id'); detail(); }
       } else if (focus !== 'all' && e.target.closest('svg')) flyTo(prezi.parent[focus]);
       return;
     }

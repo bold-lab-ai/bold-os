@@ -69,30 +69,28 @@ main{max-width:var(--content-max); margin:0 auto; padding:8px var(--gutter) 24px
 /* A moonshot's link up to its northstar: quieter (Lineage has them plainly), lit when chosen. */
 .rm-topics .cx-edge.rm-up:not(.is-lit){opacity:.16; stroke-dasharray:2 4;}
 
-/* Topics, as Prezi (#248): frames within frames on the page's paper, each topic in its hue; what's drawn in
-   full depends on its size on screen (is-tiny, is-titled, is-open: detailLevel in pages/research-map.js). */
+/* Topics, as Prezi (#248): sets within sets on the page's paper, each topic in its hue, nearer is more alike;
+   names show by size on screen and room (is-tiny, is-named, is-open: detailLevel in pages/research-map.js). */
 .rz-svg{display:block; width:100%; overflow:hidden; cursor:grab; user-select:none;}
 .is-dragging .rz-svg{cursor:grabbing;}
-.rz-frame{cursor:zoom-in;}
-.rz-frame.is-focus{cursor:default;}
-.rz-box{fill:color-mix(in srgb, currentColor 5%, var(--paper)); stroke:color-mix(in srgb, currentColor 35%, transparent); stroke-width:1.2; vector-effect:non-scaling-stroke; transition:stroke .2s;}
-.rz-frame:hover > .rz-box{stroke:currentColor;}
-.rz-frame.is-focus > .rz-box{stroke:color-mix(in srgb, currentColor 55%, transparent);}
-.rz-title{font-family:var(--sans); font-weight:700; letter-spacing:.06em; text-transform:uppercase; fill:currentColor;}
-.rz-count{font-family:var(--sans); fill:var(--muted);}
-.rz-frame.is-tiny .rz-title, .rz-frame.is-tiny .rz-count{opacity:0;}
-.rz-title, .rz-count{transition:opacity .2s;}
-.rz-leaf{cursor:zoom-in;}
-.rz-card-box{fill:var(--paper); stroke:color-mix(in srgb, currentColor 45%, transparent); stroke-width:1; vector-effect:non-scaling-stroke;}
-.rz-leaf:hover .rz-card-box, .rz-leaf.is-selected .rz-card-box{stroke:currentColor; stroke-width:2;}
-.rz-leaf.is-tiny .rz-card-box{fill:color-mix(in srgb, currentColor 28%, var(--paper));}
-.rz-card{opacity:0; pointer-events:none; transition:opacity .25s;}
-.rz-leaf.is-open .rz-card, .rz-leaf.is-titled .rz-card{opacity:1;}
-.rz-leaf.is-open .rz-card{pointer-events:auto;}
-/* Titled (middling size): only its title, large, in the middle of the card. */
-.rz-leaf.is-titled .rz-card-in{display:flex; align-items:center; justify-content:center; text-align:center; padding:26px;}
-.rz-leaf.is-titled .rz-card-in > :not(h3){display:none;}
-.rz-leaf.is-titled .rz-card-in h3{font-size:40px; line-height:1.15; margin:0; display:-webkit-box; -webkit-line-clamp:4; -webkit-box-orient:vertical; overflow:hidden;}
+.rz-set{cursor:zoom-in;}
+.rz-set.is-focus{cursor:default;}
+.rz-ring{fill:color-mix(in srgb, currentColor 6%, transparent); stroke:color-mix(in srgb, currentColor 40%, transparent); stroke-width:1.2; vector-effect:non-scaling-stroke; transition:stroke .2s;}
+.rz-set:hover > .rz-ring{stroke:currentColor;}
+.rz-title{font-family:var(--sans); font-weight:700; letter-spacing:.06em; text-transform:uppercase; fill:currentColor; transition:opacity .2s;}
+.rz-count{font-weight:400; fill:var(--muted); letter-spacing:0;}
+.rz-set.is-tiny .rz-title{opacity:0;}
+.rz-link{stroke:var(--ink); stroke-width:1; vector-effect:non-scaling-stroke;}
+.rz-link.is-lit{stroke:var(--accent); opacity:.9 !important; stroke-width:1.6;}
+.rz-point{cursor:zoom-in;}
+.rz-dot{fill:color-mix(in srgb, currentColor 30%, var(--paper)); stroke:currentColor; stroke-width:1.4; vector-effect:non-scaling-stroke; transition:fill .15s;}
+.rz-point:hover .rz-dot, .rz-point.is-focus .rz-dot, .rz-point.is-selected .rz-dot{fill:currentColor;}
+.rz-name{font-family:var(--sans); fill:var(--ink); paint-order:stroke; stroke:var(--paper); stroke-width:.25em; stroke-linejoin:round; opacity:0; pointer-events:none; transition:opacity .15s;}
+.rz-point.is-named .rz-name, .rz-point:hover .rz-name{opacity:1;}
+.rz-svg.has-selected .rz-point:not(.is-lit){opacity:.3;}
+.rz-cardg{opacity:0; pointer-events:none; transition:opacity .25s;}
+.rz-cardg.is-open{opacity:1; pointer-events:auto;}
+.rz-card-box{fill:var(--paper); stroke:currentColor; stroke-width:1.2; vector-effect:non-scaling-stroke; filter:drop-shadow(0 2px 6px color-mix(in srgb, var(--shade) 18%, transparent));}
 .rz-card-in{box-sizing:border-box; width:400px; height:300px; padding:18px 20px; overflow:hidden; font-family:var(--sans); font-size:13px; line-height:1.45; color:var(--ink-soft);}
 .rz-card-in h3{margin:0 0 6px; font-family:var(--serif); font-size:20px; line-height:1.2; color:var(--ink);}
 .rz-card-in p{margin:0 0 7px;}
@@ -100,7 +98,6 @@ main{max-width:var(--content-max); margin:0 auto; padding:8px var(--gutter) 24px
 .rz-abs{display:-webkit-box; -webkit-line-clamp:7; -webkit-box-orient:vertical; overflow:hidden;}
 .rz-part{font-size:12px; color:var(--muted);}
 .rz-open{font-size:13px; color:var(--link);}
-.rz-svg.has-selected .rz-leaf:not(.is-lit){opacity:.3;}
 /* Where you are, over the canvas. */
 .rz-crumbs{position:absolute; top:10px; left:12px; right:64px; z-index:1; display:flex; flex-wrap:wrap; align-items:baseline; gap:4px 8px;
   font-family:var(--sans); font-size:13px; pointer-events:none;}

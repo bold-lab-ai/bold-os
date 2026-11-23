@@ -113,10 +113,13 @@ test('Topics as Prezi: a tree of topics (a big one split again), framed inside e
   const many = items.slice(0, 12).map((i, x) => Object.assign({}, i, { pid: 'b' + x }));
   const one = R.topicTree(many.concat([{ pid: 'z1', title: 'robots', keywords: ['robotics'] }, { pid: 'z2', title: 'robots two', keywords: ['robotics'] }, { pid: 'z3', title: 'robots three', keywords: ['robotics'] }]));
   one.children.forEach((t) => { if (t.children.some((x) => x.children)) t.children.forEach((sub) => sub.terms.forEach((w) => assert.ok(!t.terms.includes(w)))); });
-  const rect = R.frameLayout(tree, 1600, 1000);
-  const inside = (a, b) => a.x >= b.x - 0.01 && a.y >= b.y - 0.01 && a.x + a.w <= b.x + b.w + 0.01 && a.y + a.h <= b.y + b.h + 0.01;
-  const check = (n) => (n.children || []).forEach((c) => { assert.ok(inside(rect[c.id], rect[n.id]), c.id + ' inside ' + n.id); check(c); });
+  // As sets: every element inside its set, sets inside theirs, no two siblings overlapping; nearer is more alike.
+  const at = R.topicGraph(tree, items, 1600, 1000);
+  const inside = (a, b) => Math.hypot(a.x - b.x, a.y - b.y) + a.r <= b.r + 0.5;
+  const check = (n) => (n.children || []).forEach((c) => { if (n.id !== 'all') assert.ok(inside(at[c.id], at[n.id]), c.id + ' inside ' + n.id); check(c); });
   check(tree);
-  const kids = tree.children.map((c) => rect[c.id]);
-  kids.forEach((a, i) => kids.forEach((b, j) => { if (i < j) assert.ok(a.x + a.w <= b.x + 0.01 || b.x + b.w <= a.x + 0.01 || a.y + a.h <= b.y + 0.01 || b.y + b.h <= a.y + 0.01, 'frames don’t overlap'); }));
+  const sibs = (n) => { const k = n.children || []; k.forEach((a, i) => k.forEach((b, j) => { if (i < j) assert.ok(Math.hypot(at[a.id].x - at[b.id].x, at[a.id].y - at[b.id].y) >= at[a.id].r + at[b.id].r - 0.5, a.id + ' and ' + b.id + ' overlap'); })); k.forEach(sibs); };
+  sibs(tree);
+  const links = R.nearLinks(items, 2, 0.12);
+  assert.ok(links.length && links.every((l) => l.s >= 0.12 && l.a !== l.b));
 });
