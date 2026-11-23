@@ -1,13 +1,9 @@
-// The Map (research-map.html, #248): BOLD's northstars, moonshots, stepping stones and the problems they
-// explore, read from researchMap (functions/index.js), in two views drawn as Network's are (connections.js's
-// classes, bold.css):
-// - Lineage: a tree, as People › Network › Lineage: each northstar, its moonshots under it, their stepping
-//   stones under those (one under several is shown under each), and what isn't linked yet at the end; who is
-//   on each beside it.
-// - Topics: everything clustered by what it's about (its keywords, title and abstract: research-map.js), each
-//   cluster named by its words; zoom with the wheel or the buttons, drag to move around.
-// Clicking anything lights everything above and below it and says what it is below the map; a double click
-// (or Enter) opens its page. Find lights what matches; Who lights what a person is on.
+// The Map (research-map.html, #248): BOLD's northstars, moonshots and stepping stones, read from researchMap
+// (functions/index.js), as Lineage: a board (research-map.js topicBoard), each topic of stepping stones a card
+// down either side, the northstars across the top, the moonshots down the middle, linked to what's part of them;
+// zoomed with the wheel or the buttons, dragged around. Clicking anything lights everything above and below it
+// and says what it is below the map; a double click (or Enter) opens its page. Find lights what matches; Who
+// lights what a person is on.
 (function(){
   'use strict';
   var R = window.BoldResearch, esc = BOLD.escapeHtml;
@@ -15,7 +11,7 @@
   if (!graph || !R || !BOLD.getAuth()) return;
   var el = function(id){ return document.getElementById(id); };
   var data = null, map = null, selected = '', find = '', person = '';
-  var opts = { view: 'lineage', problems: true, people: true, proposed: true, completed: false };
+  var opts = { proposed: true, completed: false };
   var KEY = 'boldMap:opts';
   try { var kept = JSON.parse(localStorage.getItem(KEY) || 'null'); if (kept) Object.keys(opts).forEach(function(k){ if (typeof kept[k] === typeof opts[k]) opts[k] = kept[k]; }); } catch (e){}
   var save = function(){ try { localStorage.setItem(KEY, JSON.stringify(opts)); } catch (e){} };
@@ -31,7 +27,7 @@
   // What's shown, as the toggles have it.
   function build(){
     var items = (data.items || []).filter(function(i){ return (opts.proposed || i.group !== 'proposed') && (opts.completed || i.group !== 'completed'); });
-    map = R.buildMap(items, opts.problems ? data.problems : []);
+    map = R.buildMap(items, []);
     var linked = {};
     map.edges.forEach(function(e){ linked[e.from] = linked[e.to] = true; });
     map.nodes = map.nodes.filter(function(n){ return n.kind !== 'problem' || linked[n.id]; });
@@ -70,64 +66,9 @@
     return 'cx-node rm-' + n.kind + (n.group === 'proposed' ? ' is-proposed' : '') + (n.group === 'completed' ? ' is-completed' : '') +
       (n.kind !== 'problem' && !R.linked(n) ? ' is-unlinked' : '') + (on && on[n.id] ? ' is-lit' : '') + (selected === n.id ? ' is-selected' : '');
   }
-  function peopleText(n){
-    if (!opts.people || !(n.people || []).length) return '';
-    var p = n.people;
-    return p.slice(0, 4).join(', ') + (p.length > 4 ? ' +' + (p.length - 4) : '');
-  }
   function tip(n){ return esc(n.title + (n.kind === 'problem' ? ' (problem)' : ' · ' + R.NAMES[n.kind]) + ((n.people || []).length ? ' · ' + n.people.join(', ') : '')); }
 
-  /* ---------- Lineage: a tree, as People's ---------- */
-  function lineageSvg(){
-    var on = lit(), kids = {}, rows = [];
-    // Under each: what's part of it, and a stepping stone's problems (those it explores and those of its own).
-    map.edges.forEach(function(e){ var up = e.kind === 'explores' ? e.from : e.to, down = e.kind === 'explores' ? e.to : e.from; (kids[up] = kids[up] || []).push(down); });
-    var byTitle = function(a, b){ return String(map.byId[a].title).localeCompare(String(map.byId[b].title)); };
-    var shown = {};
-    var walk = function(id, depth, parent){
-      var again = !!shown[id];
-      rows.push({ id: id, depth: depth, parent: parent, again: again });
-      shown[id] = true;
-      if (!again) { var at = rows.length - 1; (kids[id] || []).slice().sort(byTitle).forEach(function(c){ walk(c, depth + 1, at); }); }
-    };
-    var of = function(kind){ return map.nodes.filter(function(n){ return n.kind === kind; }).map(function(n){ return n.id; }).sort(byTitle); };
-    of('northstar').forEach(function(id){ walk(id, 0, -1); });
-    // What isn't under anything yet, under "Not linked yet" (and a problem whose project isn't shown, at the end too).
-    var rest = of('moonshot').concat(of('project'), of('problem')).filter(function(id){ return !shown[id]; });
-    if (rest.length) {
-      rows.push({ head: 'Not linked yet', depth: 0, parent: -1 });
-      var at = rows.length - 1;
-      rest.forEach(function(id){ if (!shown[id]) walk(id, 1, at); });
-    }
-    if (!rows.length) return '<p class="proj-msg">Nothing yet.</p>';
-    var COL = 36, ROW = 30, TOP = 18;
-    var width = rows.reduce(function(w, r){
-      var n = r.head ? null : map.byId[r.id], extra = n ? peopleText(n).length * 6.5 : 0;
-      return Math.max(w, 24 + r.depth * COL + 14 + (r.head ? r.head.length : String(n.title).length) * 8.6 + (extra ? 16 + extra * 1.1 : 0));
-    }, 0);
-    var W = Math.max(760, Math.ceil(width) + 20), H = TOP + rows.length * ROW + 10;
-    rows.forEach(function(r, i){ r.x = 24 + r.depth * COL; r.y = TOP + i * ROW + ROW / 2; });
-    var lines = rows.map(function(r){
-      if (r.parent < 0) return '';
-      var p = rows[r.parent], hot = on && !p.head && on[p.id] && on[r.id];
-      return '<path class="cx-edge cx-elbow' + (hot ? ' is-lit' : '') + '" d="M' + p.x + ' ' + (p.y + 7) + 'V' + r.y + 'H' + (r.x - 9) + '"></path>';
-    }).join('');
-    var nodes = rows.map(function(r){
-      if (r.head) return '<g class="rm-head" transform="translate(' + r.x + ',' + r.y + ')"><text class="cx-label rm-head-label" x="-6" y="4">' + esc(r.head) + '</text></g>';
-      var n = map.byId[r.id], who = peopleText(n);
-      return '<g class="' + nodeCls(n, on) + (r.again ? ' is-again' : '') + '" data-id="' + esc(n.id) + '" transform="translate(' + r.x + ',' + r.y + ')" tabindex="0" role="button">' +
-        mark(n.kind, n.kind === 'northstar' ? 7 : n.kind === 'moonshot' ? 6 : 5) +
-        '<text class="cx-label" x="13" y="4">' + esc(n.title) +
-        (n.group === 'proposed' ? '<tspan class="cx-how" dx="8">proposed</tspan>' : '') +
-        (r.again ? '<tspan class="cx-how" dx="8">also above</tspan>' : '') +
-        (who && !r.again ? '<tspan class="cx-moves" dx="10">' + esc(who) + '</tspan>' : '') + '</text>' +
-        '<title>' + tip(n) + '</title></g>';
-    }).join('');
-    return '<div class="cx-graph cx-scroll"><svg class="cx-svg cx-lineage rm-svg' + (on ? ' has-selected' : '') + '" viewBox="0 0 ' + W + ' ' + H + '" style="width:' + W + 'px; max-width:none" role="img" aria-label="Northstars, their moonshots and their stepping stones">' +
-      lines + nodes + '</svg></div>';
-  }
-
-  /* ---------- Topics: clustered by what they're about, zoomable ---------- */
+  /* ---------- Lineage: a board, zoomable ---------- */
   // A board (research-map.js topicBoard): each topic a card listing its stepping stones, cards down both sides,
   // moonshots and northstars in the middle, linked to what's part of them. One unit is one pixel when it all
   // fits, so its text is the page's size; zooming in makes everything bigger.
@@ -232,7 +173,7 @@
   function draw(){
     if (!data) return;
     build();
-    graph.innerHTML = opts.view === 'topics' ? topicsSvg() : lineageSvg();
+    graph.innerHTML = topicsSvg();
     graph.hidden = false;
     el('rmMsg').hidden = true;
     legend();
@@ -240,7 +181,7 @@
   }
   // What's lit changed: Topics keeps where it's zoomed to.
   function relight(){
-    if (opts.view !== 'topics' || !map) return draw();
+    if (!map) return draw();
     var keep = vb;
     graph.innerHTML = topicsSvg();
     setBox(keep);
@@ -250,9 +191,9 @@
   function legend(){
     var key = function(kind, text){ return '<span class="cx-key"><svg class="cx-icon rm-' + kind + '" viewBox="-8 -8 16 16" aria-hidden="true">' + mark(kind, 5) + '</svg><span>' + text + '</span></span>'; };
     var html = '<div class="cx-bar cx-legend"><span class="cx-bar-row"><span class="cx-bar-label">Key</span><span class="cx-bar-items">' +
-      key('northstar', 'Northstar') + key('moonshot', 'Moonshot') + key('project', 'Stepping stone') + (opts.problems ? key('problem', 'Problem') : '') +
+      key('northstar', 'Northstar') + key('moonshot', 'Moonshot') + key('project', 'Stepping stone') +
       '</span></span>';
-    if (opts.view === 'topics' && topic) html += '<span class="cx-bar-row"><span class="cx-bar-label">Topics</span><span class="cx-bar-items">' + topic.cl.clusters.map(function(c, j){
+    if (topic) html += '<span class="cx-bar-row"><span class="cx-bar-label">Topics</span><span class="cx-bar-items">' + topic.cl.clusters.map(function(c, j){
       return c.size ? '<span class="cx-key rm-hue-' + HUES[j % HUES.length] + '"><svg class="cx-icon" viewBox="-7 -7 14 14" aria-hidden="true"><circle class="rm-swatch" r="5"></circle></svg><span>' + esc(c.terms.join(', ')) + ' (' + c.size + ')</span></span>' : '';
     }).join('') + '</span></span>';
     el('rmLegend').innerHTML = html + '</div>';
@@ -272,7 +213,7 @@
     else html += '<dt>' + (n.kind === 'problem' ? 'Of' : 'Part of') + '</dt><dd>' + (ups.length ? list(ups) : '<span class="level-badge lv-unlinked">Not linked yet</span>') + '</dd>';
     if (n.connection) html += '<dt>How</dt><dd>' + esc(n.connection) + '</dd>';
     if (n.kind !== 'problem') html += '<dt>Made of</dt><dd>' + list(downs) + '</dd>';
-    if (topic && opts.view === 'topics' && topic.cl.of[n.id] !== undefined) html += '<dt>Topic</dt><dd>' + esc(topic.cl.clusters[topic.cl.of[n.id]].terms.join(', ')) + '</dd>';
+    if (topic && topic.cl.of[n.id] !== undefined) html += '<dt>Topic</dt><dd>' + esc(topic.cl.clusters[topic.cl.of[n.id]].terms.join(', ')) + '</dd>';
     if ((n.people || []).length) html += '<dt>People</dt><dd>' + n.people.map(esc).join(', ') + '</dd>';
     else if (n.titleOnly) html += '<dt>People</dt><dd><span class="detail-muted">Its people see them</span></dd>';
     box.innerHTML = html + '</dl>';
@@ -284,16 +225,12 @@
     var people = {};
     (data ? data.items : []).forEach(function(i){ (i.people || []).forEach(function(p){ people[p] = true; }); });
     el('rmControls').innerHTML = '<div class="cx-ctl-row">' +
-      C.pair('View', '<span class="view-toggle cx-seg" role="group" aria-label="View">' +
-        '<button type="button" class="view-btn" data-view="lineage" aria-pressed="' + (opts.view === 'lineage') + '">Lineage</button>' +
-        '<button type="button" class="view-btn" data-view="topics" aria-pressed="' + (opts.view === 'topics') + '">Topics</button></span>') +
-      C.pair('Show', '<span class="view-toggle cx-seg cx-multi" role="group" aria-label="Show">' + tog('problems', 'Problems') + tog('people', 'People') + tog('proposed', 'Proposed') + tog('completed', 'Completed') + '</span>') +
+      C.pair('Show', '<span class="view-toggle cx-seg cx-multi" role="group" aria-label="Show">' + tog('proposed', 'Proposed') + tog('completed', 'Completed') + '</span>') +
       '</div><div class="cx-ctl-row">' +
       C.pair('Find', '<input type="search" class="cx-field cx-find" id="rmFind" placeholder="A title or keyword" value="' + esc(find) + '">') +
       C.pair('Who', '<select class="cx-field" id="rmPerson"><option value="">Everyone</option>' + Object.keys(people).sort().map(function(p){
         return '<option value="' + esc(p) + '"' + (person === p ? ' selected' : '') + '>' + esc(p) + '</option>'; }).join('') + '</select>') +
       '<a class="btn-text rm-add" href="projects-register.html#level=northstar">+ Northstar</a></div>';
-    el('rmControls').querySelectorAll('[data-view]').forEach(function(b){ b.addEventListener('click', function(){ opts.view = b.getAttribute('data-view'); save(); controls(); draw(); }); });
     el('rmControls').querySelectorAll('[data-opt]').forEach(function(b){ b.addEventListener('click', function(){ var k = b.getAttribute('data-opt'); opts[k] = !opts[k]; save(); controls(); draw(); }); });
     el('rmFind').addEventListener('input', function(e){ find = e.target.value.trim(); relight(); });
     el('rmPerson').addEventListener('change', function(e){ person = e.target.value; relight(); });
