@@ -62,3 +62,12 @@ test('lineage: everything above and below', () => {
   assert.deepStrictEqual(Object.keys(R.lineage(map, 'm1')).sort(), ['m1', 'n1', 'p1']);
   assert.deepStrictEqual(Object.keys(R.lineage(map, 'n2')).sort(), ['m2', 'n2', 'p2']);
 });
+
+test('a northstar or moonshot isn’t joined: its announcement has no Join link', () => {
+  const { projectAnnouncement } = require('../functions/index.js')._internal;
+  const card = { title: 'T', submittedBy: { name: 'A' } };
+  assert.match(projectAnnouncement(card, 'https://x/p'), /Join the project/);
+  const m = projectAnnouncement(Object.assign({ level: 'moonshot' }, card), 'https://x/p');
+  assert.doesNotMatch(m, /Join the project/);
+  assert.match(m, /a new moonshot/);
+});

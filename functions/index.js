@@ -4938,14 +4938,16 @@ const ACTIVE_PROJECTS_CHANNEL = 'all-active-projects';
 function projectAnnouncement(card, url){
   const who = slackText((card.submittedBy && (card.submittedBy.name || card.submittedBy.email)) || 'Someone');
   const abstract = String(card.abstractText || '').trim().replace(/\s+/g, ' ');
-  const lines = ['🆕 ' + linkedTitle(slackText(card.title || 'Untitled project'), url) + ' — registered by ' + who];
+  const level = research.levelOf(card), kind = level === 'project' ? '' : ' (a new ' + research.NAMES[level].toLowerCase() + ')';
+  const lines = ['🆕 ' + linkedTitle(slackText(card.title || 'Untitled project'), url) + kind + ' — registered by ' + who];
   if (abstract) lines.push('> ' + slackText(abstract.length > 400 ? abstract.slice(0, 400).replace(/\s+\S*$/, '') + '…' : abstract));
   const keywords = (card.keywords || []).filter(Boolean);
   if (keywords.length) lines.push('Keywords: ' + keywords.map(slackText).join(', '));
   if (card.slackChannel) lines.push('Channel: ' + slackText(card.slackChannel));
   // Opens the project's page, which joins whoever clicked (pages/project.js, &join=1):
   // its channel, meeting, notes, slides and repository.
-  lines.push('<' + url + '&join=1|Join the project>');
+  // A northstar or moonshot isn't joined (#248): its stepping stones are.
+  if (research.levelOf(card) === 'project') lines.push('<' + url + '&join=1|Join the project>');
   return lines.join('\n');
 }
 
@@ -5476,6 +5478,8 @@ exports.projectWorkspace = onCall(
 
     if (data.action === 'join' || data.action === 'leave'){
       const joining = data.action === 'join';
+      // Northstars and moonshots aren't joined (#248): their stepping stones are. Leaving one is fine.
+      if (joining && research.levelOf(card) !== 'project') throw new HttpsError('failed-precondition', 'Only a stepping stone is joined: join one of its stepping stones.');
       if (!joining && projectMembers(card, []).indexOf(email) >= 0) {
         throw new HttpsError('failed-precondition', 'Its submitter and authors stay on the project — remove yourself from the authors first.');
       }
@@ -7583,6 +7587,7 @@ exports.projectInvite = onCall(
       const snap = await cardRefFor(id, board).get();
       if (!snap.exists) throw new HttpsError('not-found', 'That project isn’t there any more.');
       const card = snap.data(), pid = projectIdOf(card, id);
+      if (research.levelOf(card) !== 'project') throw new HttpsError('failed-precondition', 'Only a stepping stone is joined: join one of its stepping stones.');
       const ws = (await db.collection('projectWorkspaces').doc(pid).get()).data() || {};
       if ((ws.members || []).map(lowerEmail).indexOf(email) >= 0) throw new HttpsError('already-exists', 'You’re already on it.');
       const dup = await col.where('pid', '==', pid).where('email', '==', email).get();
@@ -7599,6 +7604,7 @@ exports.projectInvite = onCall(
       if (!snap.exists) throw new HttpsError('not-found', 'That project isn’t there any more.');
       const card = snap.data(), pid = projectIdOf(card, id);
       if (!(await canEditCard(email, card))) throw new HttpsError('permission-denied', 'Only the project’s submitter, authors, PIs and admins invite people to it.');
+      if (d.action === 'invite' && research.levelOf(card) !== 'project') throw new HttpsError('failed-precondition', 'Only a stepping stone has people invited to it: invite them to one of its stepping stones.');
       if (d.action === 'list') {
         const all = await col.where('pid', '==', pid).get();
         return { invites: all.docs.map((x) => Object.assign({ id: x.id }, x.data())).sort((a, b) => (a.status === 'open' ? 0 : 1) - (b.status === 'open' ? 0 : 1) || b.at - a.at).slice(0, 50) };

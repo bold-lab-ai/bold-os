@@ -693,11 +693,13 @@ function escapeHtml(s){ return BOLD.escapeHtml(s); }
     var list = memberEmails();
     var names = list.map(function(e){ var p = personByEmail(e); return esc(p && p.name || e); }).join(', ');
     return (names || missing()) + (wsMsg ? '<div class="detail-hint">' + wsMsg + '</div>' : '') +
-      (window.BoldProjectInvite ? BoldProjectInvite.html() : '');
+      (window.BoldProjectInvite && R.levelOf(card) === 'project' ? BoldProjectInvite.html() : '');
   }
   function joinButton(){
     var mine = memberEmails().some(isMe), joined = ws && (ws.joined || []).some(isMe);
     var off = wsBusy || !wsLoaded ? ' disabled' : '';
+    // A northstar or moonshot isn't joined (#248): its stepping stones are.
+    if (!mine && R.levelOf(card) !== 'project') return '';
     return !mine ? '<button class="btn-box is-primary detail-remove" type="button" data-ws="join"' + off + '>Join project</button>'
       : joined ? '<button class="btn-box detail-remove" type="button" data-ws="leave"' + off + '>Leave project</button>' : '';
   }
@@ -714,6 +716,7 @@ function escapeHtml(s){ return BOLD.escapeHtml(s); }
     joinRequested = false;
     try { history.replaceState(null, '', location.pathname + location.search + location.hash.replace(/&join=1(?=&|$)/, '')); } catch (e){}
     if (memberEmails().some(isMe)) { wsMsg = 'You\u2019re already on this project.'; return; }
+    if (R.levelOf(card) !== 'project') { wsMsg = 'A ' + R.NAMES[R.levelOf(card)].toLowerCase() + ' isn\u2019t joined: join one of its stepping stones.'; return; }
     workspaceAction('join');
   }
 
