@@ -117,7 +117,8 @@
         return;
       }
       var type = html('div','rg-type'), key = html('i','rg-key rg-key-'+node.kind); key.setAttribute('aria-hidden','true');
-      type.append(key, document.createTextNode(kinds[node.kind]+(node.archived?' · Archived':node.stage && stages[node.stage]?' · '+stages[node.stage]:'')));
+      var purpose = node.builds_benchmark ? ' · Benchmark' : '';
+      type.append(key, document.createTextNode(kinds[node.kind]+purpose+(node.archived?' · Archived':node.stage && stages[node.stage]?' · '+stages[node.stage]:'')));
       inspector.append(type,html('h3','',node.title));
       var link = html('a','rg-record',node.kind === 'problem' ? 'Open problem' : 'Open in outline');
       link.href = (node.kind === 'problem' ? 'problem.html?problem=' : 'problems.html?objective=')+encodeURIComponent(node.id); inspector.append(link);

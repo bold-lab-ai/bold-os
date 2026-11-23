@@ -49,7 +49,10 @@
     }
     function statusText(message){status.textContent = message; status.hidden = !message;}
     function note(text){return node('p', 'proj-empty', text);}
-    function stageText(item){return item.archived ? 'Archived' : STAGES[item.stage] || 'Open';}
+    function stageText(item){
+      var stage = item.archived ? 'Archived' : STAGES[item.stage] || 'Open';
+      return item.builds_benchmark ? (stage === 'Open' ? 'Benchmark' : 'Benchmark · ' + stage) : stage;
+    }
 
     function problemLink(item){
       var link = node('a', 'pb-tree-link', item.title);

@@ -163,6 +163,7 @@ function escapeHtml(s){ return BOLD.escapeHtml(s); }
   function missing(){ return '<span class="detail-muted">Not set</span>'; }
   function proposalVerifierRows(plan){
     if (!plan) return '';
+    if (plan.mode === 'benchmark') return row('Verifier at proposal', 'This project is building a benchmark. A separate verifier is not required.');
     if (plan.mode === 'deferred') return row('Verifier at proposal', 'Define verifier later') +
       row('Reason for deferral', esc(plan.reason)) + row('Expected onboarding', esc(plan.expectedOnboarding));
     if (plan.mode !== 'linked') return '';

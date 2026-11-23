@@ -32,7 +32,7 @@
   function matches(p){
     if (!q) return true;
     var paperTerms = BoldProblemPapers.unavailableReason(p.papers) ? '' : p.papers.map(function(paper){ return paper.title + ' ' + paper.venue; }).join(' ');
-    var hay = [p.title, p.objective, p.significance, p.difficulties, p.existing_solutions, (p.details || {}).collaborators, (p.projects || []).map(function(x){return x.title;}).join(' '), paperTerms, p.task_kind, p.project_title, (p.details || {}).owner, (p.evaluator || {}).commit].join(' ').toLowerCase();
+    var hay = [p.title, p.objective, p.significance, p.difficulties, p.existing_solutions, (p.details || {}).collaborators, (p.projects || []).map(function(x){return x.title;}).join(' '), paperTerms, p.task_kind, p.project_title, (p.details || {}).owner, (p.evaluator || {}).commit, p.builds_benchmark ? 'benchmark' : ''].join(' ').toLowerCase();
     return q.toLowerCase().split(/\s+/).every(function(w){ return hay.indexOf(w) >= 0; });
   }
   function row(p, expanded){
@@ -41,10 +41,10 @@
     if (p.task_kind) meta.push(esc(p.task_kind));
     if (p.evaluator) meta.push('Latest verifier v' + esc(String(p.evaluator.version)));
     var path = 'problem.html?problem=' + encodeURIComponent(p.id);
-    var missing = !p.evaluator;
+    var missing = !p.evaluator && !p.builds_benchmark;
     return '<li><div class="proj-main"><div class="pb-card-head">' +
       '<a class="proj-title" href="problem.html?problem=' + encodeURIComponent(p.id) + '">' + esc(p.title) + '</a>' +
-      (missing ? '<span class="badge pb-missing">No verifier</span>' : '') + '</div>' +
+      (p.builds_benchmark ? '<span class="badge">Benchmark</span>' : missing ? '<span class="badge pb-missing">No verifier</span>' : '') + '</div>' +
       '<span class="proj-meta">' + meta.join(' · ') + '</span>' +
       (p.objective ? '<p class="proj-abstract">' + esc(p.objective) + '</p>' : '') +
       (!BoldProblemPapers.unavailableReason(p.papers) && p.papers.length ? '<details class="pb-papers" data-problem="' + esc(p.id) + '"' + (expanded.has(p.id) ? ' open' : '') + '><summary>Papers (' + p.papers.length + ')</summary>' +

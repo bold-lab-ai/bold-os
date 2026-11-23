@@ -9,6 +9,12 @@
     fields.disabled = !canWrite || !ready || busy;
     fields.title = canWrite ? '' : BOLD.cannotReason('projects', 'edit');
   }
+  var purpose = el('pbBuildsBenchmark');
+  function showSteps(){
+    el('pbVerifierStep').textContent = purpose.checked ? 'Verifier not required' : 'Add a verifier';
+    el('pbBaselineStep').hidden = purpose.checked;
+  }
+  purpose.addEventListener('change', showSteps);
   BOLD.onAccess(function(){ canWrite = BOLD.can('projects', 'edit'); controls(); });
   function loadFamily(generation){
     var feedback = el('pbFamilyStatus'), retry = el('pbFamilyRetry');
@@ -26,6 +32,7 @@
   BOLD.onUser(function(user){
     var generation = ++epoch;
     userId = user && user.uid; ready = false; projects = []; submission = null; busy = false; form.reset(); controls();
+    showSteps();
     el('pbProjects').replaceChildren();
     familySelection = null; el('pbFamily').replaceChildren(); el('pbFamilyStatus').textContent = ''; el('pbFamilyRetry').hidden = true;
     if (!user) { status.textContent = 'Sign in to add a problem.'; return; }
@@ -44,7 +51,7 @@
     event.preventDefault();
     if (!userId || fields.disabled || !form.reportValidity()) return;
     var generation = epoch;
-    var data = { action:'create', projects:BoldProblemProjects.selected(el('pbProjects'),projects),
+    var data = { action:'create', builds_benchmark:purpose.checked, projects:BoldProblemProjects.selected(el('pbProjects'),projects),
       title:el('pbTitle').value.trim(), owner_id:el('pbDefiner').value, collaborators:el('pbCollaborators').value.trim(),
       significance:el('pbWhy').value.trim(), difficulties:el('pbDifficulties').value.trim(), existing_solutions:el('pbExisting').value.trim() };
     if (familySelection) {
@@ -54,9 +61,10 @@
     busy = true; controls();
     try {
       var choice = await BOLD.confirmAction({ title: 'Save this open problem?', go: 'Save problem', always: true,
-        effects: [{ key: 'reminders', text: 'Remind me on Slack now and every week until this problem has a registered verifier. My notification settings apply.' }] });
+        effects: data.builds_benchmark ? ['Save this as a benchmark-building problem. No separate verifier is required.'] :
+          [{ key: 'reminders', text: 'Remind me on Slack now and every week until this problem has a registered verifier. My notification settings apply.' }] });
       if (!choice || generation !== epoch) return;
-      data.reminders = !choice.skip.reminders;
+      data.reminders = !data.builds_benchmark && !choice.skip.reminders;
       var signature = JSON.stringify(data);
       if (!submission || submission.signature !== signature) submission = { signature: signature, id: crypto.randomUUID() };
       status.textContent = 'Saving…';

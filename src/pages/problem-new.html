@@ -12,11 +12,13 @@ nav: "problems.html"
 <div class="hero"><a href="problems.html">← Problem Bank</a><h1>Add a problem</h1></div>
 <main>
   <ol class="pb-steps" aria-label="Problem onboarding">
-    <li aria-current="step">Define the problem</li><li>Add a verifier</li><li>Autoresearch baseline <small>Coming soon</small></li>
+    <li aria-current="step">Define the problem</li><li id="pbVerifierStep">Add a verifier</li><li id="pbBaselineStep">Autoresearch baseline <small>Coming soon</small></li>
   </ol>
   <form class="pb-form" id="pbCreate">
     <fieldset id="pbInputs" disabled>
       <div class="field"><label for="pbTitle">Problem title</label><input id="pbTitle" required maxlength="180"></div>
+      <div class="field"><label class="pb-purpose"><input id="pbBuildsBenchmark" type="checkbox" aria-describedby="pbPurposeHint"> This problem is building a benchmark</label>
+        <small id="pbPurposeHint">You can skip the verifier when the benchmark itself is the goal.</small></div>
       <div class="field"><label for="pbDefiner">Problem definer</label><select id="pbDefiner" required><option value="">Choose a person</option></select></div>
       <div class="field"><label for="pbWhy">Why it matters</label><textarea class="no-tags" id="pbWhy" required maxlength="8000"></textarea></div>
       <div class="field"><label for="pbDifficulties">What are the difficulties?</label><textarea class="no-tags" id="pbDifficulties" required maxlength="8000"></textarea></div>

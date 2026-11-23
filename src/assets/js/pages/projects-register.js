@@ -9,6 +9,11 @@
     return firebase.app().functions('europe-west2').httpsCallable('benchmarkRegistry')(data).then(function(r){return r.data;});
   }
   var verifier = BoldProjectVerifiers.mount(function(cursor){ return registry({action:'benchmark_catalogue',cursor:cursor}); });
+  function syncProblem(){
+    var option = el('pfProblem').selectedOptions[0];
+    verifier.selectProblem(option ? option.value : '', !!(option && option.dataset.buildsBenchmark === 'true'));
+  }
+  el('pfProblem').addEventListener('change', syncProblem);
   var problemGeneration = 0, returningFromBank = false;
   async function loadProblems(){
     var generation = ++problemGeneration, select = el('pfProblem'), status = el('pfProblemStatus');
@@ -24,9 +29,14 @@
       if (generation !== problemGeneration) return false;
       var previous = select.value;
       select.replaceChildren(new Option('Choose an open problem', ''));
-      result.items.forEach(function(p){ select.add(new Option(p.title, p.id)); });
+      result.items.forEach(function(p){
+        var option = new Option(p.title, p.id);
+        if (p.builds_benchmark) option.dataset.buildsBenchmark = 'true';
+        select.add(option);
+      });
       select.value = previous;
       if (!select.value) select.selectedIndex = 0;
+      syncProblem();
       select.disabled = !result.items.length;
       status.textContent = select.disabled ? 'Add an open problem before proposing a project.' :
         previous && !select.value ? 'The selected problem is no longer open. Choose another problem.' : '';
@@ -125,6 +135,7 @@
     var plan = decision.plan;
     var verifierSummary = plan.mode === 'linked'
       ? 'Link ' + plan.releaseIds.length + (plan.releaseIds.length === 1 ? ' verifier release' : ' verifier releases') + ' to this project'
+      : plan.mode === 'benchmark' ? 'Record that this project is building a benchmark and needs no separate verifier'
       : 'Record the reason for deferral and the expected verifier onboarding time (' + plan.expectedOnboarding + ')';
     BOLD.confirmAlways({ title: (now ? 'Register' : 'Propose') + ' \u201c' + title + '\u201d?', go: now ? 'Register' : 'Propose', effects: [{ text: first }, {text:verifierSummary}].concat(channelEffects.map(function(t){ return { key: 'channel', text: later(t) }; })).concat([
       { key: 'announce', text: later('Announce it in #all-active-projects on Slack') },

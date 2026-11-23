@@ -29,13 +29,15 @@ permalink: "projects-register.html"
       <div class="field-hint" id="pfProblemHint">Can't find the appropriate problem? Define one <a id="pfProblemBank" href="problems.html" target="_blank" rel="noopener" aria-label="here, in the Problem Bank (opens in a new tab)">here</a>.</div>
     </div>
     <fieldset class="field verifier-field" id="pfVerifierField" disabled>
-      <legend>Verifiers and benchmarks</legend>
+      <legend>Verification</legend>
       <div id="pfVerifierPicker">
         <p class="field-hint">Choose one or more registered releases. You can reuse a verifier from another problem.</p>
         <div id="pfVerifierChoices" role="group" aria-label="Registered verifier releases" tabindex="-1"></div>
         <div class="field-hint"><span id="pfVerifierStatus" role="status"></span> <button type="button" class="btn-text" id="pfVerifierMore" hidden>Load more releases</button></div>
       </div>
       <label class="verifier-check"><input id="pfDeferVerifier" type="checkbox"> Define verifier later</label>
+      <label class="verifier-check"><input id="pfBuildsBenchmark" type="checkbox" aria-describedby="pfBenchmarkHint"> This project is building a benchmark</label>
+      <p id="pfBenchmarkHint" class="field-hint" hidden></p>
       <div id="pfVerifierDeferral" hidden>
         <label for="pfVerifierReason">Why can we not define a verifier right now?</label>
         <textarea id="pfVerifierReason" maxlength="2000"></textarea>

@@ -2,9 +2,10 @@
   'use strict';
   var stages = {implemented:'Implemented', checked:'Checked', validated:'Validated on the actual task'};
 
-  function readPlan(deferred, ids, reason, expected){
+  function readPlan(deferred, ids, reason, expected, buildsBenchmark){
+    if (buildsBenchmark) return {plan:{mode:'benchmark'}};
     if (!deferred) {
-      if (!ids.length) return {error:'Choose a verifier release or select “Define verifier later”.', field:'pfDeferVerifier'};
+      if (!ids.length) return {error:'Choose a verifier, defer it, or indicate that this project is building a benchmark.', field:'pfDeferVerifier'};
       if (ids.length > 100) return {error:'Choose up to 100 verifier releases.', field:'pfVerifierChoices'};
       return {plan:{mode:'linked', releaseIds:ids}};
     }
@@ -19,13 +20,29 @@
     var el = function(id){ return document.getElementById(id); };
     var field = el('pfVerifierField'), choices = el('pfVerifierChoices'), more = el('pfVerifierMore');
     var status = el('pfVerifierStatus'), defer = el('pfDeferVerifier'), reason = el('pfVerifierReason'), expected = el('pfVerifierExpected');
+    var benchmark = el('pfBuildsBenchmark'), hint = el('pfBenchmarkHint'), selectedId = '', inherited = false;
     var generation = 0, cursor = null, loading = false, retryRefresh = false, seen = new Set();
     function showMode(){
-      el('pfVerifierPicker').hidden = defer.checked;
-      el('pfVerifierDeferral').hidden = !defer.checked;
-      reason.required = expected.required = defer.checked;
+      el('pfVerifierPicker').hidden = defer.checked || benchmark.checked;
+      el('pfVerifierDeferral').hidden = !defer.checked || benchmark.checked;
+      reason.required = expected.required = defer.checked && !benchmark.checked;
+      defer.disabled = benchmark.checked;
+      benchmark.disabled = inherited;
+      hint.hidden = !benchmark.checked;
+      hint.textContent = inherited ? 'The selected problem is building a benchmark. A separate verifier is not required.'
+        : 'A separate verifier is not required for this project.';
     }
     defer.addEventListener('change', showMode);
+    benchmark.addEventListener('change', function(){
+      if (benchmark.checked) defer.checked = false;
+      showMode();
+    });
+    function selectProblem(id, buildsBenchmark){
+      if (id === selectedId && buildsBenchmark === inherited) return;
+      selectedId = id; inherited = buildsBenchmark; benchmark.checked = inherited;
+      if (inherited) defer.checked = false;
+      showMode();
+    }
     function checked(){
       return Array.from(choices.querySelectorAll('input:checked'));
     }
@@ -81,16 +98,18 @@
     function reset(enabled){
       generation++; loading = false; retryRefresh = false; cursor = null; seen.clear(); choices.replaceChildren(); choices.inert = false;
       field.disabled = !enabled; more.hidden = true; more.disabled = false;
+      selectedId = ''; inherited = false; benchmark.checked = false;
       defer.checked = false; reason.value = ''; expected.value = ''; showMode();
       status.textContent = enabled ? '' : 'Sign in to choose a verifier.';
       if (enabled) load();
     }
     return {
       reset:reset,
+      selectProblem:selectProblem,
       refresh:function(){return load(true);},
       read:function(){
         var ids = checked().map(function(box){return box.value;});
-        return readPlan(defer.checked,ids,reason.value,expected.value);
+        return readPlan(defer.checked,ids,reason.value,expected.value,benchmark.checked);
       }
     };
   }

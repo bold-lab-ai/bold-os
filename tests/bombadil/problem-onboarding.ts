@@ -6,8 +6,10 @@ export { noUncaughtExceptions, noUnhandledPromiseRejections } from "@antithesish
 const screen = extract(({ document: d, window: w }) => ({
   demo: !!d.querySelector("#testBar"), picker: !!d.querySelector(".test-picker"),
   signedOut: d.querySelector("#testBar")?.textContent?.includes("signed out") ?? false,
-  form: !!d.querySelector("#pbInputs:not(:disabled)"), confirm: !!d.querySelector("dialog[open] [data-key=reminders]"),
-  detail: !!d.querySelector("#addVerifier"), canStartVerifier: !!d.querySelector("#addVerifier:enabled"), add: !!d.querySelector("#pbAdd[href]"),
+  form: !!d.querySelector("#pbInputs:not(:disabled)"), confirm: !!d.querySelector("#pbCreate") && !!d.querySelector("dialog[open] [data-yes]"),
+  detail: !!d.querySelector("#problemBody:not([hidden]) .detail-head"), canStartVerifier: !!d.querySelector("#addVerifier:enabled"), add: !!d.querySelector("#pbAdd[href]"),
+  benchmark: d.querySelector("#problemBody .detail-head > .badge")?.textContent === "Benchmark",
+  hasVerifierControl: !!d.querySelector("#addVerifier, #toggleReminder"),
   consent: !!d.querySelector("dialog[open] [data-yes]"),
   badge: !!d.querySelector("#problemBody .pb-missing"),
   overview: d.querySelector("#problemBody [data-tab=overview]")?.getAttribute("aria-selected") === "true",
@@ -21,7 +23,10 @@ const screen = extract(({ document: d, window: w }) => ({
 }));
 export const opensSavedProblem = eventually(() => screen.current.detail).within(55, "seconds");
 export const showsOnlySelectedStage = always(() => !screen.current.extraPanels);
-export const savedProblemHasVerifierAction = always(() => !screen.current.detail || (screen.current.badge && screen.current.canStartVerifier && screen.current.steps === 3));
+export const showsVerifierForResearchProblems = always(() =>
+  !screen.current.detail || (screen.current.benchmark
+    ? !screen.current.hasVerifierControl && !screen.current.badge && screen.current.steps === 2
+    : screen.current.badge && screen.current.canStartVerifier && screen.current.steps === 3));
 export const savedProblemKeepsDifficulties = always(() =>
   !screen.current.detail || !screen.current.overview || screen.current.problemText.includes("Noise obscures slow decay."));
 
@@ -55,7 +60,8 @@ export const exercise = actions(() => {
   if (s.add) return [click("#pbAdd")];
   if (s.confirm && s.remindersChecked) return [click("dialog [data-key=reminders]")];
   if (s.confirm) return [click("dialog [data-yes]"), click("dialog [data-yes]"), click("dialog [data-no]")];
-  if (s.form) return s.missing.length ? s.missing.map(fillField => fill(fillField)) : [click("#pbCreate [type=submit]")];
+  if (s.form) return s.missing.length ? s.missing.map(fillField => fill(fillField)) :
+    [click("#pbCreate [type=submit]"), click("#pbBuildsBenchmark")];
   if (s.consent) return [click("dialog [data-no]")];
   if (s.detail) return [click(".detail-back"), click("#addVerifier"), click("[data-tab=releases]"), click("[data-tab=history]"), click("[data-tab=overview]")];
   return ["Wait"];

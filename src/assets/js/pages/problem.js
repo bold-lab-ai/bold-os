@@ -40,7 +40,7 @@
     if (!base) return '';
     var url = new URL(base);
     url.pathname = (url.pathname.replace(/\/$/, '') || '/lite') + '/from-problem';
-    var fields = new URLSearchParams({ problem: p.id,
+    var fields = new URLSearchParams({ problem: p.id, builds_benchmark: '0',
       title: p.title, question: [p.objective || p.title, p.significance && 'Why it matters: ' + p.significance, p.difficulties && 'Difficulties: ' + p.difficulties, p.existing_solutions && 'Frontier: ' + p.existing_solutions].filter(Boolean).join('\n').slice(0,4000) });
     if (project) { fields.set('project', project.id); if (project.board) fields.set('board', project.board); }
     url.hash = fields.toString();
@@ -83,6 +83,10 @@
     overview: function(){
       var d = p.details || {};
       var html = '<dl class="detail-grid">';
+      html += editableRow('builds_benchmark','Problem type',p.builds_benchmark ? 'Benchmark' : 'Research problem',
+        '<label class="pb-purpose"><input id="fieldInput" type="checkbox"' + (p.builds_benchmark ? ' checked' : '') + '> This problem is building a benchmark</label>' +
+        '<p class="detail-muted">This skips the verifier step and turns off verifier reminders.</p>',
+        p.archived ? 'Restore this problem to change its type.' : '');
       html += editableRow('owner','Problem definer', d.owner ? (p.owner_id ? '<a href="person.html?id=' + encodeURIComponent(p.owner_id) + '">' + esc(d.owner) + '</a>' : esc(d.owner)) : missing(),
         '<select id="fieldInput" aria-label="Problem definer"></select>');
       [['significance','Why it matters'],['difficulties','What are the difficulties?'],['existing_solutions','Where is the frontier?']].forEach(function(f){
@@ -99,7 +103,7 @@
       return p.papers.length ? BoldProblemPapers.list(p.papers) : '<p class="detail-muted">No papers registered for this problem.</p>';
     },
     releases: function(){
-      if (!releases.length) return '<p class="detail-muted">Registered verifiers and their checks will appear here.</p>';
+      if (!releases.length) return '<p class="detail-muted">' + (p.builds_benchmark ? 'This problem is building a benchmark. A separate verifier is not required.' : 'Registered verifiers and their checks will appear here.') + '</p>';
       return '<ul class="talk-list">' + releases.map(function(r){
         var e = r.evaluator, a = r.approval, ra = r.reported_approval, v = r.research;
         var details = r.details || (p.latest_benchmark === r.id && !p.has_linked_verifiers ? p.details : {}) || {};
@@ -141,7 +145,8 @@
     var html = '<div class="detail-head">' + (editing === 'title'
       ? '<div class="detail-title-edit"><input type="text" id="fieldInput" maxlength="180" value="' + esc(p.title || '') + '" aria-label="Title">' + saveCancelHtml() + '</div>'
       : '<h2>' + esc(p.title) + editButton('title', editableDefinition() ? '' : CONTRACT) + '</h2>');
-    if (!p.evaluator) html += '<span class="badge pb-missing">No verifier</span>';
+    if (p.builds_benchmark) html += '<span class="badge">Benchmark</span>';
+    else if (!p.evaluator) html += '<span class="badge pb-missing">No verifier</span>';
     html += '<div class="detail-badges">';
     if (!isOpen()) html += '<span class="badge badge-stage">' + esc(STAGES[p.stage] || p.stage) + '</span>';
     if (p.approval) html += '<span class="badge">Approved</span>';
@@ -152,12 +157,16 @@
     html += '</div></div>';
     var links=p.projects;
     html += '<ol class="pb-steps" aria-label="Problem onboarding"><li>Problem defined</li><li>';
-    if(links.length) html += '<label for="verifierProject">Project (optional)</label> <select id="verifierProject"><option value="">No project</option>' +
-      links.map(function(x,i){return '<option value="'+i+'">'+esc(x.title)+'</option>';}).join('')+'</select> ';
-    var blocked = p.archived ? 'Restore this problem first.' : !BOLD.can('projects','edit') ? BOLD.cannotReason('projects','edit') : '';
-    html += '<button type="button" class="btn-primary btn-box" id="addVerifier"' + (blocked ? ' disabled title="'+esc(blocked)+'"' : '')+'>' + (p.evaluator?'Add another verifier':'Add verifier') + '</button>';
-    html += '</li><li>Autoresearch baseline <small>Coming soon</small></li></ol>';
-    if (canRemind && !p.archived && !p.evaluator) html += '<p><button type="button" class="btn-text" id="toggleReminder">' +
+    if (p.builds_benchmark) {
+      html += 'Verifier not required</li></ol>';
+    } else {
+      if(links.length) html += '<label for="verifierProject">Project (optional)</label> <select id="verifierProject"><option value="">No project</option>' +
+        links.map(function(x,i){return '<option value="'+i+'">'+esc(x.title)+'</option>';}).join('')+'</select> ';
+      var blocked = p.archived ? 'Restore this problem first.' : !BOLD.can('projects','edit') ? BOLD.cannotReason('projects','edit') : '';
+      html += '<button type="button" class="btn-primary btn-box" id="addVerifier"' + (blocked ? ' disabled title="'+esc(blocked)+'"' : '')+'>' + (p.evaluator?'Add another verifier':'Add verifier') + '</button>';
+      html += '</li><li>Autoresearch baseline <small>Coming soon</small></li></ol>';
+    }
+    if (canRemind && !p.archived && !p.evaluator && !p.builds_benchmark) html += '<p><button type="button" class="btn-text" id="toggleReminder">' +
       (p.reminders ? 'Turn off my weekly reminders' : 'Remind me to add a verifier') + '</button></p>';
     html += '<div class="tabs" role="tablist" aria-label="Problem">' + TABS.map(function(t){
       var on = t[0] === tab;
@@ -279,9 +288,15 @@
       var v = input.value, patch = {};
       if (editing === 'projects') patch.projects=BoldProblemProjects.selected(input,projects);
       else if (editing === 'owner') { if (!v) return fail('Choose the problem definer.'); patch.owner_id=v; }
+      else if (editing === 'builds_benchmark') patch.builds_benchmark = input.checked;
       else { if (!v.trim() && editing!=='collaborators') return fail('Enter a value.'); patch[editing]=v.trim(); }
       el('fieldSave').disabled = true;
-      save(patch).then(function(){ editing = false; render(); }).catch(function(e){ el('fieldSave').disabled = false; fail((e && e.message) || 'Could not save — try again.'); });
+      save(patch).then(function(){
+        if ('builds_benchmark' in patch) {
+          try { localStorage.setItem('boldOpenProblemsChanged', crypto.randomUUID()); } catch (ignored) {}
+        }
+        editing = false; render();
+      }).catch(function(e){ el('fieldSave').disabled = false; fail((e && e.message) || 'Could not save — try again.'); });
     });
   }
   function alertLine(e){ el('detailMsg').hidden = false; el('detailMsg').textContent = (e && e.message) || 'Please try again.'; }
