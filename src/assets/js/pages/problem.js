@@ -142,7 +142,7 @@
     var owner = (p.details || {}).owner;
     html += '<p class="detail-venue">Project: <a href="' + esc(projectHref()) + '">' + esc(p.project_title || p.project_id) + '</a>' +
       (owner ? ' · ' + (p.owner_id ? '<a href="person.html?id=' + encodeURIComponent(p.owner_id) + '">' + esc(owner) + '</a>' : esc(owner)) : '') +
-      (isOpen() ? '' : ' · Stage reported by AutoKaggle') + '</p>';
+      (isOpen() ? '' : ' · Latest verifier stage reported by AutoKaggle') + '</p>';
     html += '<ol class="pb-steps" aria-label="Problem onboarding"><li>Problem defined</li><li>' +
       (p.archived || !BOLD.can('projects', 'edit') ? '<button class="btn-box" disabled title="' + esc(p.archived ? 'Restore this problem first.' : BOLD.cannotReason('projects', 'edit')) + '">Add verifier</button>'
         : '<button type="button" class="btn-primary btn-box" id="addVerifier">' + (p.evaluator ? 'Add another verifier' : 'Add verifier') + '</button>') +

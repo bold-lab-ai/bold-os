@@ -33,7 +33,7 @@
     var meta = ['<a href="' + esc(projectHref(p)) + '">' + esc(p.project_title || p.project_id) + '</a>'];
     if ((p.details || {}).owner) meta.push(esc(p.details.owner));
     if (p.task_kind) meta.push(esc(p.task_kind));
-    if (p.evaluator) meta.push('Evaluator v' + esc(String(p.evaluator.version)));
+    if (p.evaluator) meta.push('Latest verifier v' + esc(String(p.evaluator.version)));
     var path = 'problem.html?problem=' + encodeURIComponent(p.id);
     var missing = !p.evaluator;
     return '<li><div class="proj-main"><div class="pb-card-head">' +
