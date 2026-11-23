@@ -1,7 +1,10 @@
 // The Map (research-map.html, #248): BOLD's northstars, moonshots and stepping stones, read from researchMap
-// (functions/index.js), as Lineage: a board (research-map.js topicBoard), each topic of stepping stones a card
-// down either side, the northstars across the top, the moonshots down the middle, linked to what's part of them;
-// zoomed with the wheel or the buttons, dragged around. Clicking anything lights everything above and below it
+// (functions/index.js), in two views:
+// - Lineage: a board (research-map.js topicBoard), each topic of stepping stones a card down either side, the
+//   northstars across the top, the moonshots down the middle, linked to what's part of them.
+// - Topics, as Prezi: topics, sub-topics and stepping stones as frames within frames (topicTree, frameLayout),
+//   flown into with a click, out with Esc or Back, along with the arrows; a stepping stone's card at the bottom.
+// Both zoom with the wheel or the buttons and drag around. Clicking anything lights everything above and below it
 // and says what it is below the map; a double click (or Enter) opens its page. Find lights what matches; Who
 // lights what a person is on.
 (function(){
@@ -11,7 +14,7 @@
   if (!graph || !R || !BOLD.getAuth()) return;
   var el = function(id){ return document.getElementById(id); };
   var data = null, map = null, selected = '', find = '', person = '';
-  var opts = { proposed: true, completed: false };
+  var opts = { view: 'lineage', proposed: true, completed: false };
   var KEY = 'boldMap:opts';
   try { var kept = JSON.parse(localStorage.getItem(KEY) || 'null'); if (kept) Object.keys(opts).forEach(function(k){ if (typeof kept[k] === typeof opts[k]) opts[k] = kept[k]; }); } catch (e){}
   var save = function(){ try { localStorage.setItem(KEY, JSON.stringify(opts)); } catch (e){} };
@@ -123,16 +126,19 @@
       '<button type="button" class="view-btn" data-zoom="in" aria-label="Zoom in">+</button><button type="button" class="view-btn" data-zoom="out" aria-label="Zoom out">\u2212</button>' +
       '<button type="button" class="view-btn" data-zoom="fit" aria-label="Fit it all in">\u2922</button></div>' +
       '<p class="rm-zoom-hint">Scroll to zoom \u00b7 drag to move</p>' +
-      '<svg class="cx-svg rm-svg rm-topics' + (on ? ' has-selected' : '') + '" viewBox="' + box() + '" style="height:' + Math.round(TH) + 'px; max-height:80vh"' +
+      '<svg class="cx-svg rm-svg rm-topics rm-zoomable' + (on ? ' has-selected' : '') + '" viewBox="' + box() + '" style="height:' + Math.round(TH) + 'px; max-height:80vh"' +
       ' preserveAspectRatio="xMidYMin meet" role="img" aria-label="Stepping stones by topic, with their moonshots and northstars">' +
       '<g>' + cards + '</g><g>' + lines + '</g><g>' + nodes + '</g></svg></div>';
   }
   function box(){ return [vb.x, vb.y, vb.w, vb.h].map(function(v){ return v.toFixed(1); }).join(' '); }
+  // How far in one can zoom: Lineage a little, Topics far (into a project's card).
+  var MINW = 1 / 6;
   function setBox(next){
-    var w = Math.max(TW / 6, Math.min(TW * 1.5, next.w)), h = w * TH / TW;
+    var w = Math.max(TW * MINW, Math.min(TW * 1.5, next.w)), h = w * TH / TW;
     vb = { x: next.x + (next.w - w) / 2, y: next.y + (next.h - h) / 2, w: w, h: h };
-    var svg = graph.querySelector('.rm-topics');
+    var svg = graph.querySelector('.rm-zoomable');
     if (svg) svg.setAttribute('viewBox', box());
+    if (opts.view === 'topics') detailLevel();
   }
   // Zooms by `f` around a point in the map's units (its middle when none).
   function zoomBy(f, px, py){
@@ -148,14 +154,14 @@
   }
   var drag = null;
   graph.addEventListener('wheel', function(e){
-    var svg = e.target.closest && e.target.closest('.rm-topics');
+    var svg = e.target.closest && e.target.closest('.rm-zoomable');
     if (!svg) return;
     e.preventDefault();
     var p = toMap(svg, e.clientX, e.clientY);
     zoomBy(Math.exp(-e.deltaY * 0.0015), p.x, p.y);
   }, { passive: false });
   graph.addEventListener('pointerdown', function(e){
-    var svg = e.target.closest && e.target.closest('.rm-topics');
+    var svg = e.target.closest && e.target.closest('.rm-zoomable');
     if (!svg || e.button !== 0) return;
     drag = { x: e.clientX, y: e.clientY, vb: { x: vb.x, y: vb.y, w: vb.w, h: vb.h }, s: toMap(svg, e.clientX, e.clientY).s, moved: false };
   });
@@ -169,11 +175,145 @@
   });
   window.addEventListener('pointerup', function(){ if (drag && drag.moved) graph.dataset.dragged = '1'; drag = null; graph.classList.remove('is-dragging'); });
 
+  /* ---------- Topics, as Prezi: frames within frames, flown into ---------- */
+  // The stepping stones as a topic tree (research-map.js topicTree: topics, a big one's sub-topics, then the
+  // projects), each a frame inside its parent's (frameLayout). Clicking a frame flies into it; clicking a project
+  // flies into its card (its abstract, people, what it's part of). Esc or Back flies out a level; the arrows go to
+  // the next or previous at the same level; the breadcrumb says where you are. The wheel and dragging roam freely.
+  // What's drawn in full depends on how big it is on screen (detailLevel): a frame's name, a project's title, its card.
+  var prezi = null, focus = 'all', flying = 0;
+  var PW = 1600, PH = 1000;
+  function preziData(){
+    var items = map.nodes.filter(function(n){ return n.kind === 'project'; });
+    var key = items.map(function(n){ return n.id; }).join(',');
+    if (prezi && prezi.key === key) return prezi;
+    var tree = R.topicTree(items.map(function(n){ return Object.assign({}, n, { pid: n.id }); }));
+    var parent = {}, byId = {}, hue = {};
+    var walk = function(node, up, h){
+      byId[node.id] = node; parent[node.id] = up;
+      if (h !== undefined) hue[node.id] = h;
+      (node.children || []).forEach(function(c, i){ walk(c, node.id, up === undefined ? i % HUES.length : h); });
+    };
+    walk(tree, undefined, undefined);
+    prezi = { key: key, tree: tree, rect: R.frameLayout(tree, PW, PH), parent: parent, byId: byId, hue: hue };
+    if (!byId[focus]) focus = 'all';
+    return prezi;
+  }
+  function preziSvg(){
+    var P = preziData(), on = lit(), f = function(n){ return n.toFixed(2); };
+    var frames = '', leaves = '';
+    var walk = function(node, depth){
+      var r = P.rect[node.id], hue = P.hue[node.id] !== undefined ? ' rm-hue-' + HUES[P.hue[node.id]] : '';
+      if (node.children && node.id !== 'all') {
+        var count = (function n(x){ return x.children ? x.children.reduce(function(s, c){ return s + n(c); }, 0) : 1; })(node);
+        // Its name as large as its band allows and as fits its width (capitals, spaced: about 0.78em a letter).
+        var fs = Math.min(r.h * 0.07, r.w * 0.92 / (node.name.length * 0.78));
+        frames += '<g class="rz-frame' + hue + (focus === node.id ? ' is-focus' : '') + '" data-node="' + esc(node.id) + '" data-w="' + f(r.w) + '" data-depth="' + depth + '">' +
+          '<rect class="rz-box" x="' + f(r.x) + '" y="' + f(r.y) + '" width="' + f(r.w) + '" height="' + f(r.h) + '" rx="' + f(r.w * 0.015) + '"></rect>' +
+          '<text class="rz-title" x="' + f(r.x + r.w * 0.04) + '" y="' + f(r.y + r.h * 0.1) + '" style="font-size:' + f(fs) + 'px">' + esc(node.name) + '</text>' +
+          '<text class="rz-count" x="' + f(r.x + r.w * 0.04) + '" y="' + f(r.y + r.h * 0.1 + Math.max(fs * 0.95, r.h * 0.045)) + '" style="font-size:' + f(Math.min(r.h * 0.04, fs * 0.8)) + 'px">' + count + (count === 1 ? ' project' : ' projects') + '</text></g>';
+      }
+      (node.children || []).forEach(function(c){ walk(c, depth + 1); });
+      if (!node.children) {
+        var n = node.item, k = r.w / 400, href = hrefOf(map.byId[n.id] || n);
+        var ups = (n.parents || []).map(function(id){ return map.byId[id]; }).filter(Boolean).map(function(x){ return esc(x.title); }).join(', ');
+        var abs = String(n.abstract || '').replace(/\s+/g, ' ').trim();
+        leaves += '<g class="rz-leaf cx-node rm-project' + hue + (on && on[n.id] ? ' is-lit' : '') + (selected === n.id ? ' is-selected' : '') + '" data-node="' + esc(node.id) + '" data-id="' + esc(n.id) + '" data-w="' + f(r.w) + '" data-depth="' + depth + '">' +
+          '<rect class="rz-card-box" x="' + f(r.x) + '" y="' + f(r.y) + '" width="' + f(r.w) + '" height="' + f(r.h) + '" rx="' + f(r.w * 0.03) + '"></rect>' +
+          '<g transform="translate(' + f(r.x) + ',' + f(r.y) + ') scale(' + k.toFixed(5) + ')">' +
+          '<foreignObject class="rz-card" width="400" height="300"><div xmlns="http://www.w3.org/1999/xhtml" class="rz-card-in">' +
+            '<h3>' + esc(n.title) + '</h3>' +
+            ((n.people || []).length ? '<p class="rz-people">' + n.people.map(esc).join(', ') + '</p>' : '') +
+            (abs ? '<p class="rz-abs">' + esc(abs.length > 420 ? abs.slice(0, 420).replace(/\s+\S*$/, '') + '…' : abs) + '</p>' : n.titleOnly ? '<p class="rz-abs">Its people see it: join it from Projects.</p>' : '') +
+            '<p class="rz-part">' + (ups ? 'Part of ' + ups : 'Not linked yet') + '</p>' +
+            (href ? '<a class="rz-open" href="' + esc(href) + '">Open →</a>' : '') +
+          '</div></foreignObject></g><title>' + esc(n.title) + '</title></g>';
+      }
+    };
+    walk(P.tree, 0);
+    return '<div class="cx-graph rm-zoom rz"><nav class="rz-crumbs" aria-label="Where you are"></nav>' +
+      '<div class="rm-zoom-ctl view-toggle" role="group" aria-label="Zoom">' +
+      '<button type="button" class="view-btn" data-zoom="in" aria-label="Zoom in">+</button><button type="button" class="view-btn" data-zoom="out" aria-label="Zoom out">−</button>' +
+      '<button type="button" class="view-btn" data-zoom="fit" aria-label="All topics">⤢</button></div>' +
+      '<p class="rm-zoom-hint">Click a topic to fly in · Esc to fly out · ← → next</p>' +
+      '<svg class="cx-svg rm-svg rz-svg rm-zoomable' + (on ? ' has-selected' : '') + '" viewBox="' + box() + '" style="height:' + Math.round(TH) + 'px; max-height:78vh"' +
+      ' preserveAspectRatio="xMidYMin meet" role="img" aria-label="Stepping stones by topic: click a topic to zoom into it">' +
+      '<g>' + frames + '</g><g>' + leaves + '</g></svg></div>';
+  }
+  // What shows depends on its size on screen: a frame's name once it's big enough to read; a project, a dot,
+  // then its title, then its whole card.
+  function detailLevel(){
+    var svg = graph.querySelector('.rz-svg');
+    if (!svg) return;
+    var b = svg.getBoundingClientRect(), s = b.width ? Math.min(b.width / vb.w, (b.height || 1e9) / vb.h) : TW / vb.w;
+    svg.querySelectorAll('[data-w]').forEach(function(g){
+      var px = (+g.getAttribute('data-w')) * s, leaf = g.classList.contains('rz-leaf');
+      g.classList.toggle('is-tiny', px < (leaf ? 46 : 110));
+      if (leaf) { g.classList.toggle('is-titled', px >= 46 && px < 230); g.classList.toggle('is-open', px >= 230); }
+    });
+  }
+  // The box that shows `id` whole, with a margin, at the map's shape.
+  function boxOf(id){
+    var r = prezi.rect[id], m = id === 'all' ? 0 : 0.06, w = r.w * (1 + 2 * m), h = r.h * (1 + 2 * m);
+    if (w / h < TW / TH) w = h * TW / TH; else h = w * TH / TW;
+    return { x: r.x + r.w / 2 - w / 2, y: r.y + r.h / 2 - h / 2, w: w, h: h };
+  }
+  // Flies to `id`: the middle moves and the width zooms (in proportion), eased in and out.
+  function flyTo(id){
+    if (!prezi || !prezi.rect[id]) return;
+    focus = id;
+    crumbs();
+    graph.querySelectorAll('.rz-frame').forEach(function(g){ g.classList.toggle('is-focus', g.getAttribute('data-node') === id); });
+    var from = { x: vb.x, y: vb.y, w: vb.w, h: vb.h }, to = boxOf(id), t0 = 0, run = ++flying;
+    var reduce = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches, D = reduce ? 1 : 650;
+    var step = function(t){
+      if (run !== flying) return;
+      if (!t0) t0 = t;
+      var u = Math.min(1, (t - t0) / D), e = u < 0.5 ? 4 * u * u * u : 1 - Math.pow(-2 * u + 2, 3) / 2;
+      var w = from.w * Math.pow(to.w / from.w, e), cx = from.x + from.w / 2 + (to.x + to.w / 2 - from.x - from.w / 2) * e, cy = from.y + from.h / 2 + (to.y + to.h / 2 - from.y - from.h / 2) * e;
+      var h = w * TH / TW;
+      setBox({ x: cx - w / 2, y: cy - h / 2, w: w, h: h });
+      if (u < 1) requestAnimationFrame(step);
+    };
+    requestAnimationFrame(step);
+  }
+  function crumbs(){
+    var nav = graph.querySelector('.rz-crumbs');
+    if (!nav || !prezi) return;
+    var path = [], id = focus;
+    while (id !== undefined) { path.unshift(id); id = prezi.parent[id]; }
+    nav.innerHTML = (focus !== 'all' ? '<button type="button" class="btn-text rz-back" data-fly="' + esc(prezi.parent[focus]) + '">← Back</button>' : '') +
+      path.map(function(x, i){
+        var n = prezi.byId[x], name = n.children ? n.name : n.item.title;
+        return i === path.length - 1 ? '<span class="rz-here">' + esc(name) + '</span>' : '<button type="button" class="btn-text" data-fly="' + esc(x) + '">' + esc(name) + '</button>';
+      }).join('<span class="rz-sep">›</span>');
+  }
+  // The next (or previous) at the same level as where you are: a sibling; from the top, the first topic.
+  function step(d){
+    if (!prezi) return;
+    if (focus === 'all') { var first = prezi.tree.children[0]; if (first) flyTo(first.id); return; }
+    var sibs = prezi.byId[prezi.parent[focus]].children, i = sibs.findIndex(function(x){ return x.id === focus; });
+    flyTo(sibs[(i + d + sibs.length) % sibs.length].id);
+  }
+  document.addEventListener('keydown', function(e){
+    if (opts.view !== 'topics' || !prezi || /^(INPUT|SELECT|TEXTAREA)$/.test((e.target && e.target.tagName) || '')) return;
+    if (e.key === 'Escape' && focus !== 'all') { e.preventDefault(); flyTo(prezi.parent[focus]); }
+    else if (e.key === 'ArrowRight') { e.preventDefault(); step(1); }
+    else if (e.key === 'ArrowLeft') { e.preventDefault(); step(-1); }
+  });
+
   /* ---------- drawing, the key, the panel, the controls ---------- */
   function draw(){
     if (!data) return;
     build();
-    graph.innerHTML = topicsSvg();
+    if (opts.view === 'topics') {
+      // Topics: a 1600 × 1000 canvas, shown where it was flown to.
+      TW = PW; TH = PH; MINW = 1 / 300;
+      var keep = prezi ? vb : null;
+      graph.innerHTML = preziSvg();
+      if (keep) setBox(keep); else { vb = boxOf('all'); setBox(vb); }
+      crumbs();
+    } else { MINW = 1 / 6; topic = null; graph.innerHTML = topicsSvg(); }
     graph.hidden = false;
     el('rmMsg').hidden = true;
     legend();
@@ -183,7 +323,7 @@
   function relight(){
     if (!map) return draw();
     var keep = vb;
-    graph.innerHTML = topicsSvg();
+    if (opts.view === 'topics') { graph.innerHTML = preziSvg(); crumbs(); } else graph.innerHTML = topicsSvg();
     setBox(keep);
     detail();
   }
@@ -193,6 +333,7 @@
     var html = '<div class="cx-bar cx-legend"><span class="cx-bar-row"><span class="cx-bar-label">Key</span><span class="cx-bar-items">' +
       key('northstar', 'Northstar') + key('moonshot', 'Moonshot') + key('project', 'Stepping stone') +
       '</span></span>';
+    if (opts.view === 'topics') { el('rmLegend').innerHTML = ''; return; }
     if (topic) html += '<span class="cx-bar-row"><span class="cx-bar-label">Topics</span><span class="cx-bar-items">' + topic.cl.clusters.map(function(c, j){
       return c.size ? '<span class="cx-key rm-hue-' + HUES[j % HUES.length] + '"><svg class="cx-icon" viewBox="-7 -7 14 14" aria-hidden="true"><circle class="rm-swatch" r="5"></circle></svg><span>' + esc(c.terms.join(', ')) + ' (' + c.size + ')</span></span>' : '';
     }).join('') + '</span></span>';
@@ -225,12 +366,19 @@
     var people = {};
     (data ? data.items : []).forEach(function(i){ (i.people || []).forEach(function(p){ people[p] = true; }); });
     el('rmControls').innerHTML = '<div class="cx-ctl-row">' +
+      C.pair('View', '<span class="view-toggle cx-seg" role="group" aria-label="View">' +
+        '<button type="button" class="view-btn" data-view="lineage" aria-pressed="' + (opts.view === 'lineage') + '">Lineage</button>' +
+        '<button type="button" class="view-btn" data-view="topics" aria-pressed="' + (opts.view === 'topics') + '">Topics</button></span>') +
       C.pair('Show', '<span class="view-toggle cx-seg cx-multi" role="group" aria-label="Show">' + tog('proposed', 'Proposed') + tog('completed', 'Completed') + '</span>') +
       '</div><div class="cx-ctl-row">' +
       C.pair('Find', '<input type="search" class="cx-field cx-find" id="rmFind" placeholder="A title or keyword" value="' + esc(find) + '">') +
       C.pair('Who', '<select class="cx-field" id="rmPerson"><option value="">Everyone</option>' + Object.keys(people).sort().map(function(p){
         return '<option value="' + esc(p) + '"' + (person === p ? ' selected' : '') + '>' + esc(p) + '</option>'; }).join('') + '</select>') +
       '<a class="btn-text rm-add" href="projects-register.html#level=northstar">+ Northstar</a></div>';
+    el('rmControls').querySelectorAll('[data-view]').forEach(function(b){ b.addEventListener('click', function(){
+      if (opts.view === b.getAttribute('data-view')) return;
+      opts.view = b.getAttribute('data-view'); save(); prezi = null; focus = 'all'; controls(); draw();
+    }); });
     el('rmControls').querySelectorAll('[data-opt]').forEach(function(b){ b.addEventListener('click', function(){ var k = b.getAttribute('data-opt'); opts[k] = !opts[k]; save(); controls(); draw(); }); });
     el('rmFind').addEventListener('input', function(e){ find = e.target.value.trim(); relight(); });
     el('rmPerson').addEventListener('change', function(e){ person = e.target.value; relight(); });
@@ -239,8 +387,29 @@
   // A click chooses (again: lets go); a double click, or Enter, opens its page; the zoom buttons zoom.
   graph.addEventListener('click', function(e){
     var z = e.target.closest && e.target.closest('[data-zoom]');
-    if (z) { var k = z.getAttribute('data-zoom'); if (k === 'fit') setBox({ x: 0, y: 0, w: TW, h: TH }); else zoomBy(k === 'in' ? 1.4 : 1 / 1.4); return; }
+    if (z) {
+      var k = z.getAttribute('data-zoom');
+      if (k === 'fit') { if (opts.view === 'topics') flyTo('all'); else setBox({ x: 0, y: 0, w: TW, h: TH }); } else zoomBy(k === 'in' ? 1.4 : 1 / 1.4);
+      return;
+    }
+    var fly = e.target.closest && e.target.closest('[data-fly]');
+    if (fly) { flyTo(fly.getAttribute('data-fly')); return; }
     if (graph.dataset.dragged) { delete graph.dataset.dragged; return; }
+    if (opts.view === 'topics') {
+      // A link on a card goes where it says; a frame or a card flies into it; the empty canvas flies out a level.
+      if (e.target.closest('a')) return;
+      var fr = e.target.closest('[data-node]');
+      if (fr) {
+        var id = fr.getAttribute('data-node');
+        if (id === focus && fr.classList.contains('rz-leaf')) { selected = fr.getAttribute('data-id'); detail(); return; }
+        // From far off, one level at a time: into the frame on the way to it under where you are.
+        var path = [], x = id;
+        while (x !== undefined && x !== focus) { path.unshift(x); x = prezi.parent[x]; }
+        flyTo(x === focus && path.length ? path[0] : id);
+        if (fr.classList.contains('rz-leaf') && (x !== focus || path.length === 1)) { selected = fr.getAttribute('data-id'); detail(); }
+      } else if (focus !== 'all' && e.target.closest('svg')) flyTo(prezi.parent[focus]);
+      return;
+    }
     var g = e.target.closest && e.target.closest('.cx-node[data-id]');
     selected = g ? (selected === g.getAttribute('data-id') ? '' : g.getAttribute('data-id')) : '';
     relight();

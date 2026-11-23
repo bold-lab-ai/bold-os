@@ -98,3 +98,25 @@ test('Topics: projects about the same thing cluster together, the same way every
   assert.strictEqual(n.x, 600);
   assert.ok(Math.abs(m.y - (board.pos.a.y + board.pos.b.y) / 2) < 40, 'beside its stepping stones');
 });
+
+test('Topics as Prezi: a tree of topics (a big one split again), framed inside each other', () => {
+  const items = [];
+  ['eggroll', 'robotics', 'co-scientist'].forEach((k, j) => { for (let i = 0; i < (j === 0 ? 12 : 4); i++) items.push({ pid: k + i, title: k + ' project ' + i + (i % 2 ? ' theory' : ' practice'), keywords: [k, i % 2 ? 'theory' : 'practice'] }); });
+  const tree = R.topicTree(items);
+  assert.strictEqual(tree.id, 'all');
+  const leaves = []; const walk = (n) => n.children ? n.children.forEach(walk) : leaves.push(n.pid);
+  walk(tree);
+  assert.deepStrictEqual(leaves.slice().sort(), items.map((i) => i.pid).sort(), 'every stepping stone, once');
+  // No topic shows more than 8 stepping stones at once: a bigger one is split into sub-topics, not named by its words.
+  const atMost = (n, depth) => { if (!n.children) return; if (depth > 0 && depth < 3) assert.ok(n.children.filter((c) => !c.children).length <= 8 || n.children.every((c) => !c.children) && n.children.length <= 8, n.id); n.children.forEach((c) => atMost(c, depth + 1)); };
+  atMost(tree, 0);
+  const many = items.slice(0, 12).map((i, x) => Object.assign({}, i, { pid: 'b' + x }));
+  const one = R.topicTree(many.concat([{ pid: 'z1', title: 'robots', keywords: ['robotics'] }, { pid: 'z2', title: 'robots two', keywords: ['robotics'] }, { pid: 'z3', title: 'robots three', keywords: ['robotics'] }]));
+  one.children.forEach((t) => { if (t.children.some((x) => x.children)) t.children.forEach((sub) => sub.terms.forEach((w) => assert.ok(!t.terms.includes(w)))); });
+  const rect = R.frameLayout(tree, 1600, 1000);
+  const inside = (a, b) => a.x >= b.x - 0.01 && a.y >= b.y - 0.01 && a.x + a.w <= b.x + b.w + 0.01 && a.y + a.h <= b.y + b.h + 0.01;
+  const check = (n) => (n.children || []).forEach((c) => { assert.ok(inside(rect[c.id], rect[n.id]), c.id + ' inside ' + n.id); check(c); });
+  check(tree);
+  const kids = tree.children.map((c) => rect[c.id]);
+  kids.forEach((a, i) => kids.forEach((b, j) => { if (i < j) assert.ok(a.x + a.w <= b.x + 0.01 || b.x + b.w <= a.x + 0.01 || a.y + a.h <= b.y + 0.01 || b.y + b.h <= a.y + 0.01, 'frames don’t overlap'); }));
+});

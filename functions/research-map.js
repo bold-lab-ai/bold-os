@@ -139,7 +139,8 @@
   // → { of: { pid: cluster }, clusters: [{ terms: [3 words], size }] }: k clusters (about √(1.2n), 3 to 12) by
   // spherical k-means (the best of several fixed starts); each named by its terms
   // that weigh most in it, keywords first.
-  function clusters(items, k){
+  // `exclude`: words not to name a cluster by (its parent's, for a sub-topic).
+  function clusters(items, k, exclude){
     var n = items.length, vs = vectors(items);
     if (!n) return { of: {}, clusters: [] };
     k = Math.max(1, Math.min(n, k || Math.max(3, Math.min(12, Math.round(Math.sqrt(n * 1.2))))));
@@ -184,6 +185,8 @@
     var of = best.of, cents = best.cents;
     var out = { of: {}, clusters: cents.map(function(c){
       var terms = Object.keys(c).sort(function(a, b){ return c[b] - c[a]; });
+      var skip = function(w){ return (exclude || []).some(function(x){ return x === w || x.indexOf(w) >= 0 || w.indexOf(x) >= 0; }); };
+      terms = terms.filter(function(t){ return !skip(t.charAt(0) === '#' ? t.slice(1) : t); });
       var kw = terms.filter(function(t){ return t.charAt(0) === '#'; }).map(function(t){ return t.slice(1); });
       var named = kw.slice(0, 2);
       terms.forEach(function(t){
@@ -252,6 +255,56 @@
     return out;
   }
 
-  return { words: words, clusters: clusters, topicBoard: topicBoard, LEVELS: LEVELS, NAMES: NAMES, PLURAL: PLURAL, MAX_LINKS: MAX_LINKS, levelOf: levelOf, parentLevel: parentLevel, childLevel: childLevel,
+  // ---------- Topics, as Prezi: frames within frames ----------
+  // The topic tree: all → topics → (a big topic's) sub-topics → its stepping stones. A topic of more than `max`
+  // (8) is split again, its sub-topics named without its own words, down to three levels. → { id: 'all', name,
+  // children: [{ id, name, terms, children }] }, a leaf { id: 'p:<pid>', pid, item }.
+  function topicTree(items, max){
+    max = max || 8;
+    var leaf = function(i){ return { id: 'p:' + i.pid, pid: i.pid, item: i }; };
+    var byTitle = function(a, b){ return String(a.title).localeCompare(String(b.title)); };
+    var split = function(list, depth, parentTerms, prefix){
+      list = list.slice().sort(byTitle);
+      if ((depth > 0 && list.length <= max) || depth >= 3 || list.length < 3) return list.map(leaf);
+      var cl = clusters(list, depth === 0 ? undefined : Math.max(2, Math.min(5, Math.round(Math.sqrt(list.length / 2)))), parentTerms);
+      var groups = cl.clusters.map(function(c, j){ return { c: c, list: list.filter(function(i){ return cl.of[i.pid] === j; }) }; }).filter(function(g){ return g.list.length; });
+      if (groups.length < 2) return list.map(leaf);
+      groups.sort(function(a, b){ return b.list.length - a.list.length; });
+      return groups.map(function(g, j){
+        var terms = g.c.terms.length ? g.c.terms : ['other'];
+        return { id: prefix + '.' + j, name: terms.join(' \u00b7 '), terms: terms, children: split(g.list, depth + 1, (parentTerms || []).concat(terms), prefix + '.' + j) };
+      });
+    };
+    return { id: 'all', name: 'All topics', terms: [], children: split(items, 0, [], 't') };
+  }
+  // Frames within frames: each node of the tree gets { x, y, w, h } (in `out`, by id), its children laid out on a
+  // grid under its title band, as large as they'll go (a frame 3:2, a leaf's card 4:3). The root is w × h.
+  function frameLayout(tree, w, h){
+    var out = {};
+    var place = function(node, x, y, fw, fh){
+      out[node.id] = { x: x, y: y, w: fw, h: fh };
+      var kids = node.children || [];
+      if (!kids.length) return;
+      var band = node.id === 'all' ? 0 : fh * 0.19, pad = fw * 0.04;
+      var ax = x + pad, ay = y + band + pad * 0.5, aw = fw - 2 * pad, ah = fh - band - pad * 1.5, n = kids.length;
+      var leafy = !kids[0].children, aspect = leafy ? 4 / 3 : 3 / 2, best = null;
+      for (var c = 1; c <= n; c++) {
+        var r = Math.ceil(n / c), cw = aw / c, ch = ah / r, size = Math.min(cw / aspect, ch);
+        if (!best || size > best.size) best = { c: c, r: r, cw: cw, ch: ch, size: size };
+      }
+      var iw = best.size * aspect * 0.9, ih = best.size * 0.9;
+      // Centred: the grid, and each row (a short last row in the middle).
+      var gy = ay + (ah - best.r * best.ch) / 2;
+      kids.forEach(function(k, i){
+        var row = Math.floor(i / best.c), inRow = Math.min(best.c, n - row * best.c), col = i % best.c;
+        var gx = ax + (aw - inRow * best.cw) / 2;
+        place(k, gx + col * best.cw + (best.cw - iw) / 2, gy + row * best.ch + (best.ch - ih) / 2, iw, ih);
+      });
+    };
+    place(tree, 0, 0, w, h);
+    return out;
+  }
+
+  return { words: words, clusters: clusters, topicBoard: topicBoard, topicTree: topicTree, frameLayout: frameLayout, LEVELS: LEVELS, NAMES: NAMES, PLURAL: PLURAL, MAX_LINKS: MAX_LINKS, levelOf: levelOf, parentLevel: parentLevel, childLevel: childLevel,
     normalizeLinks: normalizeLinks, linkIssue: linkIssue, linked: linked, buildMap: buildMap, lineage: lineage };
 });
