@@ -506,6 +506,10 @@ test('changing the purpose keeps existing releases and receipts and cancels pend
   await h.call({action:'update',problem_id:another.problem_id,changes:{builds_benchmark:true,archived:true}});
   await h.call({action:'update',problem_id:another.problem_id,changes:{archived:false}});
   assert.equal(h.data.get(path).verifierNoticeDue,null); assert.equal(h.data.get(path).verifierNoticeCycle,null);
+  await h.call({action:'update',problem_id:another.problem_id,changes:{builds_benchmark:false}});
+  assert.equal((await h.call({action:'get',problem_id:another.problem_id})).can_manage_reminders,true);
+  await h.call({action:'reminders',problem_id:another.problem_id,reminders:true});
+  assert.ok(h.data.get(path).verifierNoticeDue>0);
 });
 
 test('a project can explicitly build a benchmark or inherit that purpose from its problem', async () => {
@@ -516,6 +520,8 @@ test('a project can explicitly build a benchmark or inherit that purpose from it
   await h.call(req);
   assert.deepEqual(h.data.get('projects/'+req.project_id).verificationPlan,{mode:'benchmark'});
   assert.equal(problem.builds_benchmark,undefined);
+  // Removing an explicit project-level decision changes the request. An old receipt cannot confirm that change.
+  await assert.rejects(h.call(proposalRequest(undefined)),{code:'already-exists'});
   problem.builds_benchmark = true;
   for (const stale of [{mode:'linked',releaseIds:ids},{mode:'deferred',reason:'pending',expectedOnboarding:'next week'}])
     await assert.rejects(h.call({...proposalRequest(stale),project_id:'card-benchmark-child'}),{code:'failed-precondition'});

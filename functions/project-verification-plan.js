@@ -43,12 +43,11 @@ async function createProposal({db,error,fingerprint}, input, email, name) {
       (proposal.more === false ? 'gpuHours' in proposal :
         !Number.isFinite(proposal.gpuHours) || proposal.gpuHours <= 0 || proposal.gpuHours > 10000000))
     throw error('invalid-argument','Choose the standard compute allowance or specify the extra GPU hours.');
-  const inherit = card.verificationPlan === undefined;
-  const plan = inherit ? {mode:'benchmark'} : verificationPlan(card.verificationPlan, error);
+  const requested = card.verificationPlan === undefined ? null : verificationPlan(card.verificationPlan, error);
   const fields = {title:card.title.trim(), abstractText:card.abstractText.trim(), keywords:card.keywords || [], slackChannel:card.slackChannel || '', computeEstimate:card.computeEstimate || ''};
   const setup = Object.fromEntries(SETUP.filter(k => card[k] !== undefined).map(k => [k,card[k]]));
   const budget = proposal.more === false ? {more:false} : {more:true,gpuHours:proposal.gpuHours};
-  const hash = fingerprint([fields,setup,card.openProblemId,budget,plan]);
+  const hash = fingerprint([fields,setup,card.openProblemId,budget,requested]);
   const project = db.collection('projects').doc(id), receipt = db.collection('projectProposalReceipts').doc(id);
   const bank = db.collection('problemBank'), releases = db.collection('benchmarks');
   return db.runTransaction(async tx => {
@@ -56,17 +55,18 @@ async function createProposal({db,error,fingerprint}, input, email, name) {
     if (saved.exists && saved.data().by === email && saved.data().hash === hash) return {project_id:id};
     if (saved.exists || existing.exists) throw error('already-exists','This project ID was already used for a different proposal.');
 
-    const selected = plan.mode === 'linked' ? await Promise.all(plan.releaseIds.map(release => tx.get(releases.doc(release)))) : [];
+    const selected = requested?.mode === 'linked' ? await Promise.all(requested.releaseIds.map(release => tx.get(releases.doc(release)))) : [];
     if (selected.some(doc => !doc.exists || !PROBLEM_ID.test(doc.data().problem_id) || !doc.data().title || !Number.isInteger(doc.data().evaluator?.version)))
       throw error('failed-precondition','A selected verifier release is unavailable. Refresh the choices.');
     const problemIds = new Set([card.openProblemId,...selected.map(doc=>doc.data().problem_id)]);
     const problems = await Promise.all([...problemIds].map(key => tx.get(bank.doc(key))));
     if (problems.some(doc => !doc.exists || doc.data().archived)) throw error('failed-precondition','The selected problem or a benchmark source problem is no longer active. Refresh the choices.');
     if (problems[0].data().builds_benchmark === true) {
-      if (plan.mode !== 'benchmark') throw error('failed-precondition','This problem builds a benchmark. Refresh your verifier selection.');
-    } else if (inherit) {
+      if (requested && requested.mode !== 'benchmark') throw error('failed-precondition','This problem builds a benchmark. Refresh your verifier selection.');
+    } else if (!requested) {
       throw error('invalid-argument','Select a verifier, defer onboarding, or specify that this project builds a benchmark.');
     }
+    const plan = requested || {mode:'benchmark'};
     const confirmed = plan.mode === 'linked' ? {...plan, releases:selected.map(doc => {
       const release = doc.data();
       return {id:doc.id,title:release.title,version:release.evaluator.version,problem_id:release.problem_id};

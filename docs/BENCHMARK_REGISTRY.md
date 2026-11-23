@@ -99,6 +99,8 @@ npx bombadil browser test --headless --time-limit 65s --exit-on-violation http:/
 
 The reminder test uses the emulator Slack outbox. It checks the intended recipient, concurrent delivery, the next weekly notice, and the stop condition. The Bombadil test signs in with a demo account, completes the form, and checks the saved problem and verifier action.
 
+A problem that builds a benchmark skips verifier reminders. If its purpose changes back, the submitter can select **Remind me to add a verifier**. Project choices include the benchmark purpose so that the project form can inherit it. The past-paper form only needs the problem ID and title.
+
 ### Returning a verifier from email sign-in in AutoKaggle Lite
 
 A member can authorize Lite to return an approved verifier to one open problem. The member signs in to BOLD OS, opens the problem, and confirms the handoff. They use the same email address in Lite. The project is optional. If they select a project, it must belong to the selected problem.
