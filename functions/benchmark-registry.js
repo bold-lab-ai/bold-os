@@ -224,7 +224,6 @@ module.exports = function({ db, onCall, callerEmail, isFullWrite, access, HttpsE
     }
     if (action === 'family') return family.list(full);
     if (action === 'set_family') return family.setFamily(d,email,canEdit);
-    if (action === 'save_moonshot') return family.saveMoonshot(d,email,full);
     if (action === 'benchmark_catalogue') return require('./benchmark-catalogue').listBenchmarkReleases(db,d,error);
     if (action === 'projects') return { items:(await readDirectory(false)).projects };
 

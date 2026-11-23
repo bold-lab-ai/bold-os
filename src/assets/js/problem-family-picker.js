@@ -71,7 +71,7 @@ window.BoldProblemFamily = (function(){
         var others = matches.filter(function(n){ return !picked[key].has(n.id); });
         list.innerHTML = chosen.concat(others.slice(0,limit)).map(function(n){
           var checked = picked[key].has(n.id), unavailable = picked[other].has(n.id);
-          var kind = n.kind === 'pillar' ? 'pillar' : n.kind === 'moonshot' ? 'moonshot' : '';
+          var kind = n.kind === 'northstar' ? 'northstar' : n.kind === 'moonshot' ? 'moonshot' : '';
           var note = [kind, n.archived ? 'archived' : '', unavailable ? (key === 'parents' ? 'already a related problem' : 'already a broader problem') : ''].filter(Boolean).join(' · ');
           return '<label class="pb-family-option"><input type="checkbox" value="' + esc(n.id) + '"' +
             (checked ? ' checked' : '') + (unavailable ? ' disabled' : '') + '><span>' + esc(n.title) +

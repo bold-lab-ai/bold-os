@@ -5,7 +5,10 @@ function record(){return {schema:'bold.autokaggle.registration.v1',source_id:'au
  validation:{build:'passed',contract_coverage:'passed',code_review:'passed',synthetic:'passed',known_score:'passed',invalid_submission:'passed',clean_clone:'passed',research_data:'validated',research_evidence:{passed:true,mode:'research',commit:'a'.repeat(40),contract_sha256:'b'.repeat(64),reference_sha256:'c'.repeat(64),artifact_sha256:'d'.repeat(64),report_sha256:'e'.repeat(64),checked_by:'controlled-runtime:1234567890abcdef',checked_at:'2026-11-12T20:00:00Z',expected_fitness:1,observed_fitness:1,tolerance:1e-6,expected_basis:'Independent calculation on declared input.'}},
  human_approval:{commit:'a'.repeat(40),contract_sha256:'b'.repeat(64),research_report_sha256:'e'.repeat(64),approved_by:'f'.repeat(64),approved_at:'2026-11-12T20:01:00Z',note:'I reviewed the code and research evidence.'}};}
 function harness(allowed = () => true, readDirectory = async includePapers => ({projects:[],papers:includePapers ? new Map() : null})){
- const data=new Map([['projects/diverging-runs',{title:'Diverging runs'}],['people/UDEFINER',{name:'Demo Researcher'}]]);
+ const data=new Map([['projects/diverging-runs',{title:'Diverging runs'}],
+  // Northstars and a moonshot (#248): the family tree's objectives are projects with a level.
+  ['projects/ns-bp',{title:'Beyond Backpropagation',level:'northstar'}],['projects/ns-el',{title:'Embodied Learning',level:'northstar'}],
+  ['projects/ns-hcld',{title:'Human-Centric Learning & Discovery',level:'northstar'}],['projects/moon',{title:'Moon',level:'moonshot',parents:['ns-el']}],['people/UDEFINER',{name:'Demo Researcher'}]]);
  const snap=p=>({id:p.split('/').pop(),exists:data.has(p),data:()=>structuredClone(data.get(p))});
  const doc=p=>({id:p.split('/').pop(),path:p,get:async()=>snap(p),collection:n=>col(p+'/'+n)});
  const kids=p=>[...data.keys()].filter(k=>k.startsWith(p+'/')&&k.split('/').length===p.split('/').length+1).map(snap);
@@ -259,27 +262,27 @@ const familyInput = (parents = [], related = []) => ({parents,related});
 function createFamilyProblem(h, title, family){
   return h.call({...openProblem, title, family, request_id:require('node:crypto').randomUUID()}).then(row => row.problem_id);
 }
-test('family spans all problem stages, reads approved pillar titles and keeps audit fields private',async()=>{
+test('family spans all problem stages, reads northstars and moonshots from Projects and keeps audit fields private',async()=>{
   const h=harness();
-  h.data.set('handbook/boldiquette',{parts:[{id:'afchbwgz',body:'- 1) Learning in the world (EL): example.\n- 2) Backprop alternatives (BP): more.'}]});
-  const a=await createFamilyProblem(h,'Market simulation',familyInput(['pillar-bp','pillar-el']));
+  const a=await createFamilyProblem(h,'Market simulation',familyInput(['ns-bp','ns-el']));
   const b=await createFamilyProblem(h,'Trading cost',familyInput([a]));
-  const c=await createFamilyProblem(h,'Price response',familyInput([b,'pillar-hcld'],[a]));
+  const c=await createFamilyProblem(h,'Price response',familyInput([b,'ns-hcld'],[a]));
   h.data.get('problemBank/'+c).stage='validated';
   const graph=await h.call({action:'family'});
   assert.equal(graph.problems.find(x=>x.id===c).stage,'validated');
-  assert.deepEqual(graph.objectives.map(x=>x.title),['Backprop alternatives','Human-Centric Learning & Discovery','Learning in the world']);
+  assert.deepEqual(graph.objectives.map(x=>[x.title,x.kind]).sort(),[['Beyond Backpropagation','northstar'],['Embodied Learning','northstar'],['Human-Centric Learning & Discovery','northstar'],['Moon','moonshot']]);
   assert.equal(graph.can_manage_objectives,false);
-  assert.equal(graph.edges.length,6);
+  assert.ok(graph.edges.some(e=>e.from==='moon' && e.to==='ns-el' && e.kind==='contributes_to'),'a moonshot under its northstar');
+  assert.equal(graph.edges.length,7);
   assert.equal(graph.edges.filter(e=>e.kind==='related_to').length,1);
   assert.deepEqual(graph.edges.find(e=>e.kind==='related_to'),{kind:'related_to',from:[a,c].sort()[0],to:[a,c].sort()[1]});
   assert.doesNotMatch(JSON.stringify(graph),/@example|createdBy|updatedBy/);
-  const d={...openProblem,title:'Fourth',request_id:require('node:crypto').randomUUID(),family:familyInput([a,'pillar-el'])};
+  const d={...openProblem,title:'Fourth',request_id:require('node:crypto').randomUUID(),family:familyInput([a,'ns-el'])};
   const saved=await h.call(d);
-  assert.deepEqual(await h.call({...d,family:familyInput(['pillar-el',a])}),saved);
+  assert.deepEqual(await h.call({...d,family:familyInput(['ns-el',a])}),saved);
   await assert.rejects(h.call({...d,family:familyInput([a])}),e=>e.code==='already-exists');
   const view=await h.call({action:'get',problem_id:saved.problem_id});
-  assert.deepEqual(view.history[0].familyChange.after, familyInput([a,'pillar-el'].sort()));
+  assert.deepEqual(view.history[0].familyChange.after, familyInput([a,'ns-el'].sort()));
   assert.doesNotMatch(JSON.stringify(view),/@example/);
 });
 test('family changes detect stale edits and reject invalid links and cycles without losing other changes',async()=>{
@@ -292,52 +295,40 @@ test('family changes detect stale edits and reject invalid links and cycles with
   await assert.rejects(set(c,familyInput([b],[b])),e=>e.code==='invalid-argument');
   await assert.rejects(set(c,familyInput([],[b])),e=>e.code==='invalid-argument');
   await assert.rejects(set(c,familyInput([c])),e=>e.code==='invalid-argument');
-  await assert.rejects(set(c,familyInput(['pillar-invalid'])),e=>e.code==='invalid-argument');
-  await assert.rejects(set(a,familyInput(['pillar-bp'])),e=>e.code==='aborted');
+  await assert.rejects(set(c,familyInput(['not an id!'])),e=>e.code==='invalid-argument');
+  await assert.rejects(set(c,familyInput(['nowhere'])),e=>e.code==='failed-precondition');
+  await assert.rejects(set(c,familyInput(['diverging-runs'])),e=>e.code==='failed-precondition'); // a stepping stone is no objective
+  await assert.rejects(set(a,familyInput(['ns-bp'])),e=>e.code==='aborted');
   const oldHistory=(await h.call({action:'get',problem_id:a})).history.length;
   await set(a,familyInput([b])); // retry after a lost success response
   assert.equal((await h.call({action:'get',problem_id:a})).history.length,oldHistory);
-  await set(a,familyInput(['pillar-bp'],[c]),familyInput([b]));
+  await set(a,familyInput(['ns-bp'],[c]),familyInput([b]));
   await set(c,familyInput(),familyInput([],[a]));
   const graph=await h.call({action:'family'}); assert.equal(graph.edges.filter(x=>x.kind==='related_to').length,0);
   const reg=record();reg.problem_id=a;const receipt=await h.call({action:'register',registration:reg});
-  await set(a,familyInput(['pillar-el']),familyInput(['pillar-bp']),'admin@example.invalid');
+  await set(a,familyInput(['ns-el']),familyInput(['ns-bp']),'admin@example.invalid');
   const view=await h.call({action:'get',problem_id:a});
   assert.equal(view.versions[0].id,receipt.benchmark_id);assert.equal(view.problem.stage,'validated');assert.equal(view.problem.projects[0].id,'diverging-runs');
   assert.equal(view.can_approve,false);
 });
-test('moonshots use stable IDs, admin permissions, archive and restore, and retry safely',async()=>{
-  const h=harness(),admin='admin@example.invalid',request_id=require('node:crypto').randomUUID();
-  const action={action:'save_moonshot',title:'Moon',request_id};
-  await assert.rejects(h.call(action),e=>e.code==='permission-denied');
-  const {objective_id:m}=await h.call(action,admin);
-  assert.equal((await h.call(action,admin)).objective_id,m);
-  await assert.rejects(h.call({...action,title:'Different'},admin),e=>e.code==='already-exists');
-  await assert.rejects(h.call({...action,objective_id:'pillar-el'},admin),e=>e.code==='invalid-argument');
-  await assert.rejects(h.call({...action,title:' '},admin),e=>e.code==='invalid-argument');
-  const a=await createFamilyProblem(h,'A',familyInput([m])); const b=await createFamilyProblem(h,'B');
-  await h.call({action:'save_moonshot',objective_id:m,title:'Renamed',archived:true},admin);
-  assert.equal((await h.call(action,admin)).objective_id,m);
-  const g=await h.call({action:'family'},admin);assert.equal(g.can_manage_objectives,true);
-  assert.deepEqual(g.objectives.find(x=>x.id===m),{id:m,kind:'moonshot',title:'Renamed',archived:true});
-  assert(g.edges.some(e=>e.from===a && e.to===m));
+test('a problem contributes to a moonshot project, and the moonshot must still be one',async()=>{
+  const h=harness();
+  const a=await createFamilyProblem(h,'A',familyInput(['moon']));
+  const g=await h.call({action:'family'});
+  assert(g.edges.some(e=>e.from===a && e.to==='moon'));
+  const b=await createFamilyProblem(h,'B');
   const set=(id,family,previous=familyInput())=>h.call({action:'set_family',problem_id:id,family,previous});
-  await assert.rejects(set(b,familyInput([m])),e=>e.code==='failed-precondition');
-  await set(a,familyInput([m,'pillar-bp']),familyInput([m])); // retaining its archived link is okay
-  await set(a,familyInput(),familyInput([m,'pillar-bp'])); // removing one is okay too
-  await h.call({action:'save_moonshot',objective_id:m,archived:false},admin);
-  await set(b,familyInput([m]));
-  h.data.get('problemBank/'+a).archived=true;
-  await assert.rejects(set(a,familyInput(['pillar-bp'])),e=>e.code==='failed-precondition');
-  await assert.rejects(set(b,familyInput([a]),familyInput([m])),e=>e.code==='failed-precondition');
+  h.data.get('projects/moon').level=undefined; // made a stepping stone
+  await assert.rejects(set(b,familyInput(['moon'])),e=>e.code==='failed-precondition');
+  await set(a,familyInput(),familyInput(['moon'])); // removing the old link is still fine
 });
 test('a researcher can edit a problem with more than 100 incoming related links',async()=>{
   const h=harness(), central=await createFamilyProblem(h,'Shared research theme'), peers=[];
   for (let i=0;i<104;i++) peers.push(await createFamilyProblem(h,'Contributor '+i,familyInput([],[central])));
-  await h.call({action:'set_family',problem_id:central,previous:familyInput([],peers),family:familyInput(['pillar-el'],peers.slice(3))});
+  await h.call({action:'set_family',problem_id:central,previous:familyInput([],peers),family:familyInput(['ns-el'],peers.slice(3))});
   const edges=(await h.call({action:'family'})).edges;
   assert.equal(edges.filter(x=>x.kind==='related_to').length,101);
-  assert(edges.some(x=>x.from===central && x.to==='pillar-el'));
+  assert(edges.some(x=>x.from===central && x.to==='ns-el'));
 });
 
 const verificationSource = 'ak-'+'8'.repeat(24), researchQuestion = 'ak-'+'9'.repeat(24);

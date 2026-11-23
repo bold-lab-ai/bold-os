@@ -16,7 +16,7 @@
       children.get(edge.to).push(nodes.get(edge.from)); parents.get(edge.from).push(nodes.get(edge.to));
     });
     function byTitle(a,b){return a.title.localeCompare(b.title) || a.id.localeCompare(b.id);}
-    objectives.sort(function(a,b){return Number(b.kind === 'pillar') - Number(a.kind === 'pillar') || byTitle(a,b);});
+    objectives.sort(function(a,b){return Number(b.kind === 'northstar') - Number(a.kind === 'northstar') || byTitle(a,b);});
     problems.sort(byTitle); children.forEach(function(group){group.sort(byTitle);});
     parents.forEach(function(group){group.sort(byTitle);});
     // Nodes with no visible parent form the roots of every unclassified branch.
@@ -29,17 +29,17 @@
       classified.add(current.id);
       for (var child of children.get(current.id)) queue.push(child);
     }
-    return {objectives:objectives, problems:problems, children:children, parents:parents, unclassified:unclassified, classified:classified};
+    // The tree's roots: northstars, and any moonshot not yet part of one.
+    var roots = objectives.filter(function(o){return !parents.get(o.id).length;});
+    return {objectives:objectives, roots:roots, problems:problems, children:children, parents:parents, unclassified:unclassified, classified:classified};
   }
 
   function mount(call, initialObjective, onFamilyChanged){
     var el = function(id){return document.getElementById(id);};
     var branches = el('pbTreeBranches'), status = el('pbTreeStatus'), retry = el('pbTreeRetry');
-    var includeArchived = el('pbIncludeArchived'), manage = el('pbManageObjectives');
-    var form = el('pbObjectiveForm'), select = el('pbMoonshot'), title = el('pbMoonshotTitle');
-    var save = el('pbSaveMoonshot'), archive = el('pbArchiveMoonshot'), close = el('pbCancelMoonshot');
-    var graph = null, index = null, query = '', version = 0, pending = false, saving = false;
-    var requested = initialObjective, requestId = null;
+    var includeArchived = el('pbIncludeArchived');
+    var graph = null, index = null, query = '', version = 0, pending = false;
+    var requested = initialObjective;
 
     function node(tag, className, text){
       var element = document.createElement(tag);
@@ -85,12 +85,13 @@
         row.append(toggle); li.append(row); expand(open === true);
       } else {row.append(node('span', 'pb-tree-spacer')); li.append(row);}
       if (isProblem) row.append(problemLink(item));
-      var kind = isProblem ? stageText(item) : item.kind === 'pillar' ? 'Research pillar' : item.kind === 'moonshot' ? 'Moonshot' : '';
+      var kind = isProblem ? stageText(item) : item.kind === 'northstar' ? 'Northstar' : item.kind === 'moonshot' ? 'Moonshot' : '';
       if (!isProblem && item.archived) kind += ' · Archived';
       if (kind) {
-        var handbook = item.kind === 'pillar' && /^boldiquette\.html#[a-z0-9-]+$/i.test(item.source_url || '');
-        var label = node(handbook ? 'a' : 'span', 'pb-tree-kind', kind);
-        if (handbook) {label.href = item.source_url; label.setAttribute('aria-label', item.title + ' in the BOLDiquette');}
+        // A northstar or moonshot is a project: its page.
+        var project = item.kind === 'northstar' || item.kind === 'moonshot';
+        var label = node(project ? 'a' : 'span', 'pb-tree-kind', kind);
+        if (project) {label.href = 'project.html#id=' + encodeURIComponent(item.id); label.setAttribute('aria-label', item.title + ', its project page');}
         row.append(label);
       }
       return li;
@@ -122,7 +123,7 @@
         }
         if (!objectives.length && !problems.length) branches.append(note('No objectives or problems match your search.'));
       } else {
-        var roots = index.objectives.slice();
+        var roots = index.roots.slice();
         if (index.unclassified.length) roots.push({id:'unclassified',title:'Unclassified',kind:'unclassified'});
         branches.append(group(roots, requested));
       }
@@ -132,28 +133,7 @@
       render();
       onFamilyChanged(graph, includeArchived.checked);
     }
-    function fillForm(){
-      var current = graph.objectives.find(function(o){return o.id === select.value;});
-      title.value = current ? current.title : '';
-      title.setCustomValidity('');
-      save.textContent = current ? 'Save name' : 'Add moonshot'; archive.hidden = !current;
-      archive.textContent = current && current.archived ? 'Restore' : 'Archive'; requestId = null;
-    }
-    function populate(selected){
-      select.replaceChildren(new Option('New moonshot',''));
-      graph.objectives.filter(function(o){return o.kind === 'moonshot';}).sort(function(a,b){return a.title.localeCompare(b.title);}).forEach(function(o){
-        select.add(new Option(o.title + (o.archived ? ' (archived)' : ''), o.id));
-      });
-      select.value = selected || ''; fillForm();
-    }
-    function showForm(show){form.hidden = !show; manage.setAttribute('aria-expanded', String(show));}
-    function formBusy(busy){
-      saving = busy;
-      [select,title,save,archive,close].forEach(function(control){control.disabled = busy;});
-      manage.disabled = busy || !graph || !graph.can_manage_objectives;
-      manage.title = !graph || !graph.can_manage_objectives ? 'Only a PI or administrator can manage moonshots.' : '';
-    }
-    async function load(force, selected){
+    async function load(force){
       if (!force && (graph || pending)) return;
       var ticket = ++version; pending = true; retry.hidden = true; statusText('Loading the research family tree…');
       try {
@@ -162,8 +142,7 @@
         graph = data;
         var objective = graph.objectives.find(function(o){return o.id === requested;});
         if (objective && objective.archived) includeArchived.checked = true;
-        reindex(); populate(selected); formBusy(false);
-        if (!graph.can_manage_objectives) showForm(false);
+        reindex();
         statusText(requested && !objective ? 'This objective could not be found.' : '');
         requested = null;
         return true;
@@ -174,40 +153,8 @@
         return false;
       } finally {if (ticket === version) pending = false;}
     }
-    async function submit(archiveChange){
-      if (saving || !graph || !graph.can_manage_objectives) return;
-      var ticket = version, id = select.value, action = {action:'save_moonshot'};
-      if (id) action.objective_id = id;
-      if (archiveChange) {
-        var current = graph.objectives.find(function(o){return o.id === id;});
-        if (!current) return;
-        action.archived = !current.archived;
-      } else {
-        action.title = title.value.trim();
-        if (!action.title) {title.setCustomValidity('Enter an objective name.'); title.reportValidity(); return;}
-        if (!id) {requestId = requestId || crypto.randomUUID(); action.request_id = requestId;}
-      }
-      formBusy(true); statusText('Saving…');
-      try {
-        var result = await call(action);
-        if (ticket !== version) return;
-        var refreshed = await load(true, result.objective_id);
-        if (refreshed === undefined) return;
-        if (!refreshed) {formBusy(true); statusText('The moonshot was saved. Reload the tree to see the change.'); return;}
-        statusText(archiveChange ? (action.archived ? 'Moonshot archived.' : 'Moonshot restored.') : 'Moonshot saved.');
-      } catch (e){
-        if (ticket !== version) return;
-        formBusy(false); statusText('Could not save the moonshot. ' + (e.message || 'Try again.'));
-      }
-    }
     includeArchived.addEventListener('change', function(){if (graph) reindex();});
     retry.addEventListener('click', function(){load(true);});
-    manage.addEventListener('click', function(){showForm(form.hidden); if (!form.hidden) select.focus();});
-    close.addEventListener('click', function(){showForm(false); manage.focus();});
-    select.addEventListener('change', fillForm);
-    title.addEventListener('input', function(){requestId = null; title.setCustomValidity('');});
-    form.addEventListener('submit', function(e){e.preventDefault(); submit(false);});
-    archive.addEventListener('click', function(){submit(true);});
     return {
       load:load,
       includeArchived:function(){
@@ -216,8 +163,7 @@
       search:function(value){if (query !== value) {query = value; render();}},
       reset:function(){
         version++; pending = false; graph = null; index = null;
-        includeArchived.checked = false; branches.replaceChildren(); retry.hidden = true; form.reset();
-        showForm(false); formBusy(false); statusText('');
+        includeArchived.checked = false; branches.replaceChildren(); retry.hidden = true; statusText('');
         onFamilyChanged(null, false);
       }
     };

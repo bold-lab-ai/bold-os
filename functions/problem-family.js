@@ -1,30 +1,20 @@
-// A contribution points from a narrower problem to a broader problem or objective.
+// A contribution points from a narrower problem to a broader problem or objective. The objectives are
+// BOLD.OS's northstars and moonshots: projects with a level (#248, functions/research-map.js), so one
+// record holds them for Projects, the Map and the Problem Bank.
 // Related problems share one undirected edge. Edges survive archiving so restoration
 // and audit do not depend on reconstructing a previous version of a problem.
 const crypto = require('node:crypto');
 const PROBLEM_ID = /^ak-[a-f0-9]{24}$/;
-const MOON_ID = /^moon-[a-f0-9]{24}$/;
-const UUID = /^[a-f0-9]{8}-(?:[a-f0-9]{4}-){3}[a-f0-9]{12}$/i;
-const PILLARS = new Map([['BP','Beyond Backpropagation'], ['HCLD','Human-Centric Learning & Discovery'], ['EL','Embodied Learning']]);
-const SOURCE = 'boldiquette.html#afchbwgz';
+const OBJECTIVE_ID = /^[A-Za-z0-9_-]{1,160}$/;
+const research = require('./research-map');
 const CONTRIBUTES = 'contributes_to';
 const RELATED = 'related_to';
-const isPillar = id => [...PILLARS.keys()].some(key => id === 'pillar-' + key.toLowerCase());
+const isObjective = id => typeof id === 'string' && !PROBLEM_ID.test(id) && OBJECTIVE_ID.test(id);
+const OBJECTIVE_LEVELS = ['northstar','moonshot'];
 const edgeId = edge => [edge.kind, edge.from, edge.to].join('_');
 const same = (a,b) => a.length === b.length && a.every((id,i) => id === b[i]);
 const equalSelection = (a,b) => same(a.parents,b.parents) && same(a.related,b.related);
 
-function pillarRows(handbook){
-  const parts = handbook?.parts || [];
-  const section = parts.find(p => p.id === 'afchbwgz');
-  const titles = new Map(PILLARS);
-  // Stable pillar IDs follow the BOLDiquette's abbreviations, even when the section
-  // is reordered or a title changes. Demo handbooks can omit the research section.
-  for (const match of String(section?.body || '').matchAll(/^\s*[-*]?\s*(?:\d+[.)]\s*)?([^\n:]+?)\s+\((BP|HCLD|EL)\)\s*\**:/gm)) {
-    titles.set(match[2], match[1].replace(/\*/g,'').trim());
-  }
-  return [...titles].map(([key,title]) => ({ id:'pillar-' + key.toLowerCase(), title, kind:'pillar', archived:false, source_url:SOURCE }));
-}
 function selectionFrom(edges, id){
   const parents = [], related = [];
   for (const e of edges) {
@@ -58,27 +48,33 @@ function closesCycle(edges, id, parents){
 }
 
 module.exports = function problemFamily(db, error){
-  const objectives = db.collection('problemObjectives'), relations = db.collection('problemRelationships');
+  const objectives = db.collection('projects'), relations = db.collection('problemRelationships');
   const state = db.collection('problemFamilyState').doc('graph');
   const problems = db.collection('problemBank');
   const publicEdges = snap => snap.docs.map(d => {
     const {from,to,kind} = d.data(); return {from,to,kind};
   });
   async function list(full){
-    const [handbook, goals, nodes, links] = await Promise.all([
-      db.collection('handbook').doc('boldiquette').get(), objectives.get(), problems.select('title','stage','archived','builds_benchmark').get(), relations.select('from','to','kind').get()
+    const [goals, nodes, links] = await Promise.all([
+      objectives.select('title','level','parents').get(), problems.select('title','stage','archived','builds_benchmark').get(), relations.select('from','to','kind').get()
     ]);
+    const goalRows = goals.docs.filter(doc => OBJECTIVE_LEVELS.includes(research.levelOf(doc.data())));
+    const northstars = new Set(goalRows.filter(doc => research.levelOf(doc.data()) === 'northstar').map(doc => doc.id));
+    // A moonshot contributes to its northstars (its project's parents), as a problem to what it's under.
+    const partOf = goalRows.filter(doc => research.levelOf(doc.data()) === 'moonshot')
+      .flatMap(doc => (doc.data().parents || []).filter(up => northstars.has(up)).map(up => ({from:doc.id,to:up,kind:CONTRIBUTES})));
     return {
-      objectives: pillarRows(handbook.data()).concat(goals.docs.map(doc => ({id:doc.id,kind:'moonshot',title:doc.data().title,archived:!!doc.data().archived}))),
+      // Northstars and moonshots (#248).
+      objectives: goalRows.map(doc => ({id:doc.id,kind:research.levelOf(doc.data()),title:doc.data().title || doc.id,archived:false})),
       problems: nodes.docs.map(doc => ({id:doc.id,title:doc.data().title,stage:doc.data().stage || 'open',builds_benchmark:doc.data().builds_benchmark === true,archived:!!doc.data().archived})),
-      edges: publicEdges(links), can_manage_objectives: full
+      edges: publicEdges(links).concat(partOf), can_manage_objectives: false
     };
   }
   function normalize(family, id){
     if (!family || !Array.isArray(family.parents) || !Array.isArray(family.related) || Object.keys(family).some(k => k !== 'parents' && k !== 'related'))
       throw error('invalid-argument', 'Supply the broader objectives or problems and the related problems.');
     const {parents,related} = family;
-    if (parents.some(p => typeof p !== 'string' || !(PROBLEM_ID.test(p) || MOON_ID.test(p) || isPillar(p))) || related.some(p => typeof p !== 'string' || !PROBLEM_ID.test(p)))
+    if (parents.some(p => typeof p !== 'string' || !(PROBLEM_ID.test(p) || isObjective(p))) || related.some(p => typeof p !== 'string' || !PROBLEM_ID.test(p)))
       throw error('invalid-argument', 'Select a problem or objective from the family tree.');
     const all = parents.concat(related);
     if (all.includes(id)) throw error('invalid-argument','A problem cannot link to itself.');
@@ -101,9 +97,10 @@ module.exports = function problemFamily(db, error){
     // in this transaction, rather than the number already attached to the node.
     if (added.length > 100 || added.length + removed.length > 400)
       throw error('invalid-argument','Save at most 100 new links or 400 total link changes at a time.');
-    const newTargets = added.map(([,e]) => e.from === id ? e.to : e.from).filter(target => !isPillar(target));
-    const targets = await Promise.all(newTargets.map(target => tx.get((MOON_ID.test(target) ? objectives : problems).doc(target))));
-    if (targets.some(doc => !doc.exists || doc.data().archived)) throw error('failed-precondition','A selected problem or objective is no longer active. Reload the choices.');
+    const newTargets = added.map(([,e]) => e.from === id ? e.to : e.from);
+    const targets = await Promise.all(newTargets.map(target => tx.get((isObjective(target) ? objectives : problems).doc(target))));
+    if (targets.some((doc,i) => !doc.exists || doc.data().archived || (isObjective(newTargets[i]) && !OBJECTIVE_LEVELS.includes(research.levelOf(doc.data())))))
+      throw error('failed-precondition','A selected problem or objective is no longer active. Reload the choices.');
     if (closesCycle(edges,id,desired.parents)) throw error('failed-precondition','This link would make a problem its own ancestor. Choose a different broader problem.');
     // A peer may already have named this problem as a parent. This also prevents an
     // undirected relationship and a direct contribution between the same pair.
@@ -132,31 +129,5 @@ module.exports = function problemFamily(db, error){
       return {ok:true};
     });
   }
-  async function saveMoonshot(d, email, full){
-    if (!full) throw error('permission-denied','Only a PI or admin can manage moonshots.');
-    const creating = d.objective_id === undefined;
-    if (!creating && (typeof d.objective_id !== 'string' || !MOON_ID.test(d.objective_id))) throw error('invalid-argument','Select a moonshot to edit.');
-    if (d.request_id !== undefined && (typeof d.request_id !== 'string' || !UUID.test(d.request_id))) throw error('invalid-argument','Supply a valid request ID.');
-    if (d.title !== undefined && (typeof d.title !== 'string' || !d.title.trim() || d.title.trim().length > 180)) throw error('invalid-argument','Give the moonshot a title of up to 180 characters.');
-    if (d.archived !== undefined && typeof d.archived !== 'boolean') throw error('invalid-argument','Supply the archive choice.');
-    if (creating && (!d.title || d.archived) || !creating && d.title === undefined && d.archived === undefined) throw error('invalid-argument','Supply the moonshot title or archive choice.');
-    const title = d.title?.trim();
-    const id = creating ? 'moon-' + crypto.createHash('sha256').update(email + ':' + (d.request_id || crypto.randomUUID())).digest('hex').slice(0,24) : d.objective_id;
-    const ref = objectives.doc(id), at = Date.now();
-    return db.runTransaction(async tx => {
-      const doc = await tx.get(ref), was = doc.data();
-      if (creating && doc.exists) {
-        if (was.initialTitle !== title) throw error('already-exists','This request already created a different moonshot.');
-        return {objective_id:id};
-      }
-      if (!creating && !doc.exists) throw error('not-found','This moonshot does not exist.');
-      const next = {title:title ?? was.title,archived:d.archived ?? was?.archived ?? false};
-      if (creating || next.title !== was.title || next.archived !== was.archived) {
-        tx.set(ref,{...(was || {createdBy:email,createdAt:at,initialTitle:title}),...next,updatedBy:email,updatedAt:at});
-        tx.set(ref.collection('versions').doc(crypto.randomUUID()),{...next,updatedBy:email,updatedAt:at});
-      }
-      return {objective_id:id};
-    });
-  }
-  return {list,normalize,replace,setFamily,saveMoonshot};
+  return {list,normalize,replace,setFamily};
 };

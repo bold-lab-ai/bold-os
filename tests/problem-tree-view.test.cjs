@@ -8,7 +8,7 @@ const {buildIndex} = context.window.BoldProblemTree;
 
 function fixture(){
   return {
-    objectives:[{id:'pillar-1',title:'First pillar',kind:'pillar'},{id:'moon-1',title:'Second objective',kind:'moonshot'}],
+    objectives:[{id:'pillar-1',title:'First northstar',kind:'northstar'},{id:'moon-1',title:'Second objective',kind:'moonshot'}],
     problems:[{id:'broader',title:'Broader problem',stage:'checked'},{id:'shared',title:'Shared question',stage:'validated'},
       {id:'loose',title:'Unclassified question'},{id:'narrow',title:'Narrow question'}],
     edges:[{from:'broader',to:'pillar-1',kind:'contributes_to'},{from:'shared',to:'broader',kind:'contributes_to'},

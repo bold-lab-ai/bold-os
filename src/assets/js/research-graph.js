@@ -2,7 +2,7 @@
 (function(root){
   'use strict';
   var svgNS = 'http://www.w3.org/2000/svg';
-  var kinds = {pillar:'Research pillar', moonshot:'Moonshot', problem:'Research problem'};
+  var kinds = {northstar:'Northstar', moonshot:'Moonshot', problem:'Research problem'};
   var stages = {open:'Open', implemented:'Implemented', checked:'Checked', validated:'Validated'};
 
   function html(tag, className, text){
@@ -55,7 +55,7 @@
     var fit = button('Fit', fitGraph); fit.setAttribute('aria-label','Fit graph'); fit.title = 'Fit graph';
     controls.append(overview, smaller, larger, fit); canvas.append(controls);
     var legend = html('div','rg-legend'); legend.setAttribute('aria-label','Graph legend');
-    [['pillar','Pillar'],['moonshot','Moonshot'],['problem','Problem'],['contributes_to','Contributes to'],['related_to','Related to']].forEach(function(entry){
+    [['northstar','Northstar'],['moonshot','Moonshot'],['problem','Problem'],['contributes_to','Contributes to'],['related_to','Related to']].forEach(function(entry){
       var label = html('span'); var key = html('i','rg-key rg-key-'+entry[0]); key.setAttribute('aria-hidden','true'); label.append(key, document.createTextNode(entry[1])); legend.append(label);
     });
     frame.append(canvas, legend);
@@ -72,7 +72,7 @@
     function mark(node){
       var attrs = {class:'rg-symbol'};
       if (node.kind === 'moonshot') return svg('path',Object.assign(attrs,{d:'M0,-12 L12,0 L0,12 L-12,0 Z'}));
-      return svg('circle',Object.assign(attrs,{r:node.kind === 'pillar' ? 12 : 8}));
+      return svg('circle',Object.assign(attrs,{r:node.kind === 'northstar' ? 12 : 8}));
     }
     function goButton(node){
       var control = button('', function(event){ focusByKey = event.detail === 0; choose(node.id); });
@@ -201,7 +201,7 @@
         group.classList.toggle('rg-match',!!matching && matching.has(node.id));
         group.classList.toggle('rg-no-match',!!matching && !matching.has(node.id));
         group.append(svg('title',{},node.title),svg('circle',{r:23,fill:'transparent'}),svg('circle',{r:20,class:'rg-halo'}),mark(node));
-        if (node.kind === 'pillar') group.append(svg('circle',{r:3,class:'rg-core'}));
+        if (node.kind === 'northstar') group.append(svg('circle',{r:3,class:'rg-core'}));
         var label = svg('text',{y:32,'text-anchor':'middle',class:'rg-label'});
         titleLines(node.title,measure,node.labelWidth || 158).forEach(function(line, idx){label.append(svg('tspan',{x:0,dy:idx?16:0},line));}); group.append(label);
         group.addEventListener('click', function(){choose(node.id);});

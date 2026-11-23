@@ -57,17 +57,8 @@ nav: "problems.html"
     <div class="pb-tree-tools">
       <h2>Research family tree</h2>
       <label><input type="checkbox" id="pbIncludeArchived"> Include archived</label>
-      <button type="button" class="btn-text" id="pbManageObjectives" aria-expanded="false" aria-controls="pbObjectiveForm" disabled>Manage moonshots</button>
+      <a class="btn-text" href="projects-register.html#level=moonshot">+ Moonshot</a>
     </div>
-    <form class="pb-form" id="pbObjectiveForm" hidden>
-      <div class="field"><label for="pbMoonshot">Moonshot objective</label><select id="pbMoonshot"><option value="">New moonshot</option></select></div>
-      <div class="field"><label for="pbMoonshotTitle">Objective name</label><input id="pbMoonshotTitle" maxlength="180" required></div>
-      <div class="pb-form-actions">
-        <button type="submit" class="btn" id="pbSaveMoonshot">Add moonshot</button>
-        <button type="button" class="btn-text" id="pbArchiveMoonshot" hidden>Archive</button>
-        <button type="button" class="btn-text" id="pbCancelMoonshot">Close</button>
-      </div>
-    </form>
     <p id="pbTreeStatus" class="proj-msg" role="status"></p>
     <button type="button" id="pbTreeRetry" class="btn-text" hidden>Try again</button>
     <div id="pbTreeBranches"></div>

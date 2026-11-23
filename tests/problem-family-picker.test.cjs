@@ -5,7 +5,7 @@ const context = {window:{}, BOLD:{escapeHtml: text => String(text).replace(/&/g,
 vm.runInNewContext(fs.readFileSync(require.resolve('../src/assets/js/problem-family-picker.js'),'utf8'), context);
 const {connections, index, link} = context.window.BoldProblemFamily;
 const graph = {
-  objectives:[{id:'pillar-a',title:'A & B',kind:'pillar'}],
+  objectives:[{id:'pillar-a',title:'A & B',kind:'northstar'}],
   problems:[{id:'question',title:'Question'}, {id:'other',title:'An older problem',archived:true}],
   edges:[
     {from:'question',to:'pillar-a',kind:'contributes_to'},

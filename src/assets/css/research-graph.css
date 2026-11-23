@@ -1,7 +1,7 @@
 #pbGraph { container-type: inline-size; margin-top: 14px; }
 #pbGraph[hidden], #pbGraph [hidden] { display: none; }
 .rg-shell {
-  --rg-pillar: var(--accent);
+  --rg-northstar: var(--accent);
   --rg-problem: #397a73;
   --rg-moonshot: #9c6229;
   --rg-edge: color-mix(in srgb, var(--ink) 49%, var(--surface));
@@ -29,7 +29,7 @@
 .rg-edge.rg-incident { stroke-width: 2.2; }
 .rg-edge.rg-muted { opacity: .2; }
 .rg-node { --node: var(--rg-problem); cursor: pointer; outline: none; }
-.rg-node[data-kind='pillar'] { --node: var(--rg-pillar); }
+.rg-node[data-kind='northstar'] { --node: var(--rg-northstar); }
 .rg-node[data-kind='moonshot'] { --node: var(--rg-moonshot); }
 .rg-node.rg-muted, .rg-node.rg-no-match { opacity: .42; }
 .rg-node.rg-match .rg-halo { stroke: var(--node); }
@@ -46,7 +46,7 @@
   border-top: 1px solid var(--rule); color: var(--ink-soft); font-size: 12px; }
 .rg-legend > span, .rg-type { display: inline-flex; align-items: center; gap: 7px; }
 .rg-key { display: inline-block; box-sizing: border-box; flex: none; width: 9px; height: 9px; }
-.rg-key-pillar { background: var(--rg-pillar); border-radius: 50%; }
+.rg-key-northstar { background: var(--rg-northstar); border-radius: 50%; }
 .rg-key-problem { border: 2px solid var(--rg-problem); border-radius: 50%; }
 .rg-key-moonshot { transform: rotate(45deg) scale(.85); background: var(--rg-moonshot); }
 .rg-key-contributes_to, .rg-key-related_to { width: 20px; height: 0; border-top: 1.5px solid var(--rg-edge); position: relative; }

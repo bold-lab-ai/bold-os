@@ -485,7 +485,6 @@ service cloud.firestore {
     match /benchmarkSources/{id} { allow read, write: if false; }
     match /benchmarkReceipts/{id} { allow read, write: if false; }
     // The registry validates both endpoints and serializes hierarchy changes.
-    match /problemObjectives/{id} { allow read, write: if false; }
     match /problemRelationships/{id} { allow read, write: if false; }
     match /problemFamilyState/{id} { allow read, write: if false; }
 
