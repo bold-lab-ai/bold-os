@@ -36,7 +36,7 @@ test('the draft keeps only known fields and ids it was given', () => {
 
 test('the prompt names what it can link to', () => {
   const p = I.systemPrompt(lab);
-  for (const s of ['ns-hcld: Human-Centric (northstar)', 'ms-co: Co-scientist (moonshot)', 'Diverging runs', 'existing_solutions', 'builds_benchmark']) assert.ok(p.includes(s), s);
+  for (const s of ['XY problem', 'A problem is not a method', 'ns-hcld: Human-Centric (northstar)', 'ms-co: Co-scientist (moonshot)', 'Diverging runs', 'existing_solutions', 'builds_benchmark']) assert.ok(p.includes(s), s);
 });
 
 test('one turn, thinking off, with the current draft; ready only once the required fields are there', async () => {
