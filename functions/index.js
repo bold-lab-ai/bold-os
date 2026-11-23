@@ -9670,6 +9670,24 @@ exports.onVisit = boldLlm.onVisit;
 // the conversation → { reply, ready, draft }. Sofya, thinking off. What it may link to is read as the person, through the
 // Problem Bank's own callable (its family tree and projects), so it never sees more than they do. Saving is the page's,
 // through benchmarkRegistry's create, after they check the draft.
+// Comparing it with the form (functions/problem-trial.js): which way each person gets, and per attempt only signals
+// (no conversation text). start also returns who's asking, the problem's definer on either way.
+const problemTrial = require('./problem-trial')({ db });
+exports.problemTrial = onCall(async (request) => {
+  const email = callerEmail(request), d = request.data || {};
+  if (d.action === 'export') {
+    if (!(await isFullWrite(email))) throw new HttpsError('permission-denied', 'Only PIs and admins see the comparison.');
+    return { rows: await problemTrial.list() };
+  }
+  await access.requireAccess(email, 'projects', 'change');
+  let out;
+  try { out = await problemTrial.record(email, d); } catch (err) { throw new HttpsError('invalid-argument', err.message); }
+  if (d.event === 'start') {
+    const meSnap = await db.collection('people').where('email', '==', email).limit(1).get();
+    out.me = meSnap.empty ? null : { id: meSnap.docs[0].id, name: meSnap.docs[0].data().name || '' };
+  }
+  return out;
+});
 const problemInterview = require('./problem-interview');
 const sofyaForProblems = require('./sofya')({ key: () => BOLD_LLM_KEY.value() });
 exports.problemInterview = onCall({ secrets: [BOLD_LLM_KEY], timeoutSeconds: 120 }, async (request) => {

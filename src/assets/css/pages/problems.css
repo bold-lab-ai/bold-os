@@ -116,6 +116,13 @@ a.btn{display:inline-block; text-decoration:none;}
 .pb-draft-list small{color:var(--muted); font-size:11px; white-space:nowrap;}
 .pb-draft-list .btn-text{font-size:11px; color:var(--muted); padding:0;}
 .pb-draft-list .btn-text:hover{color:var(--danger-text);}
+.pb-busy{margin:0 0 12px; padding:8px 12px; border-left:2px solid var(--danger-text); font:13px var(--sans); color:var(--ink-soft);}
+.pb-busy[hidden], #pbChatPart[hidden], #pbNeedsPart[hidden], .pb-switch .btn-text[hidden]{display:none;}
+.pb-switch{margin:18px 0 0; font:12.5px var(--sans);}
+.pb-switch .btn-text{font-size:12.5px; color:var(--muted);}
+.pb-switch .btn-text:hover{color:var(--link);}
+/* The form way: no conversation above, so no rule above the fields. */
+.pb-talk.is-form .pb-review{margin-top:0; padding-top:0; border-top:0;}
 .pb-review{margin-top:28px; padding-top:20px; border-top:1px solid var(--line);}
 .pb-review[hidden]{display:none;}
 .pb-review-head{margin:0 0 4px; font:600 15px var(--sans);}

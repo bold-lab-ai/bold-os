@@ -16,16 +16,19 @@ nav: "problems.html"
   </ol>
   <div class="pb-talk">
     <section class="ha-box is-open pb-talk-box" aria-label="Describe the problem to BOLD">
+      <div id="pbChatPart">
       <ol class="ha-log" id="pbLog" aria-live="polite"></ol>
+      <p class="pb-busy" id="pbBusy" role="alert" hidden>BOLD is busy right now. <button type="button" class="btn-text" id="pbBusyForm">Continue in the form</button>: what it has gathered comes with you.</p>
       <div class="ha-fold"><form class="ha-form" id="pbChatForm" novalidate>
         <textarea class="md-field no-tags" data-md-breaks="true" rows="2" maxlength="4000" id="pbChatInput" aria-label="Reply to BOLD" placeholder="Reply to BOLD…" disabled></textarea>
         <div class="ha-actions"><button type="button" class="btn-text" id="pbRestart" hidden>Start again</button><button type="submit" class="btn-box is-primary" id="pbSend" disabled>Send</button></div>
       </form></div>
       <p class="ha-saved"><span id="pbSavedNote" hidden>Saved as a draft: only you see it. </span>BOLD-LLM logs conversations to improve it.</p>
+      </div>
       <!-- Once BOLD has what's needed: what it gathered, to check, edit and save. -->
       <form class="pb-form pb-review" id="pbReview" hidden novalidate>
-        <h2 class="pb-review-head">Check and edit</h2>
-        <p class="field-hint">What BOLD gathered from the conversation. Change anything, or keep talking to BOLD above.</p>
+        <h2 class="pb-review-head" id="pbReviewHead">Check and edit</h2>
+        <p class="field-hint" id="pbReviewHint">What BOLD gathered from the conversation. Change anything, or keep talking to BOLD above.</p>
         <div class="field"><label for="pbTitle">Problem title</label><input id="pbTitle" required maxlength="180"></div>
         <div class="field"><label class="pb-purpose"><input id="pbBuildsBenchmark" type="checkbox"> This problem is building a benchmark</label></div>
         <div class="field"><label for="pbWhy">Why it matters</label><textarea class="no-tags" id="pbWhy" required maxlength="8000" rows="3"></textarea></div>
@@ -36,10 +39,14 @@ nav: "problems.html"
         <div class="field"><label for="pbCollaborators">Collaborators <small>(optional)</small></label><input id="pbCollaborators" maxlength="8000" placeholder="Names"></div>
         <button type="submit" class="btn-box is-primary" id="pbReviewSave">Save problem</button>
       </form>
+      <!-- Two ways of adding a problem, compared (functions/problem-trial.js): either can switch to the other. -->
+      <p class="pb-switch"><button type="button" class="btn-text" id="pbSwitch" hidden></button></p>
     </section>
     <aside class="pb-needs" aria-labelledby="pbNeedsTitle">
+      <div id="pbNeedsPart">
       <h2 class="home-box-title" id="pbNeedsTitle">What the Problem Bank needs</h2>
       <ul class="pb-checks" id="pbChecks"></ul>
+      </div>
       <button type="button" class="btn-text" id="pbToReview" hidden>Check and edit &darr;</button>
       <p class="pb-status" role="status" id="pbStatus">Loading…</p>
       <section class="pb-drafts" id="pbDrafts" aria-labelledby="pbDraftsTitle" hidden>

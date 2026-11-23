@@ -22,6 +22,13 @@
   var review = el('pbReview'), save = el('pbReviewSave'), familyGraph = null, familySelection = null;
   var still = window.matchMedia && matchMedia('(prefers-reduced-motion: reduce)').matches;
   var userId = null, epoch = 0, canWrite = false, ready = false, talking = false, saving = false;
+  // Two ways compared (functions/problem-trial.js): talking with BOLD ('chat') or the form ('form'), one per person,
+  // either can switch. Each attempt sends only signals: started, switched, a turn, BOLD failing, saved.
+  var mode = 'chat', attempt = null, lastBold = null, SOFYA_WAIT = 45000;
+  function trial(data){
+    if (!attempt) return Promise.resolve(null);
+    return call('problemTrial', Object.assign({ attempt: attempt }, data)).catch(function(err){ console.error('[BOLD Lab] problem trial', err); return null; });
+  }
   var turns = [], draft = Object.assign({}, EMPTY), done = false, me = null, projects = [], submission = null;
   // The conversation is kept as a draft only they see (problemDrafts/{id}, firestore.rules), saved after each answer
   // and edit, to pick up later from Your drafts; deleted once the problem is saved. ?draft=<id> opens one.
@@ -92,19 +99,57 @@
   review.addEventListener('input', function(){ draft = readReview(); drawNeeds(); persistSoon(); });
   review.addEventListener('change', function(){ draft = readReview(); drawNeeds(); persistSoon(); });
   el('pbToReview').addEventListener('click', function(){ review.scrollIntoView({ behavior: still ? 'auto' : 'smooth', block: 'start' }); el('pbTitle').focus({ preventScroll: true }); });
+  // The way they're on: the conversation with its checklist, or the fields alone.
+  function applyMode(){
+    var form = mode === 'form';
+    el('pbChatPart').hidden = form; el('pbNeedsPart').hidden = form;
+    document.querySelector('.pb-talk').classList.toggle('is-form', form);
+    el('pbReviewHead').textContent = form ? 'Describe the problem' : 'Check and edit';
+    el('pbReviewHint').textContent = form ? 'Fill in each field; the optional ones can wait.' : 'What BOLD gathered from the conversation. Change anything, or keep talking to BOLD above.';
+    el('pbSwitch').textContent = form ? 'Talk it through with BOLD instead' : 'Fill in the form instead';
+    el('pbSwitch').hidden = !userId;
+    if (form && review.hidden) showReview(false);
+    if (!form && !done) review.hidden = true;
+    el('pbBusy').hidden = true;
+    drawNeeds(); drawDrafts();
+  }
+  function switchTo(to, reason){
+    if (to === mode || talking || saving) return;
+    if (!review.hidden) draft = readReview();
+    mode = to; applyMode();
+    trial({ event: 'switch', to: to, reason: reason || 'choice' });
+    if (to === 'form') el('pbTitle').focus(); else input.focus();
+  }
+  el('pbSwitch').addEventListener('click', function(){ switchTo(mode === 'form' ? 'chat' : 'form'); });
+  el('pbBusyForm').addEventListener('click', function(){ switchTo('form', 'sofya'); });
+  // A new attempt: which way they get (fixed for them), and who they are (the problem's definer).
+  function begin(generation){
+    attempt = crypto.randomUUID(); lastBold = null;
+    return trial({ event: 'start' }).then(function(r){
+      if (generation !== epoch || !r) return;
+      if (r.me) me = r.me;
+      var asked = (location.search.match(/[?&]mode=(chat|form)/) || [])[1];
+      mode = r.way || r.variant || 'chat'; applyMode();
+      if (asked && asked !== mode) switchTo(asked, 'choice');
+      controls();
+    });
+  }
   function controls(){
     var on = !!userId && canWrite && ready && !talking && !saving;
     input.disabled = send.disabled = !on;
     input.title = canWrite ? '' : BOLD.cannotReason('projects', 'edit');
-    save.disabled = !on || !me;
+    save.disabled = !on || !me || (mode === 'chat' && !done);
     save.title = me ? '' : 'You’re not in the BOLD Slack roster yet, so you can’t be its definer.';
     el('pbRestart').hidden = turns.length < 2;
   }
   function start(){
+    if (userId && attempt && turns.length > 1) begin(epoch);
     turns = [{ role: 'assistant', content: OPENING }];
     draft = Object.assign({}, EMPTY); done = false; submission = null; review.hidden = true; familySelection = null;
     draftId = null; el('pbSavedNote').hidden = true; setAddress();
     log.innerHTML = item('bold', OPENING);
+    if (mode === 'form') showReview(false);
+    el('pbBusy').hidden = true;
     drawNeeds(); controls(); drawDrafts();
   }
 
@@ -134,7 +179,7 @@
   }
   function drawDrafts(){
     drafts.sort(function(a, b){ return (b.updatedAt || 0) - (a.updatedAt || 0); });
-    el('pbDrafts').hidden = !drafts.length;
+    el('pbDrafts').hidden = !drafts.length || mode === 'form';
     el('pbNew').hidden = !draftId;
     el('pbDraftList').innerHTML = drafts.map(function(d){
       return '<li' + (d.id === draftId ? ' class="is-current"' : '') + '><a href="?draft=' + encodeURIComponent(d.id) + '" data-open="' + esc(d.id) + '" title="' + esc(d.title || 'Untitled') + '">' +
@@ -152,6 +197,7 @@
   function open(d){
     if (!d || talking || saving) return;
     start();
+    if (mode !== 'chat') switchTo('chat', 'choice');
     draftId = d.id; turns = (d.turns || []).slice(); draft = Object.assign({}, EMPTY, d.draft || {}); done = !!d.done || complete(draft); me = d.me || me;
     log.innerHTML = turns.map(function(t){ return item(t.role === 'user' ? 'you' : 'bold', t.content); }).join('');
     el('pbSavedNote').hidden = false; setAddress();
@@ -183,9 +229,11 @@
     input.value = ''; input.dispatchEvent(new Event('input'));
     log.insertAdjacentHTML('beforeend', '<li class="ha-msg ha-bold ha-pending"><p class="ha-who">BOLD</p><div class="ha-text"><p>Thinking…</p></div></li>');
     talking = true; controls();
-    call('problemInterview', { turns: turns, draft: draft }).then(function(r){
+    el('pbBusy').hidden = true;
+    firebase.app().functions('europe-west2').httpsCallable('problemInterview', { timeout: SOFYA_WAIT })({ turns: turns, draft: draft }).then(function(x){ return x.data; }).then(function(r){
       if (generation !== epoch) return;
       if (r.me) me = r.me;
+      lastBold = r.draft; trial({ event: 'turn' });
       var now = !!r.ready || complete(r.draft), first = !done && now;
       draft = r.draft; done = done || now;
       turns.push({ role: 'assistant', content: r.reply });
@@ -197,7 +245,10 @@
       if (generation !== epoch) return;
       turns.pop();
       var p = log.querySelector('.ha-pending'); if (p) p.remove();
-      log.insertAdjacentHTML('beforeend', item('bold', (err && err.message && err.code !== 'functions/internal') ? err.message : 'BOLD couldn’t answer just now — try again.', true));
+      // BOLD failing or slow: the form, with what it has gathered so far, is one click away.
+      var mine = err && (err.code === 'functions/invalid-argument');
+      if (mine) log.insertAdjacentHTML('beforeend', item('bold', err.message, true));
+      else { el('pbBusy').hidden = false; trial({ event: 'sofya_error' }); }
       input.value = q;
     }).then(function(){
       if (generation !== epoch) return;
@@ -211,7 +262,7 @@
   // Saving: what BOLD gathered, as the form saved it, the person as its definer.
   review.addEventListener('submit', async function(e){
     e.preventDefault();
-    if (!done || saving || !me) return;
+    if ((mode === 'chat' && !done) || saving || !me) return;
     if (!review.reportValidity()) return;
     draft = readReview();
     var generation = epoch;
@@ -231,6 +282,7 @@
       status.textContent = 'Saving…';
       var result = await call('benchmarkRegistry', Object.assign(data, { request_id: submission.id }));
       if (generation !== epoch) return;
+      await trial({ event: 'saved', problem_id: result.problem_id, bold: lastBold, saved: draft });
       // Let an open project proposal reload its choices. Keep the problem data out of browser storage.
       try { localStorage.setItem('boldOpenProblemsChanged', submission.id); } catch (ignored) {}
       // Saved: its draft goes.
@@ -244,7 +296,7 @@
   BOLD.onAccess(function(){ canWrite = BOLD.can('projects', 'edit'); controls(); });
   BOLD.onUser(function(user){
     var generation = ++epoch;
-    userId = user && user.uid; ready = false; talking = false; saving = false; me = null; projects = [];
+    userId = user && user.uid; ready = false; talking = false; saving = false; me = null; projects = []; attempt = null; mode = 'chat';
     myEmail = user && user.email ? String(user.email).toLowerCase() : ''; drafts = [];
     var want = (location.search.match(/[?&]draft=([A-Za-z0-9]+)/) || [])[1];
     start();
@@ -253,10 +305,9 @@
     call('benchmarkRegistry', { action: 'projects' }).then(function(r){
       if (generation !== epoch) return;
       projects = r.items || []; ready = true; status.textContent = ''; controls(); input.focus();
-      return Promise.all([
-        call('benchmarkRegistry', { action: 'family' }).then(function(g){ if (generation === epoch) familyGraph = g; }).catch(function(){}),
-        loadDrafts(generation)
-      ]).then(function(){
+      // The family tree first: the form way opens straight on the fields, its links included.
+      return call('benchmarkRegistry', { action: 'family' }).then(function(g){ if (generation === epoch) familyGraph = g; }).catch(function(){})
+        .then(function(){ return Promise.all([begin(generation), loadDrafts(generation)]); }).then(function(){
         if (generation !== epoch || !want) return;
         var d = drafts.filter(function(x){ return x.id === want; })[0];
         if (d) open(d); else status.textContent = 'That draft isn\u2019t there any more.';

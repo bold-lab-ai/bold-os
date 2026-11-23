@@ -14,7 +14,7 @@ const projects = [{id: 'world-models', board: '', title: 'World models'}, {id: n
 const gathered = {title: 'Divergence', significance: 'Wasted compute', difficulties: 'Shows up late', existing_solutions: 'Restarts',
   builds_benchmark: false, benchmark_known: true, collaborators: '', project_ids: ['world-models'], parent_ids: [moon], related_ids: []};
 
-async function setup(search = '', stored = {}){
+async function setup(search = '', stored = {}, opts = {}){
   const {document, window} = parseHTML('<html><body>' + page.slice(page.indexOf('<div class="hero">')) + '</body></html>');
   const calls = [];
   // Not in linkedom: scrolling and focus are no-ops here.
@@ -27,7 +27,10 @@ async function setup(search = '', stored = {}){
     if (name === 'benchmarkRegistry' && data.action === 'projects') return reply({items: projects});
     if (name === 'benchmarkRegistry' && data.action === 'family') return reply(graph);
     if (name === 'benchmarkRegistry' && data.action === 'create') return reply({problem_id: 'ak-' + 'a'.repeat(24)});
+    if (name === 'problemTrial') return reply({variant: opts.variant || 'chat', way: opts.variant || 'chat', ...(data.event === 'start' ? {me: {id: 'UME', name: 'Me'}} : {})});
+    if (name === 'problemInterview' && opts.busy) return Promise.reject(Object.assign(new Error('deadline-exceeded'), {code: 'functions/deadline-exceeded'}));
     const n = calls.filter((c) => c.name === 'problemInterview').length;
+    if (name !== 'problemInterview') return reply({});
     return reply(n === 1 ? {me: {id: 'UME', name: 'Me'}, reply: 'Why does it matter?', ready: false, draft: {...gathered, title: '', existing_solutions: '', benchmark_known: false, project_ids: [], parent_ids: []}}
       : {me: {id: 'UME', name: 'Me'}, reply: 'All there: check it below.', ready: true, draft: gathered});
   };
@@ -119,4 +122,46 @@ test('the conversation is kept as their draft, picked up later, and gone once sa
   assert.equal(b.calls.find((c) => c.data.action === 'create').data.owner_id, 'UME');
   assert.equal(b.drafts.has(id), false);
   assert.equal(b.visits.length, 1);
+});
+
+const trial = (calls) => calls.filter((c) => c.name === 'problemTrial').map((c) => c.data);
+
+test('the form way: the fields at once, no conversation, saved with the person as definer', async () => {
+  const f = await setup('', {}, {variant: 'form'});
+  assert.equal(f.$('pbChatPart').hidden, true);
+  assert.equal(f.$('pbReview').hidden, false);
+  assert.equal(f.$('pbReviewHead').textContent, 'Describe the problem');
+  assert.equal(f.$('pbSwitch').textContent, 'Talk it through with BOLD instead');
+  f.$('pbTitle').value = 'T'; f.$('pbWhy').value = 'W'; f.$('pbDifficulties').value = 'D'; f.$('pbExisting').value = 'E';
+  f.$('pbReview').dispatchEvent(new f.window.Event('submit', {cancelable: true}));
+  for (let i = 0; i < 6; i++) await new Promise((r) => setTimeout(r, 0));
+  const create = f.calls.find((c) => c.data.action === 'create').data;
+  assert.equal(create.title, 'T'); assert.equal(create.owner_id, 'UME');
+  const events = trial(f.calls).map((e) => e.event);
+  assert.deepEqual(events, ['start', 'saved']);
+  assert.equal(trial(f.calls)[1].bold, null);
+});
+
+test('BOLD failing: the form is one click away, with what it gathered, and the switch is recorded', async () => {
+  const b = await setup('', {}, {busy: true});
+  await b.say('Runs diverge');
+  assert.equal(b.$('pbBusy').hidden, false);
+  assert.equal(b.$('pbChatInput').value, 'Runs diverge', 'what they wrote is kept');
+  b.$('pbBusyForm').dispatchEvent(new b.window.Event('click'));
+  assert.equal(b.$('pbChatPart').hidden, true);
+  assert.equal(b.$('pbReview').hidden, false);
+  const events = trial(b.calls);
+  assert.deepEqual(events.map((e) => e.event), ['start', 'sofya_error', 'switch']);
+  assert.deepEqual([events[2].to, events[2].reason], ['form', 'sofya']);
+});
+
+test('a conversation records its turns, and what was saved against BOLD\'s last draft', async () => {
+  const c = await setup();
+  await c.say('Runs diverge'); await c.say('More');
+  c.$('pbReview').dispatchEvent(new c.window.Event('submit', {cancelable: true}));
+  for (let i = 0; i < 6; i++) await new Promise((r) => setTimeout(r, 0));
+  const events = trial(c.calls);
+  assert.deepEqual(events.map((e) => e.event), ['start', 'turn', 'turn', 'saved']);
+  assert.equal(events[3].bold.title, 'Divergence');
+  assert.equal(events[3].saved.title, 'Divergence');
 });
