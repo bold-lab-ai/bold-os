@@ -4,8 +4,8 @@ title: "Problem Bank | BOLD Lab"
 description: "Open research problems, their linked projects, and the evaluators built for them."
 sdk: ["firestore", "functions"]
 css: "problems"
-styles: ["problem-steps"]
-scripts: ["problem-projects.js", "pages/problems.js"]
+styles: ["problem-steps", "problem-tree"]
+scripts: ["problem-projects.js", "problem-tree.js", "pages/problems.js"]
 permalink: "problems.html"
 nav: "problems.html"
 ---
@@ -23,6 +23,7 @@ nav: "problems.html"
     <div class="view-toggle" role="group" aria-label="View">
       <button type="button" class="view-btn" data-view="list" aria-pressed="true">List</button>
       <button type="button" class="view-btn" data-view="grid" aria-pressed="false">Grid</button>
+      <button type="button" class="view-btn" data-view="tree" aria-pressed="false">By objective</button>
     </div>
     <a class="btn btn-primary" id="pbAdd" aria-disabled="true">Add problem</a>
   </div>
@@ -32,7 +33,7 @@ nav: "problems.html"
     <button type="button" class="btn-text" id="pbClear" hidden>Clear search</button>
   </div>
 
-  <div class="tabs" role="tablist" aria-label="Stage">
+  <div class="tabs" id="pbStageTabs" role="tablist" aria-label="Stage">
     <button class="tab active" type="button" data-tab="open" role="tab" aria-selected="true" aria-controls="pbOpen">Open<span class="proj-count" id="cntOpen"></span></button>
     <button class="tab" type="button" data-tab="implemented" role="tab" aria-selected="false" tabindex="-1" aria-controls="pbImplemented">Implemented<span class="proj-count" id="cntImplemented"></span></button>
     <button class="tab" type="button" data-tab="checked" role="tab" aria-selected="false" tabindex="-1" aria-controls="pbChecked">Checked<span class="proj-count" id="cntChecked"></span></button>
@@ -50,6 +51,26 @@ nav: "problems.html"
     <ul class="proj-list tab-panel" role="tabpanel" id="pbArchived" hidden></ul>
     <button type="button" class="btn" id="pbMore" hidden>Load more</button>
   </div>
+
+  <section id="pbTree" aria-label="Research family tree" hidden>
+    <div class="pb-tree-tools">
+      <h2>Research family tree</h2>
+      <label><input type="checkbox" id="pbIncludeArchived"> Include archived</label>
+      <button type="button" class="btn-text" id="pbManageObjectives" aria-expanded="false" aria-controls="pbObjectiveForm" disabled>Manage moonshots</button>
+    </div>
+    <form class="pb-form" id="pbObjectiveForm" hidden>
+      <div class="field"><label for="pbMoonshot">Moonshot objective</label><select id="pbMoonshot"><option value="">New moonshot</option></select></div>
+      <div class="field"><label for="pbMoonshotTitle">Objective name</label><input id="pbMoonshotTitle" maxlength="180" required></div>
+      <div class="pb-form-actions">
+        <button type="submit" class="btn" id="pbSaveMoonshot">Add moonshot</button>
+        <button type="button" class="btn-text" id="pbArchiveMoonshot" hidden>Archive</button>
+        <button type="button" class="btn-text" id="pbCancelMoonshot">Close</button>
+      </div>
+    </form>
+    <p id="pbTreeStatus" class="proj-msg" role="status"></p>
+    <button type="button" id="pbTreeRetry" class="btn-text" hidden>Try again</button>
+    <div id="pbTreeBranches"></div>
+  </section>
 
   <details class="pb-note"><summary>What the stages mean</summary>
     <p>The tabs show the latest registered verifier’s stage. Open a problem to see the checks and approval for each verifier.</p>

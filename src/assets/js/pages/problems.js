@@ -1,4 +1,4 @@
-// The Problem Bank (problems.html), laid out as Projects: List or Grid, tabs by stage, search.
+// The Problem Bank (problems.html) can be browsed by stage or by research objective.
 // Each problem has its own page (problem.html, pages/problem.js). Read through the
 // benchmarkRegistry callable (functions/benchmark-registry.js).
 (function(){
@@ -8,6 +8,9 @@
   var el = function(id){ return document.getElementById(id); };
   var call = function(data){ return firebase.app().functions('europe-west2').httpsCallable('benchmarkRegistry')(data).then(function(r){ return r.data; }); };
   var VIEW_KEY = 'boldProblems:view';
+  var initialObjective = new URLSearchParams(location.search).get('objective');
+  var tree = BoldProblemTree.mount(call, initialObjective);
+  var view = 'list', signedIn = false, listPending = false, listError = '';
 
   // A stage is AutoKaggle's report; an open problem has no evaluator yet.
   var STAGES = { open: 'Open problem', implemented: 'Implemented', checked: 'Checked', validated: 'Validated' };
@@ -44,6 +47,7 @@
       (missing && !p.archived ? '<a class="pb-add-verifier" href="' + path + '#tab=releases">Add verifier →</a>' : '') + '</div></li>';
   }
   function renderList(){
+    if (view === 'tree') return;
     var groups = { open: [], implemented: [], checked: [], validated: [], archived: [] };
     rows.filter(matches).forEach(function(p){ groups[tabOf(p)].push(p); });
     Object.keys(groups).forEach(function(k){
@@ -57,26 +61,42 @@
   }
   function loadList(more){
     var epoch = generation;
-    el('pbMore').disabled = true;
+    listPending = true; listError = ''; el('pbMore').disabled = true;
     return call({ action: 'list', cursor: more ? cursor : null }).then(function(r){
       if (epoch !== generation) return;
       rows = more ? rows.concat(r.items) : r.items; cursor = r.cursor; loaded = true;
       renderList();
     }).catch(function(e){
       if (epoch !== generation) return;
-      el('pbMsg').hidden = false; el('pbMsg').textContent = 'Could not load the Problem Bank. ' + (e.message || '');
-    }).then(function(){ el('pbMore').disabled = false; });
+      listError = 'Could not load the Problem Bank. ' + (e.message || '');
+      if (view !== 'tree') { el('pbMsg').hidden = false; el('pbMsg').textContent = listError; }
+    }).then(function(){ if (epoch === generation) { listPending = false; el('pbMore').disabled = false; } });
   }
 
-  /* ---------- list / grid, as Projects ---------- */
-  function setView(view){
-    if (view !== 'grid') view = 'list';
+  function setView(selected){
+    view = selected === 'tree' || selected === 'grid' ? selected : 'list';
+    var byObjective = view === 'tree';
+    el('pbStageTabs').hidden = byObjective;
+    el('pbTree').hidden = !byObjective;
+    var searchLabel = byObjective ? 'Search objectives and problems' : 'Search problems';
+    el('pbSearch').placeholder = searchLabel; el('pbSearch').setAttribute('aria-label', searchLabel);
     el('problems').setAttribute('data-view', view);
     Array.prototype.forEach.call(document.querySelectorAll('.view-btn'), function(b){ b.setAttribute('aria-pressed', String(b.getAttribute('data-view') === view)); });
+    el('problems').hidden = byObjective || !loaded;
+    el('pbMsg').hidden = byObjective || (loaded && !listError);
+    el('pbMsg').textContent = listError || (signedIn ? 'Loading…' : 'Sign in to see the Problem Bank.');
+    if (byObjective) {
+      tree.search(q);
+      if (signedIn) tree.load();
+    } else if (loaded) renderList();
+    else if (signedIn && !listPending) loadList(false);
     try { localStorage.setItem(VIEW_KEY, view); } catch (e){}
   }
-  Array.prototype.forEach.call(document.querySelectorAll('.view-btn'), function(b){ b.addEventListener('click', function(){ setView(b.getAttribute('data-view')); }); });
-  try { setView(localStorage.getItem(VIEW_KEY)); } catch (e){}
+  Array.prototype.forEach.call(document.querySelectorAll('.view-btn'), function(b){ b.addEventListener('click', function(){
+    var next = b.getAttribute('data-view'), url = new URL(location.href);
+    if (next !== 'tree') url.searchParams.delete('objective'); else url.hash = '';
+    history.replaceState(null, '', url.href); setView(next);
+  }); });
 
   /* ---------- tabs, as Projects (#validated opens that tab) ---------- */
   var tabs = Array.prototype.slice.call(document.querySelectorAll('.tab'));
@@ -97,22 +117,30 @@
     });
   });
   var hashTab = (location.hash || '').slice(1);
-  if (tabs.some(function(t){ return t.getAttribute('data-tab') === hashTab; })) setTab(hashTab);
+  var stageRequested = tabs.some(function(t){ return t.getAttribute('data-tab') === hashTab; });
+  if (stageRequested) setTab(hashTab);
+  var savedView;
+  try { savedView = localStorage.getItem(VIEW_KEY); } catch (e){}
+  setView(initialObjective ? 'tree' : stageRequested && savedView === 'tree' ? 'list' : savedView);
 
-  el('pbSearch').addEventListener('input', function(){ q = el('pbSearch').value.trim(); if (loaded) renderList(); });
-  el('pbClear').addEventListener('click', function(){ q = ''; el('pbSearch').value = ''; renderList(); });
+  function search(){
+    q = el('pbSearch').value.trim();
+    el('pbClear').hidden = !q;
+    if (view === 'tree') tree.search(q); else if (loaded) renderList();
+  }
+  el('pbSearch').addEventListener('input', search);
+  el('pbClear').addEventListener('click', function(){ el('pbSearch').value = ''; search(); el('pbSearch').focus(); });
   el('pbMore').addEventListener('click', function(){ loadList(true); });
 
   /* ---------- start ---------- */
   BOLD.onUser(function(user){
-    generation++;
-    if (!user) { el('pbMsg').textContent = 'Sign in to see the Problem Bank.'; return; }
-    BOLD.onAccess(function(){
-      var button = el('pbAdd'), allowed = BOLD.can('projects', 'edit');
-      if (allowed) button.href = 'problem-new.html'; else button.removeAttribute('href');
-      button.setAttribute('aria-disabled', String(!allowed)); button.title = allowed ? '' : BOLD.cannotReason('projects', 'edit');
-    });
-    // The project picker: one row per project, as Projects lists them.
-    loadList(false);
+    generation++; signedIn = !!user; loaded = false; listPending = false; rows = []; cursor = null; listError = '';
+    tree.reset();
+    setView(view);
+  });
+  BOLD.onAccess(function(){
+    var button = el('pbAdd'), allowed = BOLD.can('projects', 'edit');
+    if (allowed) button.href = 'problem-new.html'; else button.removeAttribute('href');
+    button.setAttribute('aria-disabled', String(!allowed)); button.title = allowed ? '' : BOLD.cannotReason('projects', 'edit');
   });
 })();

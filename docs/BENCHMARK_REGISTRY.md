@@ -10,6 +10,12 @@ The same page lists verifier releases for active problems, newest first. Select 
 
 An open problem can exist before a project starts. It can link to several BOLD OS projects. Every new project proposal must select an open, unarchived problem. Each verifier release must name one linked project. The server checks that project during registration.
 
+## Research family tree
+
+Open **Problem Bank → By objective** to browse the three research pillars and named moonshots. Expand a branch to see the problems that contribute to it. Search across active problems at every verifier stage. **Include archived** shows historical links. The **Unclassified** branch holds problems without a broader link and their descendants.
+
+On **Add problem**, select any broader objectives or problems and, separately, any related problems. On a saved problem, use **Edit family links**. The same problem can appear under several objectives. Its projects, verifiers and history are shared across every path. A PI or admin can add, rename, archive and restore a moonshot under **Manage moonshots**. The registry reads pillar names from the research pillars section of the handbook.
+
 ## Onboard an open problem
 
 1. Select **Add problem**. Enter the title, select the person who defined it, and describe its significance, difficulties and current frontier. Link existing projects and name collaborators if applicable. Save the problem. To propose a new project, follow **All projects**, select **Propose a project**, and choose the open problem. If the problem is missing, follow **here** below the project form’s **Open problem** field. The bank opens in a separate tab. Save the problem and return to the proposal to select it. **Refresh list** reloads the choices if needed. The project then appears on the problem page.

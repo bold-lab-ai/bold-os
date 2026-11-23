@@ -1,0 +1,21 @@
+#pbTree[hidden], #pbStageTabs[hidden], #pbTree [hidden]{display:none;}
+#pbTree{margin-top:20px;}
+.pb-tree-tools{display:flex; align-items:center; flex-wrap:wrap; gap:8px 20px; padding-bottom:12px; border-bottom:1px solid var(--line);}
+.pb-tree-tools h2{margin:0 auto 0 0; font:600 22px var(--sans);}
+.pb-tree-tools label, .pb-tree-kind, .pb-tree-context{color:var(--muted); font:400 13px/1.5 var(--sans);}
+#pbTree .pb-form{margin-block:12px; max-width:32rem;}
+#pbTreeBranches{margin-top:14px;}
+.pb-tree-nodes, .pb-tree-results{list-style:none; margin:0; padding:0;}
+.pb-tree-nodes > li{padding-block:2px;}
+.pb-tree-row{display:flex; gap:7px; align-items:baseline; flex-wrap:wrap;}
+.pb-tree-link, .pb-tree-objective{overflow-wrap:anywhere;}
+.pb-tree-disclosure, .pb-tree-objective{display:inline-flex; align-items:baseline; gap:8px; padding:4px 0; background:none; border:0; color:var(--ink); font:600 15px/1.45 var(--sans); text-align:left; cursor:pointer;}
+.pb-tree-disclosure:hover, .pb-tree-objective:hover{color:var(--link);}
+.pb-tree-disclosure:focus-visible, .pb-tree-objective:focus-visible{outline:2px solid var(--accent); outline-offset:2px;}
+.pb-tree-glyph, .pb-tree-spacer{display:inline-block; width:1.2rem; flex-shrink:0; text-align:center;}
+.pb-tree-glyph::before{content:'▸';} [aria-expanded="true"] > .pb-tree-glyph::before{content:'▾';}
+.pb-tree-link{font-weight:550;} .pb-tree-context{display:block;}
+.pb-tree-children{border-left:1px solid var(--line); padding-left:1rem; margin:3px 0 5px .55rem;}
+.pb-tree-children .pb-tree-children .pb-tree-children .pb-tree-children{padding-left:.45rem; margin-left:0;}
+.pb-tree-results li{padding:7px 0; border-bottom:1px solid var(--line);}
+@media(max-width:600px){.pb-tree-tools h2{width:100%;}.pb-tree-children .pb-tree-children .pb-tree-children{margin-left:0; padding-left:.45rem;}}
