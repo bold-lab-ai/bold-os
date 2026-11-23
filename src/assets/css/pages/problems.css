@@ -86,4 +86,4 @@ a.btn{display:inline-block; text-decoration:none;}
 .pb-add-verifier{display:inline-block; margin-top:8px; font-weight:600;}
 #pbInputs{min-width:0; margin:0; padding:0; border:0; display:grid; gap:16px;}
 #pbInputs button{justify-self:start;}
-#pbAdd[aria-disabled="true"]{opacity:.55; cursor:default;}
+#pbAdd[aria-disabled="true"], #openBenchmarkLite[aria-disabled="true"]{opacity:.55; cursor:default;}

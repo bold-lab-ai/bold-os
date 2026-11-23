@@ -48,8 +48,7 @@
   // BOLD Agent (#bold-agent): who writes the lab's home letters (settings/homeLetter, functions/bold-llm.js), saved as it's chosen.
   // Problem Bank (#problem-bank): AutoKaggle's addresses, for the links to its sessions (settings/problemBank, problems.html).
   var TABS = [['slack', 'Slack'], ['join', 'Join form'], ['notifications', 'Notifications'], ['problem-bank', 'Problem Bank'], ['bold-agent', 'BOLD Agent'], ['features', 'Features']];
-  // Until they're saved, the Problem Bank's pages use these (pages/problems.js, pages/problem.js).
-  var AUTOKAGGLE = { autokaggleUrl: 'https://ecc962fa-2f4c-4a3f-96c4-179af273fb7a.k8s.civo.com/', autokaggleLiteUrl: 'https://lite.ecc962fa-2f4c-4a3f-96c4-179af273fb7a.k8s.civo.com/lite' };
+  var AUTOKAGGLE = BOLDRegistryLinks.defaults;
   var letterLab = null, letterBusy = false, letterError = '';
   // Who writes the home letters: a ladder (settings/homeLetter.ladder; functions/home-letter.js ladderOf, as here): each
   // tried in turn until one writes it; the rule-based letter always does, so whatever is below it is never reached.
@@ -195,7 +194,7 @@
       '<label>Web Push key<input type="text" class="jr-push-key" maxlength="200" spellcheck="false" autocomplete="off" value="' + esc((webPush || {}).publicKey || '') + '" placeholder="B…"></label></fieldset>' +
       save + '</div></section>' +
       '<section class="profile-panel" id="problem-bank"><div class="event-form join-form">' + group('AutoKaggle') +
-      '<p class="proj-meta">Where the Problem Bank’s links to AutoKaggle sessions go.</p>' +
+      '<p class="proj-meta">Service addresses for the Problem Bank and Benchmarks pages.</p>' +
       '<label>AutoKaggle<input type="url" class="jr-ak-full" maxlength="300" spellcheck="false" value="' + esc(problemBank.autokaggleUrl || AUTOKAGGLE.autokaggleUrl) + '"></label>' +
       '<label>AutoKaggle Lite<input type="url" class="jr-ak-lite" maxlength="300" spellcheck="false" value="' + esc(problemBank.autokaggleLiteUrl || AUTOKAGGLE.autokaggleLiteUrl) + '"></label></fieldset>' +
       save + '</div></section></div>' +
@@ -375,7 +374,7 @@
     var url = v('.jr-invite').trim();
     if (url && !/^https:\/\/\S+$/.test(url)) return { error: 'The invite link starts with https://' };
     var akFull = v('.jr-ak-full').trim(), akLite = v('.jr-ak-lite').trim();
-    if (![akFull, akLite].every(function(x){ return /^https:\/\/[^\s"<>]{1,292}$/.test(x); })) return { error: 'AutoKaggle’s addresses start with https://' };
+    if (![akFull, akLite].every(function(x){ return /^https:\/\/[^\s"<>]{1,292}$/.test(x) && BOLDRegistryLinks.serviceUrl(x); })) return { error: 'Enter an HTTPS service address without a username or password.' };
     var box = function(kind){ return s.querySelector('.st-chips[data-kind="' + kind + '"]'); };
     var roles = chipsOf(box('role')), pillars = chipsOf(box('pillar'));
     if (!roles.length) return { error: 'Give at least one role.' };

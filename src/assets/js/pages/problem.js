@@ -14,8 +14,7 @@
   var NOT_EDITOR = 'Only whoever added it, PIs and admins can do this';
   var CONTRACT = 'It’s the evaluator’s contract: change it in AutoKaggle and register a new version';
   var STAGES = { open: 'Open problem', implemented: 'Implemented', checked: 'Checked', validated: 'Validated' };
-  // AutoKaggle's addresses (settings/problemBank, set on Settings › Problem Bank); these until they're saved.
-  var urls = { autokaggleUrl: 'https://ecc962fa-2f4c-4a3f-96c4-179af273fb7a.k8s.civo.com/', autokaggleLiteUrl: 'https://lite.ecc962fa-2f4c-4a3f-96c4-179af273fb7a.k8s.civo.com/lite' };
+  var urls = BOLDRegistryLinks.defaults;
 
   var p = null, releases = [], history = [], canApprove = false, canRemind = false, projects = [], projectsLoaded = false, editing = false, busy = false;
   var tab = (location.hash.match(/[#&]tab=([^&]+)/) || [])[1];
@@ -35,10 +34,9 @@
   function isOpen(){ return p && p.stage === 'open'; }
   function editableDefinition(){ return isOpen() || p.origin === 'problem_bank'; }
   function verifierLink(project){
-    var url;
-    try { url = new URL(urls.autokaggleLiteUrl); } catch (e){ return ''; }
-    var localDemo = window.BOLD_TEST && url.protocol === 'http:' && ['localhost', '127.0.0.1'].includes(url.hostname);
-    if ((!localDemo && url.protocol !== 'https:') || url.username || url.password) return '';
+    var base = BOLDRegistryLinks.serviceUrl(urls.autokaggleLiteUrl);
+    if (!base) return '';
+    var url = new URL(base);
     url.pathname = (url.pathname.replace(/\/$/, '') || '/lite') + '/from-problem';
     url.hash = new URLSearchParams({ problem: p.id, project: project.id, board: project.board || '',
       title: p.title, question: [p.objective || p.title, p.significance && 'Why it matters: ' + p.significance, p.difficulties && 'Difficulties: ' + p.difficulties, p.existing_solutions && 'Frontier: ' + p.existing_solutions].filter(Boolean).join('\n').slice(0,4000) }).toString();
@@ -222,9 +220,7 @@
     });
   }
   function loadUrls(){
-    return firebase.firestore(BOLD.getApp()).collection('settings').doc('problemBank').get().then(function(x){
-      if (x.exists) ['autokaggleUrl', 'autokaggleLiteUrl'].forEach(function(k){ if (x.data()[k]) urls[k] = x.data()[k]; });
-    }).catch(function(){});
+    return BOLDRegistryLinks.loadServiceUrls().then(function(config){ urls = config; }).catch(function(){});
   }
   BOLD.onAccess(function(){ if (p && !editing) render(); });
   BOLD.onUser(function(user){
