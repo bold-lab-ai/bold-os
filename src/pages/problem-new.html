@@ -4,8 +4,8 @@ title: "Add a problem | BOLD Lab"
 description: "Define a research question for the Problem Bank."
 sdk: ["firestore", "functions"]
 css: "problems"
-styles: ["problem-steps"]
-scripts: ["markdown.js", "md-field.js", "pages/problem-new.js"]
+styles: ["problem-steps", "problem-family-picker"]
+scripts: ["markdown.js", "md-field.js", "problem-projects.js", "problem-family-picker.js", "pages/problem-new.js"]
 permalink: "problem-new.html"
 nav: "problems.html"
 ---
@@ -22,11 +22,25 @@ nav: "problems.html"
         <div class="ha-actions"><button type="button" class="btn-text" id="pbRestart" hidden>Start again</button><button type="submit" class="btn-box is-primary" id="pbSend" disabled>Send</button></div>
       </form></div>
       <p class="ha-saved">BOLD-LLM logs conversations to improve it.</p>
+      <!-- Once BOLD has what's needed: what it gathered, to check, edit and save. -->
+      <form class="pb-form pb-review" id="pbReview" hidden novalidate>
+        <h2 class="pb-review-head">Check and edit</h2>
+        <p class="field-hint">What BOLD gathered from the conversation. Change anything, or keep talking to BOLD above.</p>
+        <div class="field"><label for="pbTitle">Problem title</label><input id="pbTitle" required maxlength="180"></div>
+        <div class="field"><label class="pb-purpose"><input id="pbBuildsBenchmark" type="checkbox"> This problem is building a benchmark</label></div>
+        <div class="field"><label for="pbWhy">Why it matters</label><textarea class="no-tags" id="pbWhy" required maxlength="8000" rows="3"></textarea></div>
+        <div class="field"><label for="pbDifficulties">What are the difficulties?</label><textarea class="no-tags" id="pbDifficulties" required maxlength="8000" rows="3"></textarea></div>
+        <div class="field"><label for="pbExisting">Where is the frontier?</label><textarea class="no-tags" id="pbExisting" required maxlength="8000" rows="3"></textarea></div>
+        <section class="field" aria-label="Research family tree"><strong>What it&rsquo;s part of, and related problems <small>(optional)</small></strong><div id="pbFamily"></div></section>
+        <div class="field"><details id="pbProjectsBox"><summary>Projects <small>(optional)</small></summary><div id="pbProjects" class="pb-project-options"></div></details></div>
+        <div class="field"><label for="pbCollaborators">Collaborators <small>(optional)</small></label><input id="pbCollaborators" maxlength="8000" placeholder="Names"></div>
+        <button type="submit" class="btn-box is-primary" id="pbReviewSave">Save problem</button>
+      </form>
     </section>
     <aside class="pb-needs" aria-labelledby="pbNeedsTitle">
       <h2 class="home-box-title" id="pbNeedsTitle">What the Problem Bank needs</h2>
       <ul class="pb-checks" id="pbChecks"></ul>
-      <button type="button" class="btn-box is-primary" id="pbSave" hidden>Save problem</button>
+      <button type="button" class="btn-text" id="pbToReview" hidden>Check and edit &darr;</button>
       <p class="pb-status" role="status" id="pbStatus">Loading…</p>
     </aside>
   </div>

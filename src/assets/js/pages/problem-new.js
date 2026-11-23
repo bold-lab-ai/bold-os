@@ -1,7 +1,7 @@
 // Adding a problem by talking to BOLD (problem-new.html): the home page's conversation (bold.css .ha-*), and beside
 // it what the Problem Bank needs, each ticked once BOLD-LLM has it from what they said (problemInterview,
-// functions/problem-interview.js). Its draft isn't shown as fields: Save problem saves it, through benchmarkRegistry's
-// create, as the form did, with the person as its definer.
+// functions/problem-interview.js). Once it has all it needs, Check and edit shows what it gathered as fields, to
+// change and save through benchmarkRegistry's create, with the person as its definer.
 (function(){
   'use strict';
   var el = function(id){ return document.getElementById(id); };
@@ -18,7 +18,8 @@
   ];
   var EMPTY = { title: '', significance: '', difficulties: '', existing_solutions: '', builds_benchmark: false, benchmark_known: false,
     collaborators: '', project_ids: [], parent_ids: [], related_ids: [] };
-  var log = el('pbLog'), form = el('pbChatForm'), input = el('pbChatInput'), send = el('pbSend'), save = el('pbSave'), status = el('pbStatus');
+  var log = el('pbLog'), form = el('pbChatForm'), input = el('pbChatInput'), send = el('pbSend'), status = el('pbStatus');
+  var review = el('pbReview'), save = el('pbReviewSave'), familyGraph = null, familySelection = null;
   var still = window.matchMedia && matchMedia('(prefers-reduced-motion: reduce)').matches;
   var userId = null, epoch = 0, canWrite = false, ready = false, talking = false, saving = false;
   var turns = [], draft = Object.assign({}, EMPTY), done = false, me = null, projects = [], submission = null;
@@ -52,8 +53,39 @@
     }).join('');
     el('pbVerifierStep').textContent = draft.builds_benchmark ? 'Verifier not required' : 'Add a verifier';
     el('pbBaselineStep').hidden = draft.builds_benchmark;
-    save.hidden = !done;
+    el('pbToReview').hidden = review.hidden;
   }
+
+  /* ---------- Check and edit: what BOLD gathered, as fields ---------- */
+  // Projects to link: stepping stones (northstars and moonshots are in the family tree).
+  function stones(){
+    var objectives = familyGraph ? familyGraph.objectives.map(function(o){ return o.id; }) : [];
+    return projects.filter(function(p){ return objectives.indexOf(p.id) < 0; });
+  }
+  function showReview(first){
+    el('pbTitle').value = draft.title; el('pbWhy').value = draft.significance; el('pbDifficulties').value = draft.difficulties;
+    el('pbExisting').value = draft.existing_solutions; el('pbCollaborators').value = draft.collaborators;
+    el('pbBuildsBenchmark').checked = draft.builds_benchmark;
+    var chosen = stones().filter(function(p){ return draft.project_ids.indexOf(p.id) >= 0; });
+    el('pbProjects').innerHTML = BoldProblemProjects.fields(stones(), chosen) || 'No projects yet.';
+    el('pbProjectsBox').open = chosen.length > 0;
+    familySelection = familyGraph ? BoldProblemFamily.picker(el('pbFamily'), familyGraph, null, { parents: draft.parent_ids, related: draft.related_ids }) : null;
+    if (!familyGraph) el('pbFamily').innerHTML = '<p class="field-hint">Couldn\u2019t load the family tree: add links later, on the problem\u2019s page.</p>';
+    review.hidden = false; drawNeeds();
+    if (first) review.scrollIntoView({ behavior: still ? 'auto' : 'smooth', block: 'start' });
+  }
+  // The fields as they stand, as a draft: what's sent with the next message, and what's saved.
+  function readReview(){
+    var family = familySelection ? familySelection() : { parents: draft.parent_ids, related: draft.related_ids };
+    return { title: el('pbTitle').value.trim(), significance: el('pbWhy').value.trim(), difficulties: el('pbDifficulties').value.trim(),
+      existing_solutions: el('pbExisting').value.trim(), builds_benchmark: el('pbBuildsBenchmark').checked, benchmark_known: true,
+      collaborators: el('pbCollaborators').value.trim(),
+      project_ids: BoldProblemProjects.selected(el('pbProjects'), stones()).map(function(p){ return p.id; }),
+      parent_ids: family.parents.slice(), related_ids: family.related.slice() };
+  }
+  review.addEventListener('input', function(){ draft = readReview(); drawNeeds(); });
+  review.addEventListener('change', function(){ draft = readReview(); drawNeeds(); });
+  el('pbToReview').addEventListener('click', function(){ review.scrollIntoView({ behavior: still ? 'auto' : 'smooth', block: 'start' }); el('pbTitle').focus({ preventScroll: true }); });
   function controls(){
     var on = !!userId && canWrite && ready && !talking && !saving;
     input.disabled = send.disabled = !on;
@@ -64,7 +96,7 @@
   }
   function start(){
     turns = [{ role: 'assistant', content: OPENING }];
-    draft = Object.assign({}, EMPTY); done = false; submission = null;
+    draft = Object.assign({}, EMPTY); done = false; submission = null; review.hidden = true; familySelection = null;
     log.innerHTML = item('bold', OPENING);
     drawNeeds(); controls();
   }
@@ -74,6 +106,7 @@
     var q = input.value.trim();
     if (!q || talking || !userId) return;
     var generation = epoch;
+    if (!review.hidden) draft = readReview();
     turns.push({ role: 'user', content: q });
     log.insertAdjacentHTML('beforeend', item('you', q, true));
     input.value = ''; input.dispatchEvent(new Event('input'));
@@ -82,10 +115,12 @@
     call('problemInterview', { turns: turns, draft: draft }).then(function(r){
       if (generation !== epoch) return;
       if (r.me) me = r.me;
-      draft = r.draft; done = !!r.ready;
+      var first = !done && !!r.ready;
+      draft = r.draft; done = done || !!r.ready;
       turns.push({ role: 'assistant', content: r.reply });
       var p = log.querySelector('.ha-pending'); if (p) p.remove();
       stream(r.reply); drawNeeds();
+      if (done) showReview(first);
     }).catch(function(err){
       if (generation !== epoch) return;
       turns.pop();
@@ -102,8 +137,11 @@
   el('pbRestart').addEventListener('click', function(){ if (!talking && !saving) { start(); input.focus(); } });
 
   // Saving: what BOLD gathered, as the form saved it, the person as its definer.
-  save.addEventListener('click', async function(){
+  review.addEventListener('submit', async function(e){
+    e.preventDefault();
     if (!done || saving || !me) return;
+    if (!review.reportValidity()) return;
+    draft = readReview();
     var generation = epoch;
     var data = { action: 'create', builds_benchmark: draft.builds_benchmark, title: draft.title, owner_id: me.id, collaborators: draft.collaborators,
       significance: draft.significance, difficulties: draft.difficulties, existing_solutions: draft.existing_solutions,
@@ -138,6 +176,7 @@
     call('benchmarkRegistry', { action: 'projects' }).then(function(r){
       if (generation !== epoch) return;
       projects = r.items || []; ready = true; status.textContent = ''; controls(); input.focus();
+      return call('benchmarkRegistry', { action: 'family' }).then(function(g){ if (generation === epoch) familyGraph = g; }).catch(function(){});
     }).catch(function(e){ if (generation === epoch) status.textContent = e.message; });
   });
 })();

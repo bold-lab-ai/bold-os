@@ -105,6 +105,10 @@ a.btn{display:inline-block; text-decoration:none;}
 .pb-checks small{color:var(--muted);}
 .pb-status{margin:10px 0 0; font-size:12px; color:var(--muted);}
 .pb-status:empty{display:none;}
-.pb-needs #pbSave[hidden]{display:none;}
+.pb-needs #pbToReview[hidden]{display:none;}
+.pb-review{margin-top:28px; padding-top:20px; border-top:1px solid var(--line);}
+.pb-review[hidden]{display:none;}
+.pb-review-head{margin:0 0 4px; font:600 15px var(--sans);}
+.pb-review textarea{resize:vertical;}
 @media (max-width:900px){ .pb-talk{grid-template-columns:minmax(0, 1fr);} .pb-needs{position:static; order:-1; margin-bottom:20px;} }
 @media (prefers-reduced-motion:reduce){ .pb-checks li, .pb-checks li::before{transition:none;} }
