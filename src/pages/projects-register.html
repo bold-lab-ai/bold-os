@@ -7,7 +7,7 @@ sdk: ["firestore", "functions"]
 headExtra: "<!-- KaTeX, for rendering LaTeX pasted into a card's Abstract field.\n     docs/AGENTS.md-approved CDN exception, 2026-09-18, per Eduardo. Bump the\n     pinned version deliberately, not silently. -->\n<link rel=\"stylesheet\" href=\"https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.18.7/katex.min.css\">\n<script src=\"https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.18.7/katex.min.js\"></script>"
 css: "projects-register"
 nav: "projects.html"
-scripts: ["card-model.js", "project-fields.js", "pages/projects-register.js"]
+scripts: ["card-model.js", "project-fields.js", "project-verifiers.js", "pages/projects-register.js"]
 permalink: "projects-register.html"
 ---
 <div class="hero">
@@ -28,6 +28,21 @@ permalink: "projects-register.html"
       <div class="field-hint"><span id="pfProblemStatus" role="status"></span> <button class="btn-text" id="refreshProblems" type="button">Refresh list</button></div>
       <div class="field-hint" id="pfProblemHint">Can't find the appropriate problem? Define one <a id="pfProblemBank" href="problems.html" target="_blank" rel="noopener" aria-label="here, in the Problem Bank (opens in a new tab)">here</a>.</div>
     </div>
+    <fieldset class="field verifier-field" id="pfVerifierField" disabled>
+      <legend>Verifiers and benchmarks</legend>
+      <div id="pfVerifierPicker">
+        <p class="field-hint">Choose one or more registered releases. You can reuse a verifier from another problem.</p>
+        <div id="pfVerifierChoices" role="group" aria-label="Registered verifier releases" tabindex="-1"></div>
+        <div class="field-hint"><span id="pfVerifierStatus" role="status"></span> <button type="button" class="btn-text" id="pfVerifierMore" hidden>Load more releases</button></div>
+      </div>
+      <label class="verifier-check"><input id="pfDeferVerifier" type="checkbox"> Define verifier later</label>
+      <div id="pfVerifierDeferral" hidden>
+        <label for="pfVerifierReason">Why can we not define a verifier right now?</label>
+        <textarea id="pfVerifierReason" maxlength="2000"></textarea>
+        <label for="pfVerifierExpected">Approximately when do you expect to onboard a verifier to BOLD OS?</label>
+        <input id="pfVerifierExpected" type="text" maxlength="240" placeholder="For example, in six weeks">
+      </div>
+    </fieldset>
     <div id="abstractField"></div>
     <div class="field">
       <label class="check-row"><input type="checkbox" id="pfMore"> It needs more compute than the standard allowance</label>
@@ -57,7 +72,7 @@ permalink: "projects-register.html"
       <div id="meetingEntry"></div>
       <div class="field-hint">A recurring Google Calendar meeting with a Meet link. Everyone who joins the project is invited and gets the project&rsquo;s slides and notes. Leave the time empty if another group organises its meetings.</div>
     </div>
-    <div class="field-error" id="projectError" hidden></div>
+    <div class="field-error" id="projectError" role="alert" hidden></div>
     <div class="form-actions">
       <button class="btn btn-primary" type="submit" id="submitBtn">Propose</button>
     </div>

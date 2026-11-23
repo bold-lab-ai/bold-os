@@ -5414,10 +5414,11 @@ exports.projectWorkspace = onCall(
       const c = data.card && typeof data.card === 'object' ? Object.assign({}, data.card) : null;
       if (!c || typeof c.title !== 'string' || !c.title.trim()) throw new HttpsError('invalid-argument', 'The new card has no title.');
       const cardId = /^card-[a-z0-9-]{1,60}$/.test(String(c.id || '')) ? c.id : 'card-' + Date.now() + '-' + crypto.randomBytes(3).toString('hex');
-      ['id', 'openProblemId', 'setUpMeeting', 'setUpRepo', 'setUpDocs', 'setUpSkipped', 'announce'].forEach(function(k){ delete c[k]; });
+      ['id', 'openProblemId', 'verificationPlan', 'setUpMeeting', 'setUpRepo', 'setUpDocs', 'setUpSkipped', 'announce'].forEach(function(k){ delete c[k]; });
       const now = Date.now();
       await db.collection('boards').doc(venue).collection('cards').doc(cardId).set(Object.assign(c, {
-        ...(card.openProblemId ? {openProblemId:card.openProblemId} : {}), projectId: pid, status: 'register', outcome: '', createdAt: now, updatedAt: now,
+        ...(card.openProblemId ? {openProblemId:card.openProblemId} : {}),
+        ...(card.verificationPlan ? {verificationPlan:card.verificationPlan} : {}), projectId: pid, status: 'register', outcome: '', createdAt: now, updatedAt: now,
         submittedBy: { name: request.auth.token.name || request.auth.token.email, email: request.auth.token.email, slackId: null }
       }));
       // A project without a venue moves onto the board: its venue-less card goes.

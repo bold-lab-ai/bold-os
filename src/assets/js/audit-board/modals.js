@@ -4,9 +4,8 @@
 
   // ---------- dynamic author rows (Edit fields) ----------
   // Array of in-progress { name, email, isNew } rows, reset each time the
-  // Edit-fields modal opens (authors aren't collected at registration any
-  // more — see onAddCard's own comment; they're added here instead, at
-  // Submit the abstract). Authors resolve to a real person's email via
+  // Edit-fields modal opens. A project's authors can be updated before
+  // submitting the abstract. Authors resolve to a real person's email via
   // the roster picker (2026-09-12) — same as reviewers (reviewerInputHtml)
   // — with a "+ New author" escape hatch (typed Name + Email) for someone
   // genuinely outside the Slack workspace. Used to be free text; every
@@ -89,109 +88,89 @@
     return false;
   }
 
-  // Registration-form draft autosave (2026-09-14+1) \u2014 reported by a user:
-  // "I lose the fields I've filled out if the page refreshes... I already
-  // had to fill it out a couple of times." Nothing in this app ever
-  // reloads the page itself (loadInitialData/onAuthStateChanged re-render
-  // in place, they never navigate \u2014 see their own comments), so losing an
-  // in-progress form has to be the BROWSER reloading the tab out from
-  // under it (a backgrounded tab is exactly when mobile browsers do that \u2014
-  // "double checking the title, coauthors emails, etc." reads as switching
-  // away and back). Nothing client-side can stop that outright, but the
-  // form's contents don't have to die with it: every change is mirrored to
-  // localStorage (not sessionStorage \u2014 a real reload, or even fully
-  // closing and reopening the tab, should still find it) under a key
-  // scoped to this venue AND this signed-in person, so switching venues or
-  // accounts on the same browser never surfaces someone else's stray
-  // draft. Cleared only on a successful Submit (onAddCard) \u2014 closing the
-  // modal any other way (Cancel, clicking outside, a real reload) leaves
-  // it in place, restored next time "Register a paper" is opened.
-  function registerDraftKey(boardId){
-    var email = state.currentUser && state.currentUser.email;
-    return 'airb-draft-register:' + boardId + ':' + (email || '');
+  // The old venue form saved unsent notes per user and venue. Keep those notes readable.
+  function previousPaperDraft(boardId, email){
+    try { return JSON.parse(localStorage.getItem('airb-draft-register:' + boardId + ':' + email)); }
+    catch (e){ return null; }
   }
-  function saveRegisterDraft(boardId){
-    try {
-      var titleEl = document.getElementById('pTitle');
-      if (!titleEl) return; // modal already closed \u2014 nothing to save
-      var title = titleEl.value;
-      var computeEstimate = document.getElementById('pCompute').value;
-      var note = document.getElementById('pNote').value;
-      // Nothing typed yet (including the very first render of a brand-new
-      // modal) \u2014 don't create a draft out of thin air, and if a real
-      // draft was just emptied back out by hand, clear it rather than
-      // leaving a stale entry no longer reflected on screen.
-      if (!title.trim() && !computeEstimate.trim() && !note.trim()){
-        clearRegisterDraft(boardId);
-        return;
-      }
-      var draft = {
-        title: title,
-        computeEstimate: computeEstimate,
-        note: note,
-        savedAt: Date.now()
-      };
-      localStorage.setItem(registerDraftKey(boardId), JSON.stringify(draft));
-    } catch (e){ /* private-mode/quota errors \u2014 losing autosave silently beats crashing the form */ }
+
+  function submissionProjects(groups, cards, venue, email, fullWrite){
+    var alreadyHere = new Set(cards.map(function(card){ return card.projectId || card.id; }));
+    var me = email.toLowerCase();
+    return ['planned','ongoing','submission','completed'].reduce(function(rows, group){
+      return rows.concat(groups[group] || []);
+    }, []).filter(function(p){
+      if (p.titleOnly || p.boardId === venue || alreadyHere.has(p.pid)) return false;
+      if (p.proposal && p.proposal.status !== 'approved') return false;
+      return fullWrite || String(p.ownerEmail || '').toLowerCase() === me ||
+        (p.authors || []).some(function(a){ return String(a.email || '').toLowerCase() === me; });
+    }).sort(function(a,b){ return a.title.localeCompare(b.title) || a.pid.localeCompare(b.pid); });
   }
-  function loadRegisterDraft(boardId){
-    try {
-      var raw = localStorage.getItem(registerDraftKey(boardId));
-      return raw ? JSON.parse(raw) : null;
-    } catch (e){ return null; }
-  }
-  function clearRegisterDraft(boardId){
-    try { localStorage.removeItem(registerDraftKey(boardId)); } catch (e){}
+
+  function submissionProjectUrl(project, venue){
+    var params = new URLSearchParams({id:project.cardId || project.projectId});
+    if (project.boardId) params.set('board', project.boardId);
+    params.set('submitVenue', venue);
+    return 'project.html#' + params.toString();
   }
 
   function openModal(){
     if (!requireSignedIn()) return;
     var current = getCurrentBoard();
-    var draft = loadRegisterDraft(current && current.id);
-    if (current && current.status === 'pending'){
-      showToast('This venue hasn’t been approved yet.', 'error');
-      return;
-    }
+    if (!current || current.status === 'pending') { showToast('Choose an approved venue first.', 'error'); return; }
+    var email = state.currentUser.email;
+    var draft = previousPaperDraft(current.id, email);
     els.modalRegion.innerHTML =
-      '<div class="modal-overlay" id="modalOverlay">' +
-        '<div class="modal" role="dialog" aria-modal="true" aria-labelledby="modalTitle">' +
-          '<h2 id="modalTitle">Register paper for review</h2>' +
-          '<div id="paperForm">' +
-            '<div style="font-size:12px;color:var(--muted);margin-bottom:14px;">Registering as ' +
-              escapeHtml(state.currentUser.name || state.currentUser.email) + ' (' + escapeHtml(state.currentUser.email) + ') \u2014 used as the submitter and corresponding author.</div>' +
-            (draft ? '<div id="draftNotice" style="font-size:12px;color:var(--accent);background:var(--accent-dim);padding:6px 10px;border-radius:var(--radius);margin-bottom:14px;">Restored your unsaved draft from ' + formatTimestamp(draft.savedAt) + ' \u2014 <button type="button" class="btn-text" id="discardDraft" style="font-size:inherit;">Discard</button></div>' : '') +
-            '<div class="field"><label for="pTitle">Paper title</label><input type="text" id="pTitle" value="' + escapeHtml((draft && draft.title) || '') + '"></div>' +
-            '<div class="field"><label for="pCompute">Compute estimate</label><input type="text" id="pCompute" placeholder="e.g. ~2000 A100-hours" value="' + escapeHtml((draft && draft.computeEstimate) || '') + '">' +
-              '<div style="font-size:12px;color:var(--muted);margin-top:4px;">Required at registration (8 weeks out)</div></div>' +
-            '<div class="field"><label for="pNote">Note for the reviewers (optional)</label><textarea id="pNote" placeholder="Anything they should know">' + escapeHtml((draft && draft.note) || '') + '</textarea></div>' +
-            '<div style="font-size:12px;color:var(--muted);margin-bottom:14px;">Authors and the Overleaf link come later, at Submit the abstract &mdash; there’s no first draft yet to point to.</div>' +
-            '<div class="field-error" id="paperFormError" hidden>Please fill in the required fields above.</div>' +
-            '<div class="modal-actions">' +
-              '<button class="btn" type="button" id="cancelModal">Cancel</button>' +
-              '<button class="btn btn-primary" type="button" id="submitCardBtn">Submit</button>' +
-            '</div>' +
-          '</div>' +
-        '</div>' +
-      '</div>';
-    document.getElementById('cancelModal').addEventListener('click', closeModal);
-    document.getElementById('modalOverlay').addEventListener('click', function(e){
-      if (e.target.id === 'modalOverlay') closeModal();
-    });
-    document.getElementById('submitCardBtn').addEventListener('click', onAddCard);
-    ['pTitle', 'pCompute'].forEach(function(id){
-      document.getElementById(id).addEventListener('keydown', function(ev){
-        if (ev.key === 'Enter'){ ev.preventDefault(); onAddCard(ev); }
+      '<div class="modal-overlay" id="modalOverlay"><div class="modal" role="dialog" aria-modal="true" aria-labelledby="modalTitle">' +
+        '<h2 id="modalTitle">Register a paper for ' + escapeHtml(current.label || current.id) + '</h2>' +
+        '<form id="paperProjectForm"><div class="field"><label for="paperProject">Project</label>' +
+          '<select id="paperProject" required disabled><option value="">Choose a project</option></select></div>' +
+          '<p id="paperProjectStatus" role="status">Loading projects…</p>' +
+          '<button class="btn-text" type="button" id="retryPaperProjects" hidden>Try again</button>' +
+          '<p><a id="proposePaperProject" href="projects-register.html">Propose a new project</a></p>' +
+          (draft ? '<details><summary>Your previous paper draft</summary><dl></dl></details>' : '') +
+          '<div class="modal-actions"><button class="btn" type="button" id="cancelModal">Cancel</button>' +
+          '<button class="btn btn-primary" type="submit" id="continuePaper" disabled>Continue to project</button></div></form></div></div>';
+    var form = document.getElementById('paperProjectForm'), select = document.getElementById('paperProject');
+    var submit = document.getElementById('continuePaper'), status = document.getElementById('paperProjectStatus');
+    var retry = document.getElementById('retryPaperProjects'), cancel = document.getElementById('cancelModal');
+    var propose = document.getElementById('proposePaperProject');
+    if (!BOLD.can('projects','edit')) {
+      propose.removeAttribute('href'); propose.setAttribute('aria-disabled','true'); propose.title = BOLD.cannotReason('projects','edit');
+    }
+    if (draft) {
+      var list = form.querySelector('dl');
+      [['Title', draft.title], ['Compute estimate',draft.computeEstimate], ['Reviewer note',draft.note]].forEach(function(pair){
+        if (!pair[1]) return;
+        var term = document.createElement('dt'), value = document.createElement('dd');
+        term.textContent = pair[0]; value.textContent = pair[1]; list.append(term,value);
       });
-    });
-    // Draft autosave (2026-09-14+1) — see saveRegisterDraft's own comment.
-    // One delegated listener covers every text field on the form.
-    document.getElementById('paperForm').addEventListener('input', function(){ saveRegisterDraft(current.id); });
-    var discardBtn = document.getElementById('discardDraft');
-    if (discardBtn) discardBtn.addEventListener('click', function(){
-      clearRegisterDraft(current.id);
-      openModal(); // cheapest way to reset every field back to blank
-    });
-    document.getElementById('pTitle').focus();
+    }
+    function visible(){return form.isConnected && state.currentUser && state.currentUser.email === email && state.currentBoardId === current.id;}
+    async function load(){
+      retry.hidden = true; status.textContent = 'Loading projects…';
+      try {
+        var result = await firebase.app().functions('europe-west2').httpsCallable('getAllProjects')();
+        if (!visible()) return;
+        var choices = submissionProjects(result.data, state.cards, current.id, email, BOLD.isFullWrite());
+        choices.forEach(function(project){ var opt = document.createElement('option');
+          opt.value = submissionProjectUrl(project,current.id); opt.textContent = project.title; select.append(opt);
+        });
+        select.disabled = !choices.length;
+        status.textContent = choices.length ? 'Choose a project you can edit, then confirm the submission on its page.' : 'You have no eligible projects to submit to this venue.';
+        if (choices.length && document.activeElement === cancel) select.focus();
+      } catch (e){
+        if (visible()) { retry.hidden = false; status.textContent = 'Could not load projects.'; }
+      }
+    }
+    retry.addEventListener('click',load);
+    select.addEventListener('change',function(){submit.disabled = !select.value;});
+    form.addEventListener('submit',function(event){ event.preventDefault(); if (visible() && select.value) location.href = select.value; });
+    function dismiss(){closeModal(); var trigger=document.getElementById('submitPaperBtn'); if (trigger) trigger.focus();}
+    cancel.addEventListener('click',dismiss);
+    document.getElementById('modalOverlay').addEventListener('click',function(event){if (event.target.id==='modalOverlay') dismiss();});
+    form.addEventListener('keydown',function(event){if (event.key === 'Escape') dismiss();});
+    cancel.focus(); load();
   }
 
   function closeModal(){ els.modalRegion.innerHTML = ''; }

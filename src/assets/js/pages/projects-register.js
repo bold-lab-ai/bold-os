@@ -4,7 +4,11 @@
 
   var el = function(id){ return document.getElementById(id); };
   var form = el('projectForm'), errorBox = el('projectError'), submitBtn = el('submitBtn');
-  var me;
+  var me, lastProposal;
+  function registry(data){
+    return firebase.app().functions('europe-west2').httpsCallable('benchmarkRegistry')(data).then(function(r){return r.data;});
+  }
+  var verifier = BoldProjectVerifiers.mount(function(cursor){ return registry({action:'benchmark_catalogue',cursor:cursor}); });
   var problemGeneration = 0, returningFromBank = false;
   async function loadProblems(){
     var generation = ++problemGeneration, select = el('pfProblem'), status = el('pfProblemStatus');
@@ -16,14 +20,14 @@
     }
     status.textContent = 'Loading open problems…';
     try {
-      var result = await firebase.app().functions('europe-west2').httpsCallable('benchmarkRegistry')({action:'open_choices'});
+      var result = await registry({action:'open_choices'});
       if (generation !== problemGeneration) return false;
       var previous = select.value;
       select.replaceChildren(new Option('Choose an open problem', ''));
-      result.data.items.forEach(function(p){ select.add(new Option(p.title, p.id)); });
+      result.items.forEach(function(p){ select.add(new Option(p.title, p.id)); });
       select.value = previous;
       if (!select.value) select.selectedIndex = 0;
-      select.disabled = !result.data.items.length;
+      select.disabled = !result.items.length;
       status.textContent = select.disabled ? 'Add an open problem before proposing a project.' :
         previous && !select.value ? 'The selected problem is no longer open. Choose another problem.' : '';
       return true;
@@ -43,10 +47,10 @@
   window.addEventListener('focus', function(){
     if (returningFromBank) { returningFromBank = false; loadProblems(); }
   });
-  BOLD.onUser(function(user){ me = user; loadProblems(); });
-
-  var db = null;
-  try { db = firebase.firestore(BOLD.getApp()); } catch (e){}
+  BOLD.onUser(function(user){
+    if (!me || !user || me.uid !== user.uid) { verifier.reset(!!user); lastProposal = null; el('pfProblem').value = ''; }
+    me = user; loadProblems();
+  });
 
   // The board's own abstract field (counter, LaTeX preview) — see card-model.js.
   el('abstractField').innerHTML = abstractTextFieldHtml('', '');
@@ -82,13 +86,16 @@
 
   form.addEventListener('submit', function(e){
     e.preventDefault();
-    if (!me || !me.email || !db) return showError('Could not connect — reload, or check back shortly.');
+    if (!me || !me.email) return showError('Sign in to propose a project.');
+    var submitter = me.uid;
     var title = el('pfTitle').value.trim();
     var abstractText = el('stageAbstractText').value.trim();
     var problem=el('pfProblem').value;
     if(el('pfProblem').disabled || !problem){el('pfProblem').focus();return showError('Choose an open problem for this project.');}
     if (!title) return showError('Give the project a title.');
     if (!abstractText) return showError('Add an abstract or pitch.');
+    var decision = verifier.read();
+    if (decision.error){ el(decision.field).focus(); return showError(decision.error); }
     // More than the standard allowance: a whole number of GPU hours, more than none.
     var more = el('pfMore').checked, gpuHours = 0;
     if (more) {
@@ -115,31 +122,38 @@
     var first = now ? 'Register it, with the standard compute allowance: it\u2019s approved at once'
       : internal() ? 'Send it to the PIs and admins, asking for ' + asks + ': approved by itself if nobody decides within 7 days'
       : 'Send it to the PIs and admins to approve, asking for ' + asks;
-    BOLD.confirmAlways({ title: (now ? 'Register' : 'Propose') + ' \u201c' + title + '\u201d?', go: now ? 'Register' : 'Propose', effects: [{ text: first }].concat(channelEffects.map(function(t){ return { key: 'channel', text: later(t) }; })).concat([
+    var plan = decision.plan;
+    var verifierSummary = plan.mode === 'linked'
+      ? 'Link ' + plan.releaseIds.length + (plan.releaseIds.length === 1 ? ' verifier release' : ' verifier releases') + ' to this project'
+      : 'Record the reason for deferral and the expected verifier onboarding time (' + plan.expectedOnboarding + ')';
+    BOLD.confirmAlways({ title: (now ? 'Register' : 'Propose') + ' \u201c' + title + '\u201d?', go: now ? 'Register' : 'Propose', effects: [{ text: first }, {text:verifierSummary}].concat(channelEffects.map(function(t){ return { key: 'channel', text: later(t) }; })).concat([
       { key: 'announce', text: later('Announce it in #all-active-projects on Slack') },
       meeting ? { key: 'meeting', text: later('Make its meeting on Google Calendar, ' + meetingText(meeting) + ', ' + meetVia(meeting) + ' (Google emails you the invitation)') } : null,
       { key: 'docs', text: later('Make its slides and notes on Google Drive') },
       repo && repo.template ? { key: 'repo', text: later('Make its GitHub repository in bold-lab-ai, from the ' + repo.template + ' template') }
         : repo && repo.name ? { key: 'repo', text: later('Link bold-lab-ai/' + repo.name.replace(/^.*\//, '') + ' and give the project\u2019s people with GitHub write access to it') } : null].filter(Boolean)) }).then(function(ok){
-      if (!ok) return;
+      if (!ok || !me || me.uid !== submitter) return;
       var skip = ok.skip || {};
       if (noChannel) skip.channel = true;
       if (noMeeting) skip.meeting = true;
       if (!repo) skip.repo = true;
-      register(title, abstractText, channel, meeting, repo, skip, more, gpuHours, problem);
+      register(title, abstractText, channel, meeting, repo, skip, more, gpuHours, problem, plan);
     });
   });
 
-  function register(title, abstractText, channel, meeting, repo, skip, more, gpuHours, problem){
+  function register(title, abstractText, channel, meeting, repo, skip, more, gpuHours, problem, plan){
     submitBtn.disabled = true;
+    var keywords = keywordField.get();
+    var key = JSON.stringify([me.uid, title, abstractText, keywords, channel.name, meeting, repo, skip, more, gpuHours, problem, plan]);
     // Its channel is made (or linked) once it's approved (projectProposal), under this name.
     Promise.resolve(null).then(function(){
       // A project is a card (card-model.js) \u2014 the same one "+ Register paper" makes.
       // It's kept in `projects` until a venue is set (Projects page).
       var card = makeRegisteredCard({ name: me.displayName, email: me.email }, {
-        title: title, abstractText: abstractText, keywords: keywordField.get(), slackChannel: ''
+        title: title, abstractText: abstractText, keywords: keywords, slackChannel: ''
       });
       card.openProblemId=problem;
+      card.verificationPlan=plan;
       card.setUpChannel = channel.name && !skip.channel ? '#' + channel.name : '';
       card.proposal = { status: 'proposed', more: more, at: Date.now(), by: me.email };
       if (more) card.proposal.gpuHours = gpuHours;
@@ -150,9 +164,10 @@
       card.setUpDocs = !skip.docs;
       card.announce = !skip.announce;
       card.setUpSkipped = Object.keys(skip);
-      var id = card.id; delete card.id; // the id is the document's, as in the board's saveBoard()
-      var ref = db.collection('projects').doc(id);
-      return ref.set(card).then(function(){ return id; });
+      var id = card.id; delete card.id;
+      // Keep the same request after a lost reply. A change to the form starts a new proposal.
+      if (!lastProposal || lastProposal.key !== key) lastProposal = {key:key,id:id,card:card};
+      return registry({action:'create_project_proposal', project_id:lastProposal.id, card:lastProposal.card}).then(function(result){ return result.project_id; });
     }).then(function(id){
       // Drop the projects page's cached list so the new project shows at once.
       try { localStorage.removeItem('boldProjects:getAllProjects:' + me.email.toLowerCase()); } catch (err){}
@@ -160,14 +175,19 @@
       location.href = internal() && !more ? 'project.html#id=' + encodeURIComponent(id) : 'projects.html#proposed';
     }).catch(async function(err){
       console.error('[BOLD Lab] register project failed', err);
-      submitBtn.disabled = false;
       channelField.refresh();
       var code = err && err.code;
-      if (code === 'permission-denied' && await loadProblems()) {
-        var stillOpen = Array.from(el('pfProblem').options).some(function(option){ return option.value === problem; });
-        if (!stillOpen) return showError('The selected problem is no longer open. Choose another problem.');
+      var recovery = '';
+      if (code === 'functions/failed-precondition') {
+        var updated = await Promise.all([loadProblems(), plan.mode === 'linked' ? verifier.refresh() : null]);
+        recovery = updated[1];
+        if (updated[0] && !Array.from(el('pfProblem').options).some(function(option){ return option.value === problem; })) {
+          recovery = 'The selected problem is no longer open. Choose another problem.';
+        }
       }
-      showError(code === 'permission-denied'
+      submitBtn.disabled = false;
+      if (recovery) return showError(recovery);
+      showError(code === 'functions/permission-denied'
         ? 'You don\u2019t have permission to do that \u2014 check with a PI or lab admin.'
         : (code === 'functions/failed-precondition' || code === 'functions/invalid-argument') && err.message
           ? err.message

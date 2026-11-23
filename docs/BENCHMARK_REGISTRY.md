@@ -8,7 +8,9 @@ The same page lists verifier releases for active problems, newest first. Select 
 
 ## Project and evidence requirements
 
-An open problem can exist before a project starts. It can link to several BOLD OS projects. Every new project proposal must select an open, unarchived problem. Each verifier release must name one linked project. The server checks that project during registration.
+An open problem can exist before a project starts. It can link to several BOLD OS projects. Every new project proposal must select an unarchived scientific problem. A verified evaluator can exist while the scientific question is still open. Each new verifier release must name one linked project. The server checks that project during registration.
+
+When proposing a project, select one or more registered verifier or benchmark releases. Projects can reuse a benchmark registered for another active problem. If none fits, select **Define verifier later** and supply both the reason and an approximate time for onboarding. A time such as “within six weeks” is sufficient. The project overview records the pinned versions or the deferral supplied at proposal.
 
 ## Research family tree
 
@@ -80,7 +82,7 @@ GCLOUD_PROJECT=demo-bold-os FIRESTORE_EMULATOR_HOST=127.0.0.1:8080 node tests/be
 
 All integration fixtures are synthetic. Never copy them to production. Tests cover project existence, stages, approval binding, owner permissions, concurrent retries, receipts, history, search, Slack-only reads, forbidden direct writes, and private receipt access.
 
-After PR review, an authorized Firebase operator must deploy `benchmarkRegistry`, the updated `boldApi`, and Firestore rules with the reviewed site. Deploy the receiver and rules first, then the Lite handoff endpoint and client. Release the new BOLD OS pages and both reminder functions (`onProblemDefined` and `remindProblemVerifiers`). Deploy only those functions and rules. Do not run a bare Firebase deploy or enable Firebase Hosting. GitHub Pages remains the site host.
+After PR review, an authorized Firebase operator deploys `benchmarkRegistry`, `boldApi`, `projectWorkspace`, and both reminder functions (`onProblemDefined` and `remindProblemVerifiers`). Release the updated project and Internal Review pages on GitHub Pages, then apply the Firestore rules that require the new project submission path. An older page open during this change needs a reload. Enable the Lite handoff endpoint and client after the registry receiver is available. Deploy only the reviewed functions and rules.
 
 Configure AutoKaggle's private `AUTOKAGGLE_BOLD_REGISTRY_URL` as `https://europe-west2-bold-d7ff2.cloudfunctions.net/boldApi/v1/register_benchmark`, and have it send each researcher's own approved acting token. Pending eligible releases can then retry. Do not extend a read-only token's permissions in code.
 

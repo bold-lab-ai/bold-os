@@ -8,26 +8,11 @@
 // So every check, Slack message and version-history entry is the page's own.
 // Not here: the Internal Review Board (it saves whole boards at once), files
 // (uploading slides) and the site's settings.
-const fs = require('fs');
-const path = require('path');
-const vm = require('vm');
+const makeRegisteredCard = require('./make-registered-card');
 
 // The web app's public key (src/_data/site.js): it names the project, grants nothing.
 const WEB_API_KEY = 'AIzaSyDNKEMYuV0gehbKoM2acafzVbBQL489yDY';
 const FIRESTORE = 'https://firestore.googleapis.com/v1/projects/bold-d7ff2/databases/(default)/documents';
-
-// card-model.js, the page's card, copied next to this file on deploy (firebase.json
-// predeploy) or read from the site's source when run locally.
-let cardModel = null;
-function makeRegisteredCard(user, fields){
-  if (!cardModel) {
-    const here = path.join(__dirname, 'card-model.js'), src = path.join(__dirname, '..', 'src', 'assets', 'js', 'card-model.js');
-    const ctx = {};
-    vm.runInNewContext(fs.readFileSync(fs.existsSync(here) ? here : src, 'utf8'), ctx);
-    cardModel = ctx;
-  }
-  return cardModel.makeRegisteredCard(user, fields);
-}
 
 // JSON → Firestore REST values, and back.
 function toValue(v){
@@ -418,11 +403,12 @@ module.exports = function(ctx){
       const ch = await act(who, 'projectChannel', { name: need(a.slack_channel, 'its Slack channel (proj-…)'), mode: 'check' });
       const card = makeRegisteredCard(user, { title, abstractText: abstract, keywords: (a.keywords || []).map(String), slackChannel: '' });
       card.openProblemId=problem;
+      card.verificationPlan=a.verification_plan;
       card.setUpChannel = '#' + ch.name;
       card.proposal = Object.assign({ status: 'proposed', more, at: Date.now(), by: who.email }, more ? { gpuHours: Math.round(hours) } : {});
       if (a.meeting) card.setUpMeeting = a.meeting;
       const id = card.id; delete card.id;
-      await asUser(who, 'create', 'projects', card, id);
+      await act(who, 'benchmarkRegistry', {action:'create_project_proposal', project_id:id, card});
       return { id, url: url('project.html#id=' + encodeURIComponent(id)), slack_channel: '#' + ch.name, note: 'Proposed. BOLD-internal and above: within the standard allowance it\u2019s approved at once; asking for more, PIs and admins have 7 days, then it\u2019s approved by itself. Below BOLD-internal: a PI or admin approves it. Then its channel, meeting, slides and notes are set up.' };
     }
     const c = await cardOf(a.id);
@@ -772,9 +758,18 @@ module.exports = function(ctx){
   const READ = [
     { name: 'list_group_rota', description: 'Published group meeting dates and slots, including presenter, topic, slides, outcome, project link and stable slot revision. A date narrows the result.',
       inputSchema: S({ date: str('Optional YYYY-MM-DD meeting date.') }, []), run: listGroupRota },
-    { name: 'list_benchmarks', description: 'Read the Problem Bank: its problems, with their stage and latest evaluator release. These use Projects access. Returns no private account identifiers.',
-      inputSchema: S({cursor: str('Next page cursor, if returned.')}, []),
-      run: (who,a) => act(who,'benchmarkRegistry',{action:'list',cursor:a.cursor}) },
+    { name: 'list_benchmarks', description: 'Read the Problem Bank. The default lists problems and latest verifiers. For a project proposal, problem_choices lists active research questions and releases lists reusable pinned verifiers.',
+      inputSchema: S({view:ACTIONS(['problems','releases','problem_choices']),cursor:{description:'Pass back the cursor returned for this view. For GET requests, encode the release cursor as JSON.'}}, []),
+      run: (who,a) => {
+        const views = {problems:'list', releases:'benchmark_catalogue', problem_choices:'open_choices'};
+        const view = a.view || 'problems';
+        if (!Object.hasOwn(views,view)) throw httpError(400,'Choose problems, releases, or problem_choices.');
+        let cursor = a.cursor;
+        if (view === 'releases' && typeof cursor === 'string') {
+          try { cursor = JSON.parse(cursor); } catch { throw httpError(400,'Invalid release page cursor.'); }
+        }
+        return act(who,'benchmarkRegistry',{action:views[view],cursor});
+      } },
 
     { name: 'read_page', description: 'The BOLDiquette or a how-to guide in full, with each part’s id (for commenting and proposing changes) and the open proposed changes.',
       inputSchema: S({ page: str('"boldiquette", or a guide’s slug (in its url: guide.html?guide=<slug>).') }, ['page']), run: readPage },
@@ -827,7 +822,8 @@ module.exports = function(ctx){
         note: str('propose: what you changed and why.'), proposal_id: str('withdraw, accept, decline: the proposed change’s id.') }, ['action', 'page']) },
     { name: 'projects', run: projects,
       description: 'Projects, as on the Projects page and a project’s page: propose a new one (register: with its Slack channel, and gpu_hours only if it needs more than the standard compute allowance; once approved (at once for BOLD-internal and above within the allowance), the channel, created if new, its meeting, slides and notes are made), update its fields (a new Slack channel name renames the old channel), remove it, join or leave it, mark it ongoing (start: being worked on) or back to approved, not started (plan), mark it complete or reopen it, set, remove, pause or resume its weekly meeting, or submit it to a venue on the board.',
-      inputSchema: S({ problem_id:str('Required to register: an open Problem Bank ID.'), action: ACTIONS(['register', 'update', 'remove', 'join', 'leave', 'start', 'plan', 'complete', 'reopen', 'set_meeting', 'remove_meeting', 'pause_meeting', 'resume_meeting', 'submit_to_venue']),
+      inputSchema: S({ problem_id:str('Required to register. Choose an active problem from list_benchmarks(view=problem_choices).'),
+        verification_plan:{type:'object',description:'Required to register. Link existing benchmark releases from list_benchmarks(view=releases), or explain why and when you will onboard the verifier.',properties:{mode:ACTIONS(['linked','deferred']),releaseIds:{type:'array',items:{type:'string'}},reason:str('Required for deferral.'),expectedOnboarding:str('Required for deferral: expected date or time frame.')},required:['mode']}, action: ACTIONS(['register', 'update', 'remove', 'join', 'leave', 'start', 'plan', 'complete', 'reopen', 'set_meeting', 'remove_meeting', 'pause_meeting', 'resume_meeting', 'submit_to_venue']),
         id: str('The project id (list_projects), for all but register.'), title: str(''), abstract: str(''), keywords: { type: 'array', items: { type: 'string' } },
         slack_channel: str('register, update: "proj-…".'), gpu_hours: { type: 'number', description: 'register: only if it needs more than the standard compute allowance, the GPU hours it needs' }, overleaf: str('update'), arxiv: str('update'), pitch: str('update: the pitch deck link'), compute: str('update: the compute estimate'),
         meeting: { type: 'object', description: 'register, set_meeting: London time.', properties: { day: ACTIONS(['MO', 'TU', 'WE', 'TH', 'FR', 'SA', 'SU']), time: str('HH:MM'), minutes: { type: 'integer', enum: [30, 45, 60, 90, 120] }, every: { type: 'integer', enum: [1, 2, 3, 4] }, until: str('YYYY-MM-DD (optional)') } },

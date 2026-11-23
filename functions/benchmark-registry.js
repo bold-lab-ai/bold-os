@@ -172,12 +172,15 @@ module.exports = function({ db, onCall, callerEmail, isFullWrite, access, HttpsE
 
   async function run(request){
     const email = callerEmail(request), d = request.data || {}, action = d.action || 'list';
-    const permission = action === 'open_choices' ? 'list' : ['list', 'get', 'projects', 'search', 'family', 'benchmark_catalogue'].includes(action) ? 'view' : 'change';
+    const permission = ['open_choices','benchmark_catalogue'].includes(action) ? 'list' : ['list', 'get', 'projects', 'search', 'family'].includes(action) ? 'view' : 'change';
     await access.requireAccess(email, 'projects', permission);
     const full = await isFullWrite(email);
     const mayEdit = full || await access.can(email, 'projects', 'change');
     const canEdit = (doc) => mayEdit && (full || doc.data().createdBy === email);
 
+    if (action === 'create_project_proposal') {
+      return require('./project-verification-plan').createProposal({db,error,fingerprint:value=>sha(canonical(value))},d,email,request.auth?.token?.name);
+    }
     if (action === 'family') return family.list(full);
     if (action === 'set_family') return family.setFamily(d,email,canEdit);
     if (action === 'save_moonshot') return family.saveMoonshot(d,email,full);
@@ -185,7 +188,7 @@ module.exports = function({ db, onCall, callerEmail, isFullWrite, access, HttpsE
     if (action === 'projects') return { items: await projectChoices() };
 
     if (action === 'open_choices') {
-      const snap = await db.collection('problemBank').where('stage','==','open').get();
+      const snap = await db.collection('problemBank').select('title','archived').get();
       return {items:snap.docs.filter(x => !x.data().archived).map(x => ({id:x.id,title:x.data().title})).sort((a,b)=>a.title.localeCompare(b.title))};
     }
     if (action === 'search') {

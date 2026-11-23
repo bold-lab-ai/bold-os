@@ -94,3 +94,12 @@ main .btn-text:hover{text-decoration-color:currentColor;}
 /* Whether it needs more compute than the standard allowance: ticked, the GPU hours it needs. */
 .check-row{display:flex; gap:8px; align-items:flex-start; font-weight:inherit;}
 .check-row input{margin-top:3px; width:auto;}
+.verifier-field{min-width:0;border:0;padding:0;margin-inline:0;}
+.verifier-field legend{padding:0;font:600 14px var(--sans);}
+.verifier-field p{margin:4px 0 8px;}
+.verifier-field .verifier-check{display:flex;align-items:baseline;gap:9px;margin:6px 0;color:var(--ink);cursor:pointer;}
+.verifier-check input[type=checkbox]{width:auto;flex:none;align-self:flex-start;margin:4px 0 0;}
+#pfVerifierChoices:not(:empty){box-sizing:border-box;max-height:15rem;overflow:auto;border:1px solid var(--line);border-radius:var(--radius);padding:4px 10px;}
+#pfVerifierChoices .verifier-check span{min-width:0;overflow-wrap:anywhere;}
+#pfVerifierChoices small{display:block;color:var(--muted);}
+#pfVerifierDeferral label{margin-top:8px;}

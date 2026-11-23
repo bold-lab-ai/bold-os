@@ -491,8 +491,8 @@ module.exports = function(deps){
     calendar: 'calendar', my_items: 'profile', list_introduction_offers: 'service-desk', list_tools: 'tools', list_skills: 'skills', get_skill: 'skills' };
   const pageOfTool = (name, args) => { const p = String((args || {}).page || '').trim().toLowerCase();
     return name === 'read_page' ? (p === 'boldiquette' ? 'boldiquette' : require('./access').guideArea(p)) : TOOL_PAGE[name]; };
-  async function mayView(who, page){
-    if (!page || await access.can(who.email, page, 'view')) return;
+  async function mayView(who, page, permission = 'view'){
+    if (!page || await access.can(who.email, page, permission)) return;
     const level = ((await access.table())[page] || {}).view || 'internal';
     throw httpError(403, 'That page is for ' + (require('./access').LEVEL_NAMES[level] || level) + ' and above (BOLDiquette › Who can see what).');
   }
@@ -500,7 +500,11 @@ module.exports = function(deps){
   // A tool by name: BOLD.OS's own, else one the lab's agents added (run in mcpSandbox).
   async function toolNamed(who, name){
     const t = TOOLS.find((x) => x.name === name);
-    if (t) return Object.assign({}, t, { run: async (w, args) => { await mayView(w, pageOfTool(t.name, args)); return t.run(w, args); } });
+    if (t) return Object.assign({}, t, { run: async (w, args) => {
+      const proposalChoices = t.name === 'list_benchmarks' && ['problem_choices','releases'].includes(args?.view);
+      await mayView(w, pageOfTool(t.name, args), proposalChoices ? 'list' : 'view');
+      return t.run(w, args);
+    } });
     const one = (await added.toolList(Object.assign({}, who, { write: true }))).find((x) => x.name === name);
     if (!one) return null;
     // The lab's added tools come from the Tools page.

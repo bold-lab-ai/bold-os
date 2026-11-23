@@ -200,7 +200,7 @@ test('define a problem first, add projects later, and release independent verifi
  const result=await view();assert.equal(result.problem.project_id,'diverging-runs');assert.equal(result.problem.details.metrics,undefined);assert.deepEqual(result.versions[0].details,reg.details);
  await assert.rejects(change({projects:[{id:'diverging-runs'}]}),/Keep the project/);
  await assert.rejects(h.call({action:'register',registration:{...reg,idempotency_key:'8'.repeat(64),details:{metrics:'RMSE'}}}),/different evidence/);
- assert.ok(!(await h.call({action:'open_choices'})).items.some(p=>p.id===problem_id));
+ assert.ok((await h.call({action:'open_choices'})).items.some(p=>p.id===problem_id));
 });
 
 const familyInput = (parents = [], related = []) => ({parents,related});
@@ -286,4 +286,58 @@ test('a researcher can edit a problem with more than 100 incoming related links'
   const edges=(await h.call({action:'family'})).edges;
   assert.equal(edges.filter(x=>x.kind==='related_to').length,101);
   assert(edges.some(x=>x.from===central && x.to==='pillar-el'));
+});
+
+const verificationSource = 'ak-'+'8'.repeat(24), researchQuestion = 'ak-'+'9'.repeat(24);
+function proposalRequest(plan) {
+ const email='owner@example.invalid';
+ return {action:'create_project_proposal',project_id:'card-new-test',card:{submittedBy:{email},title:'Learning signals',abstractText:'Test the conditions for a reliable result.',openProblemId:researchQuestion, verificationPlan:plan,proposal:{status:'proposed',more:false,by:email},setUpSkipped:['repo','channel']}};
+}
+function proposalFixtures(h) {
+ h.data.set('problemBank/'+researchQuestion,{title:'Question',stage:'checked',archived:false});
+ h.data.set('problemBank/'+verificationSource,{title:'Existing protocol',stage:'implemented',archived:false});
+ return ['a','b'].map((char,index)=>{
+  const id='ak-'+'2'.repeat(24)+'-'+char.repeat(40);
+  h.data.set('benchmarks/'+id,{title:'Reusable protocol',problem_id:verificationSource,evaluator:{version:index+1}});
+  return id;
+ });
+}
+test('new projects pin release IDs and canonical summaries from another active problem in requested order',async()=>{
+ const h=harness(), ids=proposalFixtures(h).reverse(), req=proposalRequest({mode:'linked',releaseIds:ids});
+ const out=await h.call(req);assert.deepEqual(out,{project_id:req.project_id});
+ const stored=h.data.get('projects/'+req.project_id);
+ assert.equal(stored.openProblemId,researchQuestion);
+ assert.deepEqual(stored.verificationPlan.releases,ids.map((id,i)=>({id,problem_id:verificationSource,title:'Reusable protocol',version:2-i})));
+ assert.deepEqual(stored.verificationPlan.releaseIds,ids);
+ assert.deepEqual(stored.setUpSkipped,['repo','channel']); assert.equal(stored.status,'register');
+ assert.equal(stored.submittedBy.email,'owner@example.invalid'); assert.equal(stored.proposal.more,false);
+ assert.deepEqual(await h.call(req),out);
+ h.data.delete('projects/'+req.project_id);assert.deepEqual(await h.call(req),out);assert.equal(h.data.has('projects/'+req.project_id),false);
+ req.card.title='Changed after first submission';await assert.rejects(h.call(req),{code:'already-exists'});
+});
+test('deferred projects require a reason and expected onboarding time and retain the GPU allowance checks',async()=>{
+ const h=harness();proposalFixtures(h);
+ const plan={mode:'deferred',reason:'  The licence is pending. ',expectedOnboarding:'Within two weeks of data access.'}, req=proposalRequest(plan);
+ for(const invalid of [undefined,{}, {...plan,reason:' '},{...plan,expectedOnboarding:''},{...plan,releaseIds:[]},{mode:'linked',releaseIds:[]}]){
+  await assert.rejects(h.call({...req,card:{...req.card,verificationPlan:invalid}}),{code:'invalid-argument'});
+ }
+ for(const bad of [{status:'approved',more:false},{status:'proposed',more:true,gpuHours:0},{status:'proposed',more:false,gpuHours:100},{status:'proposed',more:true},{status:'proposed',more:true,gpuHours:1e8},{status:'proposed',more:true,gpuHours:2,dueAt:1}]){
+  await assert.rejects(h.call({...req,card:{...req.card,proposal:bad}}),{code:'invalid-argument'});
+ }
+ await assert.rejects(h.call(req,'other@example.invalid'),{code:'permission-denied'});
+ await h.call({...req,card:{...req.card,proposal:{status:'proposed',more:true,gpuHours:12}}});
+ const saved=h.data.get('projects/'+req.project_id);
+ assert.equal(saved.verificationPlan.reason,'The licence is pending.');
+ assert.equal(saved.verificationPlan.expectedOnboarding,plan.expectedOnboarding);assert.equal(saved.proposal.gpuHours,12);
+});
+test('missing or archived source, forged summaries, duplicate release IDs and archived research questions are rejected',async()=>{
+ const h=harness(), ids=proposalFixtures(h), req=proposalRequest({mode:'linked',releaseIds:ids});
+ for (const selection of [{mode:'linked',releaseIds:[ids[0],ids[0]]},{mode:'linked',releaseIds:ids,releases:[{title:'Forged'}]}]) {
+  await assert.rejects(h.call({...req,card:{...req.card,verificationPlan:selection}}),{code:'invalid-argument'});
+ }
+ for(const key of [verificationSource,researchQuestion]) {
+  const doc=h.data.get('problemBank/'+key);doc.archived=true;await assert.rejects(h.call(req),{code:'failed-precondition'});doc.archived=false;
+ }
+ h.data.delete('benchmarks/'+ids[0]);await assert.rejects(h.call(req),{code:'failed-precondition'});
+ assert.equal(h.data.has('projects/'+req.project_id),false);assert.equal(h.data.has('projectProposalReceipts/'+req.project_id),false);
 });
