@@ -29,9 +29,9 @@ const good = async (fn, r) => (await fn(r)).ok;
 const denied = async (fn, r) => assert.rejects(() => fn(r));
 (async () => {
   const seriesId = 'group-meetings-test';
-  await db.collection('eventSeries').doc(seriesId).set({ id: seriesId, kind: 'editions', page: 'group-meetings.html', title: 'Group meetings', inviteGroup: 'none', hidden: false, visibleTo: 'internal', organisers: [boss] });
+  await db.collection('eventSeries').doc(seriesId).set({ id: seriesId, kind: 'meeting', meeting: { day: 'MO', time: '11:00', minutes: 60, every: 1 }, invite: { mode: 'group', group: 'internal' }, page: 'group-meetings.html', title: 'Group meetings', hidden: false, visibleTo: 'internal', organisers: [boss] });
   await db.collection('groupMeetingSeasons').doc('test-season').set({ label: 'Test season', publicationState: 'published' });
-  const meeting = (date, format, extra = {}) => db.collection('events').doc(seriesId + '-' + date).set({ slug: seriesId + '-' + date, series: seriesId, page: 'group-meetings.html', date, startDate: date, endDate: date, seasonId: 'test-season', format, status: 'scheduled', startTime: '11:00', durationMinutes: 60, hidden: false, visibleTo: 'internal', inviteGroup: 'none', ...extra });
+  const meeting = (date, format, extra = {}) => db.collection('groupRotaMeetings').doc(seriesId + '-' + date).set({ series: seriesId, date, seasonId: 'test-season', format, status: 'scheduled', location: '', origin: 'import', ...extra });
   await db.collection('people').doc('U1').set({ email: one, slackId: 'U1', name: 'One' });
   await db.collection('people').doc('U2').set({ email: two, slackId: 'U2', name: 'Two' });
   await db.collection('people').doc('UA').set({ email: boss, slackId: 'UA', name: 'Admin' });
@@ -51,6 +51,10 @@ const denied = async (fn, r) => assert.rejects(() => fn(r));
   const visibleSnapshot = await rota.groupRotaSnapshot(req(one, {}));
   assert.equal(visibleSnapshot.meetings.length, 3);
   assert.equal((await rota.groupRotaAccess(req(one, {}))).registered, true);
+  // The page's one call: the same as the two it replaces.
+  const both = await rota.groupRotaPage(req(one, {}));
+  assert.deepEqual(both.snapshot, visibleSnapshot);
+  assert.deepEqual(both.access, await rota.groupRotaAccess(req(one, {})));
   assert.equal((await rota.groupRotaSnapshot(req('viewer@example.org', {}))).meetings.length, 3);
   for (const viewer of [pan, associate]) {
     assert.equal((await rota.groupRotaSnapshot(req(viewer, {}))).slots.length, 3);
@@ -59,27 +63,26 @@ const denied = async (fn, r) => assert.rejects(() => fn(r));
   }
   assert.equal((await rota.groupRotaAccess(req('viewer@example.org', {}))).slackId, '');
   await denied(rota.groupRotaClaim, req('viewer@example.org', { slotId: 'fl1' }));
-  await db.collection('events').doc(seriesId + '-' + dates[0]).update({ hidden: true });
+  // A meeting in a season not published yet is seen by rota managers only.
+  await db.collection('groupMeetingSeasons').doc('draft-season').set({ label: 'Draft', publicationState: 'draft' });
+  await db.collection('groupRotaMeetings').doc(seriesId + '-' + dates[0]).update({ seasonId: 'draft-season' });
   assert.equal((await rota.groupRotaSnapshot(req(one, {}))).slots.some(s => s.id === 'fs1'), false);
-  // Without People's View, names only of presenters at meetings they see: not fs1's, now hidden.
+  // Without People's View, names only of presenters at meetings they see: not fs1's, its season a draft.
   const names = async email => (await rota.groupRotaAccess(req(email, {}))).people.map(p => p.slackId).sort();
   assert.deepEqual(await names(pan), ['U2']);
   assert.ok((await names(one)).includes('U1'));
   assert.equal((await rota.groupRotaSnapshot(req(boss, {}))).slots.some(s => s.id === 'fs1'), true);
-  await db.collection('events').doc(seriesId + '-' + dates[0]).update({ hidden: false });
+  await db.collection('groupRotaMeetings').doc(seriesId + '-' + dates[0]).update({ seasonId: 'test-season' });
+  // Its time is the series'; a date cancelled or moved on the Calendar is cancelled or moved on the rota.
+  await db.collection('eventSeries').doc(seriesId).update({ meetingMoved: { [dates[2]]: { cancelled: true }, [dates[1]]: { date: '2099-01-13', time: '15:00', minutes: 30 } } });
+  { const ms = (await rota.groupRotaSnapshot(req(one, {}))).meetings, at = d => ms.find(m => m.date === d);
+    assert.equal(at(dates[0]).startTime, '11:00'); assert.equal(at(dates[0]).onDate, dates[0]); assert.equal(at(dates[0]).status, 'scheduled');
+    assert.equal(at(dates[1]).onDate, '2099-01-13'); assert.equal(at(dates[1]).startTime, '15:00'); assert.equal(at(dates[1]).durationMinutes, 30);
+    assert.equal(at(dates[2]).status, 'skipped'); }
+  await denied(rota.groupRotaClaim, req(one, { slotId: 'fl1' }));
+  await db.collection('eventSeries').doc(seriesId).update({ meetingMoved: {} });
   await db.collection('eventSeries').doc(seriesId).update({ hidden: true });
   await denied(rota.groupRotaSnapshot, req(one, {}));
-  await db.collection('eventSeries').doc(seriesId).update({ hidden: false });
-  await denied(rota.groupRotaSetMeetingVisibility, req(one, { date: dates[0], hidden: true }));
-  viewedAs = 'internal';
-  await denied(rota.groupRotaSetMeetingVisibility, req(boss, { date: dates[0], hidden: true }));
-  viewedAs = '';
-  await rota.groupRotaSetMeetingVisibility(req(boss, { date: dates[0], hidden: true }));
-  assert.equal((await rota.groupRotaSnapshot(req(one, {}))).meetings.some(m => m.date === dates[0]), false);
-  assert.equal((await rota.groupRotaSnapshot(req(boss, {}))).meetings.some(m => m.date === dates[0]), true);
-  await rota.groupRotaSetMeetingVisibility(req(boss, { date: dates[0], hidden: false }));
-  await db.collection('eventSeries').doc(seriesId).update({ hidden: true });
-  await denied(rota.groupRotaSetMeetingVisibility, req(boss, { date: dates[0], hidden: false }));
   await db.collection('eventSeries').doc(seriesId).update({ hidden: false });
   assert.equal(await good(rota.groupRotaEdit, req('One@Example.org', { slotId: 'fs1', revision: 0, topic: 'Changed', projectId: '', slidesUrl: 'https://example.org/slides' })), true);
   await denied(rota.groupRotaEdit, req(two, { slotId: 'fs1', revision: 1, topic: 'Wrong owner' }));
@@ -172,9 +175,11 @@ const denied = async (fn, r) => assert.rejects(() => fn(r));
   assert.equal(sends.at(-1).key, 'rota-reminders');
   assert.match(sends.at(-1).text, /please add slides/);
   await db.collection('groupMeetingSeasons').doc('future').set({ label: 'Future', publicationState: 'published' });
-  await denied(rota.groupRotaSaveMeeting, req(one, { date: '2099-02-02', seasonId: 'future', format: 'long', startTime: '11:00', durationMinutes: 60, location: 'Lab' }));
-  await rota.groupRotaSaveMeeting(req(boss, { date: '2099-02-02', seasonId: 'future', format: 'long', startTime: '11:00', durationMinutes: 60, location: 'Lab' }));
-  assert.equal((await db.collection('events').doc(seriesId + '-2099-02-02').get()).data().inviteGroup, 'none');
+  await denied(rota.groupRotaSaveMeeting, req(one, { date: '2099-02-02', seasonId: 'future', format: 'long', location: 'Lab' }));
+  await rota.groupRotaSaveMeeting(req(boss, { date: '2099-02-02', seasonId: 'future', format: 'long', location: 'Lab' }));
+  assert.equal((await db.collection('groupRotaMeetings').doc(seriesId + '-2099-02-02').get()).data().format, 'long');
+  // Only on the series' own days.
+  await denied(rota.groupRotaSaveMeeting, req(boss, { date: '2099-02-03', seasonId: 'future', format: 'long', location: 'Lab' }));
   const created = { id: '2099-02-02-slot-1' };
   assert.equal((await db.collection('groupRotaSlots').doc(created.id).get()).data().presenterSlackId, '');
   await denied(rota.groupRotaCreateSlot, req(boss, { date: '2099-02-02', slotNumber: 1 }));
@@ -186,8 +191,8 @@ const denied = async (fn, r) => assert.rejects(() => fn(r));
   await denied(rota.groupRotaDeleteMeeting, req(one, { date: '2099-02-02' }));
   await rota.groupRotaDeleteMeeting(req(boss, { date: '2099-02-02' }));
   assert.equal((await db.collection('groupRotaSlots').doc(created.id).get()).exists, false);
-  assert.equal((await db.collection('events').doc(seriesId + '-2099-02-02').get()).exists, false);
-  await rota.groupRotaSaveMeeting(req(boss, { date: '2099-02-09', seasonId: 'future', format: 'short', startTime: '11:00', durationMinutes: 60, location: 'Lab' }));
+  assert.equal((await db.collection('groupRotaMeetings').doc(seriesId + '-2099-02-02').get()).exists, false);
+  await rota.groupRotaSaveMeeting(req(boss, { date: '2099-02-09', seasonId: 'future', format: 'short', location: 'Lab' }));
   const shortSlots = await db.collection('groupRotaSlots').where('meetingId', '==', '2099-02-09').get();
   assert.deepEqual(shortSlots.docs.map(d => d.data().slotNumber).sort(), [1, 2, 3]);
   await rota.groupRotaDeleteSlot(req(boss, { slotId: '2099-02-09-slot-3' }));

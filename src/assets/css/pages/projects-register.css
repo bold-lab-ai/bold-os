@@ -91,3 +91,6 @@ main .btn-text:hover{text-decoration-color:currentColor;}
 /* ---------- meeting (project-fields.js) ---------- */
 .meeting-entry{display:flex; flex-wrap:wrap; gap:8px;}
 .field .meeting-entry select, .field .meeting-entry input{width:auto; min-width:0; flex:1 1 120px;}
+/* Whether it needs more compute than the standard allowance: ticked, the GPU hours it needs. */
+.check-row{display:flex; gap:8px; align-items:flex-start; font-weight:inherit;}
+.check-row input{margin-top:3px; width:auto;}

@@ -84,7 +84,7 @@
       parts.push(inVenue);
     } else if (p.proposal && p.proposal.status !== 'approved') {
       // Proposed (#226): its budget, and whether it waits or was declined.
-      parts.push(textNode((p.proposal.status === 'declined' ? 'Declined' : 'Waiting for a PI or admin') + ' \u00b7 ' + (p.proposal.gpuHours || 0).toLocaleString('en-GB') + ' GPU hours'));
+      parts.push(textNode((p.proposal.status === 'declined' ? 'Declined' : 'Waiting for a PI or admin') + ' \u00b7 ' + (p.proposal.more && p.proposal.gpuHours ? p.proposal.gpuHours.toLocaleString('en-GB') + ' GPU hours' : 'standard compute')));
     } else {
       parts.push(textNode('No venue yet'));
     }

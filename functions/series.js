@@ -139,6 +139,9 @@ module.exports = function series(deps){
     const ref = db.collection('eventSeries').doc(id);
     const s = (await ref.get()).data();
     if (!s) return null;
+    // One that uses an invite of its own (`ownInvite`: the group meetings, 2026-11-19): BOLD.OS
+    // never makes, changes or sends a Google Calendar invite for it; `meeting.link` is that invite's.
+    if (s.ownInvite) return s;
     // Without an invite there's no Calendar series, unless it just lost its invite.
     if (s.kind === 'editions' && !s.eventId) return s;
     const patch = {};
@@ -202,7 +205,7 @@ module.exports = function series(deps){
   // What the page gets: the series, without anyone's addresses but the caller's own place in it.
   function view(s, me, full){
     const out = {};
-    ['id', 'kind', 'title', 'description', 'meeting', 'invite', 'requiredFor', 'visibleTo', 'cadence', 'proposals', 'inviteGroup', 'page', 'hidden', 'pausedAt', 'eventLink', 'error', 'createdAt', 'updatedAt'].forEach((k) => { if (s[k] !== undefined) out[k] = s[k]; });
+    ['id', 'kind', 'title', 'description', 'meeting', 'ownInvite', 'invite', 'requiredFor', 'visibleTo', 'cadence', 'proposals', 'inviteGroup', 'page', 'hidden', 'pausedAt', 'eventLink', 'error', 'createdAt', 'updatedAt'].forEach((k) => { if (s[k] !== undefined) out[k] = s[k]; });
     const organiser = (s.organisers || []).indexOf(me) >= 0;
     out.organiser = organiser; out.canChange = organiser || full; out.full = full;
     out.joined = (s.joined || []).indexOf(me) >= 0;
@@ -270,16 +273,6 @@ module.exports = function series(deps){
       }
       case 'release': case 'hide':
         if (!change) throw new HttpsError('permission-denied', 'Only its organisers, PIs and admins release and hide it.');
-        if (d.action === 'hide' && s.page === 'group-meetings.html') {
-          // An edition is also a normal event. Hide it before the series so it
-          // cannot remain visible in Events or the Calendar on its own.
-          const editions = await db.collection('events').where('series', '==', id).get();
-          for (let i = 0; i < editions.docs.length; i += 400) {
-            const batch = db.batch();
-            editions.docs.slice(i, i + 400).forEach((edition) => batch.update(edition.ref, { hidden: true, updatedAt: Date.now(), updatedBy: email }));
-            await batch.commit();
-          }
-        }
         await ref.set(Object.assign({ hidden: d.action === 'hide' }, stamp), { merge: true });
         break;
       case 'nextEdition': {

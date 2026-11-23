@@ -21,7 +21,7 @@
 // (prefix), tool, args, at, expireAt } (expireAt: for a Firestore TTL policy, 90 days).
 const crypto = require('crypto');
 const keycloak = require('./keycloak');
-const { seesEvent } = require('./access');
+const { seesEvent, rank: groupRank } = require('./access');
 // Search ranking, shared with the site: copied here at deploy (firebase.json's predeploy),
 // else the site's copy (run as a script: the repo's root package is an ES module).
 const rank = (function(){
@@ -251,7 +251,7 @@ module.exports = function(deps){
     rotaSeasons: () => cached('rotaSeasons', async () => docs(await db.collection('groupMeetingSeasons').get())),
     rotaMeetings: () => cached('rotaMeetings', async () => {
       const series = await db.collection('eventSeries').where('page', '==', 'group-meetings.html').limit(1).get();
-      return series.empty ? [] : docs(await db.collection('events').where('series', '==', series.docs[0].id).get());
+      return series.empty ? [] : docs(await db.collection('groupRotaMeetings').where('series', '==', series.docs[0].id).get());
     }),
     rotaSlots: () => cached('rotaSlots', async () => docs(await db.collection('groupRotaSlots').get())),
     studies: () => cached('studies', async () => docs(await db.collection('studies').get())),
@@ -342,11 +342,15 @@ module.exports = function(deps){
     const mine = (list) => (list || []).some((e) => String(e || '').toLowerCase() === email);
     let events = [], meetings = [];
     if (seeEvents) {
-      events = (await lab.eventsFor(email)).filter((e) => !isHidden(e, full)).map((e) => ({
-        id: e._id, title: e.title, start: e.startDate, end: e.endDate, place: e.place || '', description: plain(e.description),
+      // A skipped group meeting is left out, as on the Calendar page.
+      events = (await lab.eventsFor(email)).filter((e) => !isHidden(e, full) && e.status !== 'skipped').map((e) => ({
+        id: e._id, title: e.title, start: e.startDate, end: e.endDate, time: e.startTime || '', minutes: e.durationMinutes || 0, place: e.place || '', description: plain(e.description),
         url: url(e.page || 'event.html?event=' + encodeURIComponent(e._id)) }));
       // Lab meetings (eventSeries): the released ones they aren't invited to.
-      (await lab.seriesFor(email)).filter((x) => x.hidden === false && x.meeting && (x.eventId || x.pausedAt) && (x.guests || []).indexOf(email) < 0).forEach((x) => {
+      // One with an invite of its own (`ownInvite`): in the feed of whoever its group doesn't take in, as they don't have that invite.
+      const myRank = groupRank(await access.groupFor(email));
+      (await lab.seriesFor(email)).filter((x) => x.hidden === false && x.meeting && (x.eventId || x.pausedAt || x.ownInvite) && (x.guests || []).indexOf(email) < 0 &&
+        !(x.ownInvite && x.invite && x.invite.mode === 'group' && myRank >= groupRank(x.invite.group))).forEach((x) => {
         meetings.push({ id: 'series-' + x._id, title: x.title, meeting: x.meeting, moved: x.meetingMoved, start: x.eventStart, pausedAt: x.pausedAt,
           description: plain(x.description), url: url('series.html?series=' + encodeURIComponent(x._id)) });
       });
@@ -561,7 +565,8 @@ module.exports = function(deps){
       if (!manager && (series.hidden || !(await access.seesIt(who.email, series)))) return;
       const published = new Set(seasons.filter((s) => s.publicationState === 'published').map((s) => s._id));
       const visible = [];
-      for (const m of meetings) if (published.has(m.seasonId) && (manager || !m.hidden && await access.seesIt(who.email, m))) visible.push(m);
+      // Seeing the series is seeing its meetings.
+      for (const m of meetings) if (published.has(m.seasonId)) visible.push(m);
       const dates = new Set(visible.map((m) => m.date));
       const names = Object.fromEntries(people.map((p) => [p.slackId || p._id, p.name || '']));
       item('rota', series.title || 'Group meetings', 'Rota', seasons.filter((s) => published.has(s._id)).map((s) => s.label).join(' '), 'group-meetings.html');

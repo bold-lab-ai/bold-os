@@ -484,11 +484,15 @@ service cloud.firestore {
 
     match /projects/{projectId} {
       allow read: if seesProject(resource.data.get('projectId', projectId));
-      // A new project is proposed (#226), with its compute budget in GPU hours; projectProposal decides it.
+      // A new project is proposed (#226): within the standard compute allowance (proposal.more false, no GPU hours),
+      // or asking for more (its GPU hours); onProjectRegistered approves it or sends it to the PIs and admins.
       allow create: if may('projects', 'edit') && request.resource.data.submittedBy.email == email() &&
         request.resource.data.get('projectId', projectId) == projectId &&
         request.resource.data.proposal.status == 'proposed' &&
-        request.resource.data.proposal.gpuHours is number && request.resource.data.proposal.gpuHours > 0 && request.resource.data.proposal.gpuHours <= 10000000;
+        !('dueAt' in request.resource.data.proposal) && (
+          (request.resource.data.proposal.get('more', true) == false && !('gpuHours' in request.resource.data.proposal)) ||
+          (request.resource.data.proposal.get('more', true) == true &&
+            request.resource.data.proposal.gpuHours is number && request.resource.data.proposal.gpuHours > 0 && request.resource.data.proposal.gpuHours <= 10000000));
       allow update: if may('projects', 'edit') && (
         email() == resource.data.submittedBy.email ||
         email() in resource.data.get('authorEmails', []) ||

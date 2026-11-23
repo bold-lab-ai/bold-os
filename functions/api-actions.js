@@ -410,16 +410,18 @@ module.exports = function(ctx){
     if (a.action === 'register') {
       const title = need(a.title, 'a title'), abstract = need(a.abstract, 'an abstract or pitch');
       // Proposed (#226): a PI or admin approves it, then its channel, meeting, slides and notes are made.
-      const hours = Number(String(a.gpu_hours === undefined ? '' : a.gpu_hours).replace(/[,\s]/g, ''));
-      if (!isFinite(hours) || hours <= 0) throw httpError(400, 'Give its compute budget, in GPU hours (gpu_hours).');
+      // Within the standard compute allowance unless gpu_hours is given (more than it): see projectProposal.
+      const more = a.gpu_hours !== undefined && a.gpu_hours !== null && a.gpu_hours !== '';
+      const hours = more ? Number(String(a.gpu_hours).replace(/[,\s]/g, '')) : 0;
+      if (more && (!isFinite(hours) || hours <= 0)) throw httpError(400, 'Give the GPU hours it needs (gpu_hours), or leave it out for the standard allowance.');
       const ch = await act(who, 'projectChannel', { name: need(a.slack_channel, 'its Slack channel (proj-…)'), mode: 'check' });
       const card = makeRegisteredCard(user, { title, abstractText: abstract, keywords: (a.keywords || []).map(String), slackChannel: '' });
       card.setUpChannel = '#' + ch.name;
-      card.proposal = { status: 'proposed', gpuHours: Math.round(hours), at: Date.now(), by: who.email };
+      card.proposal = Object.assign({ status: 'proposed', more, at: Date.now(), by: who.email }, more ? { gpuHours: Math.round(hours) } : {});
       if (a.meeting) card.setUpMeeting = a.meeting;
       const id = card.id; delete card.id;
       await asUser(who, 'create', 'projects', card, id);
-      return { id, url: url('project.html#id=' + encodeURIComponent(id)), slack_channel: '#' + ch.name, note: 'Proposed: a PI or admin approves it; then its channel, meeting, slides and notes are set up.' };
+      return { id, url: url('project.html#id=' + encodeURIComponent(id)), slack_channel: '#' + ch.name, note: 'Proposed. BOLD-internal and above: within the standard allowance it\u2019s approved at once; asking for more, PIs and admins have 7 days, then it\u2019s approved by itself. Below BOLD-internal: a PI or admin approves it. Then its channel, meeting, slides and notes are set up.' };
     }
     const c = await cardOf(a.id);
     const ws = { id: c.id, board: c.boardId };
@@ -720,8 +722,7 @@ module.exports = function(ctx){
       outcome: ['Outcome', ['slotId', 'revision', 'outcome']],
       offer_short: ['OfferShort', ['slotId', 'recipientSlackId']], cancel_offer: ['CancelOffer', ['id']],
       save_season: ['SaveSeason', ['id', 'label', 'regularTime', 'location', 'rotationDescription', 'publicationState']],
-      save_meeting: ['SaveMeeting', ['date', 'seasonId', 'format', 'startTime', 'durationMinutes', 'location']],
-      set_meeting_visibility: ['SetMeetingVisibility', ['date', 'hidden']],
+      save_meeting: ['SaveMeeting', ['date', 'seasonId', 'format', 'location']],
       create_slot: ['CreateSlot', ['date', 'slotNumber']],
       delete_slot: ['DeleteSlot', ['slotId']], delete_meeting: ['DeleteMeeting', ['date']],
     };
@@ -750,11 +751,14 @@ module.exports = function(ctx){
     if (!series || (!manager && (series.hidden || !(await seesEvent(who.email, series))))) return { url: url('group-meetings.html'), seasons: [], meetings: [], slots: [] };
     const published = new Set(seasons.filter((s) => manager || s.publicationState === 'published').map((s) => s._id));
     const visible = [];
-    for (const m of meetings) if (published.has(m.seasonId) && (!a.date || m.date === a.date) && (manager || !m.hidden && await seesEvent(who.email, m))) visible.push(m);
+    // Seeing the series is seeing its meetings.
+    for (const m of meetings) if (published.has(m.seasonId) && (!a.date || m.date === a.date)) visible.push(m);
     const dates = new Set(visible.map((m) => m.date));
     const names = Object.fromEntries(people.map((p) => [p.slackId || p._id, p.name || '']));
     return { url: url('group-meetings.html'), seasons: seasons.filter((s) => published.has(s._id)).map((s) => ({ id: s._id, label: s.label, regular_time: s.regularTime, location: s.location })),
-      meetings: visible.map((m) => ({ date: m.date, format: m.format, start_time: m.startTime, location: m.location, status: m.status, skip_reason: m.skipReason || '', url: url('group-meetings.html?date=' + m.date) })),
+      meetings: visible.map((m) => { const mv = (series.meetingMoved || {})[m.date], mt = series.meeting || {}, moved = mv && !mv.cancelled ? mv : null;
+        return { date: moved ? moved.date : m.date, ...(moved ? { moved_from: m.date } : {}), format: m.format, start_time: moved ? moved.time : mt.time || '', location: m.location || '',
+          status: (mv && mv.cancelled) || m.status === 'skipped' ? 'skipped' : m.status || 'scheduled', skip_reason: m.skipReason || '', url: url('group-meetings.html?date=' + m.date) }; }),
       slots: slots.filter((s) => s.seriesId === series._id && dates.has(s.meetingId)).map((s) => ({ id: s._id, date: s.date, slot: s.slotNumber, format: s.format,
         presenter: names[s.presenterSlackId] || s.legacyName || 'Open slot', unresolved: !!(s.presenterSlackId && !names[s.presenterSlackId]) || !!(s.legacyName && !s.presenterSlackId),
         topic: s.topic || '', project_id: s.projectId || '', slides: s.slidesUrl || '', outcome: s.outcome || 'unconfirmed', revision: s.revision || 0, pending_action_id: s.pendingActionId || '',
@@ -778,14 +782,14 @@ module.exports = function(ctx){
   const WRITE = [
     { name: 'group_rota', run: groupRota,
       description: 'The group meeting rota: BOLD-internal members and above are included automatically; register resumes participation after leaving. Presenters can edit their assigned talk, claim an open short or long slot, decline a slot with a private reason, or request a confirmed short-slot swap. Series organisers, PIs and admins can set outcomes, offer short slots (and withdraw an offer), and manage seasons and meetings. Swap and offer actions send a Slack message. All actions use the same callable and permissions as the rota page.',
-      inputSchema: S({ action: ACTIONS(['register', 'leave', 'edit', 'claim', 'recuse', 'request_swap', 'cancel_swap', 'retry_swap', 'outcome', 'offer_short', 'cancel_offer', 'save_season', 'save_meeting', 'set_meeting_visibility', 'create_slot', 'delete_slot', 'delete_meeting']),
+      inputSchema: S({ action: ACTIONS(['register', 'leave', 'edit', 'claim', 'recuse', 'request_swap', 'cancel_swap', 'retry_swap', 'outcome', 'offer_short', 'cancel_offer', 'save_season', 'save_meeting', 'create_slot', 'delete_slot', 'delete_meeting']),
         slotId: str('Stable slot id, from the rota.'), otherSlotId: str('Swap target slot id.'), id: str('Swap id, offer id (the slot’s pending action) or season id, depending on action.'),
         revision: { type: 'integer', description: 'The slot revision shown by the rota; stale edits fail.' },
         topic: str('Talk topic, up to 140 characters.'), projectId: str('Optional linked project id.'), slidesUrl: str('Optional HTTPS slides link.'), auditNote: str('Administrator correction note.'),
         reason: str('Private recusal reason.'),
         outcome: ACTIONS(['unconfirmed', 'presented', 'did-not-present']), recipientSlackId: str('Verified recipient Slack id.'),
-        date: str('Meeting date, YYYY-MM-DD.'), hidden: { type: 'boolean', description: 'Hide or release a meeting edition.' }, slotNumber: { type: 'integer' }, seasonId: str('Season id.'),
-        format: ACTIONS(['short', 'long']), startTime: str('HH:MM London time.'), durationMinutes: { type: 'integer' },
+        date: str('Meeting date, YYYY-MM-DD.'), slotNumber: { type: 'integer' }, seasonId: str('Season id.'),
+        format: ACTIONS(['short', 'long']),
         location: str('Meeting location.'), label: str('Season label.'), regularTime: str('Season regular time.'),
         rotationDescription: str('Season rotation description.'), publicationState: ACTIONS(['draft', 'published']) }) },
     { name: 'register_benchmark', description: 'Register an implemented evaluator from AutoKaggle Lite in the Problem Bank, linked to an existing project and its Lite session. The server derives its stage from the evidence, shown as reported by AutoKaggle. Approval is a PI’s or admin’s, on the page; a release is written once. Retries reuse the same registration key. This saves lab records; it sends no messages or invitations.',
@@ -815,10 +819,10 @@ module.exports = function(ctx){
         remove: { type: 'boolean', description: 'A tool: propose removing it.' },
         note: str('propose: what you changed and why.'), proposal_id: str('withdraw, accept, decline: the proposed change’s id.') }, ['action', 'page']) },
     { name: 'projects', run: projects,
-      description: 'Projects, as on the Projects page and a project’s page: propose a new one (register: with its compute budget in GPU hours and its Slack channel; once a PI or admin approves it, the channel, created if new, its meeting, slides and notes are made), update its fields (a new Slack channel name renames the old channel), remove it, join or leave it, mark it ongoing (start: being worked on) or back to approved, not started (plan), mark it complete or reopen it, set, remove, pause or resume its weekly meeting, or submit it to a venue on the board.',
+      description: 'Projects, as on the Projects page and a project’s page: propose a new one (register: with its Slack channel, and gpu_hours only if it needs more than the standard compute allowance; once approved (at once for BOLD-internal and above within the allowance), the channel, created if new, its meeting, slides and notes are made), update its fields (a new Slack channel name renames the old channel), remove it, join or leave it, mark it ongoing (start: being worked on) or back to approved, not started (plan), mark it complete or reopen it, set, remove, pause or resume its weekly meeting, or submit it to a venue on the board.',
       inputSchema: S({ action: ACTIONS(['register', 'update', 'remove', 'join', 'leave', 'start', 'plan', 'complete', 'reopen', 'set_meeting', 'remove_meeting', 'pause_meeting', 'resume_meeting', 'submit_to_venue']),
         id: str('The project id (list_projects), for all but register.'), title: str(''), abstract: str(''), keywords: { type: 'array', items: { type: 'string' } },
-        slack_channel: str('register, update: "proj-…".'), gpu_hours: { type: 'number', description: 'register: its compute budget, in GPU hours (a project is proposed, and a PI or admin approves it)' }, overleaf: str('update'), arxiv: str('update'), pitch: str('update: the pitch deck link'), compute: str('update: the compute estimate'),
+        slack_channel: str('register, update: "proj-…".'), gpu_hours: { type: 'number', description: 'register: only if it needs more than the standard compute allowance, the GPU hours it needs' }, overleaf: str('update'), arxiv: str('update'), pitch: str('update: the pitch deck link'), compute: str('update: the compute estimate'),
         meeting: { type: 'object', description: 'register, set_meeting: London time.', properties: { day: ACTIONS(['MO', 'TU', 'WE', 'TH', 'FR', 'SA', 'SU']), time: str('HH:MM'), minutes: { type: 'integer', enum: [30, 45, 60, 90, 120] }, every: { type: 'integer', enum: [1, 2, 3, 4] }, until: str('YYYY-MM-DD (optional)') } },
         venue: str('submit_to_venue: the venue’s name, e.g. "ICLR 2027".') }) },
     { name: 'work', run: work,
