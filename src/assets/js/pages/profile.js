@@ -317,6 +317,19 @@
     }
   });
 
+  // Profile settings: this browser’s picture style, applied to every portrait at once.
+  function drawPhotoStyle(){
+    var style = BOLD.getPhotoStyle();
+    Array.prototype.forEach.call(el('photoStyle').querySelectorAll('input[name="photoStyle"]'), function(input){
+      input.checked = input.value === style;
+    });
+  }
+  el('photoStyle').addEventListener('change', function(e){
+    if (e.target.name === 'photoStyle' && e.target.checked) BOLD.setPhotoStyle(e.target.value);
+  });
+  document.addEventListener('bold:photostyle', drawPhotoStyle);
+  drawPhotoStyle();
+
   // Whether to confirm before actions that reach outside BOLD.OS (BOLD.confirmAction).
   BOLD.onUser(function(user){
     var box = el('confirmSetting'), input = el('confirmAsk');
@@ -455,8 +468,8 @@
   /* ---------- tabs ---------- */
   // Your details, Studies (PhD and Master students; pages/studies.js shows its tab),
   // Projects, Connections (connections.js, drawn the first time it's shown), Linked
-  // accounts and Agents (pages/profile-api.js), one shown at a time; the #hash names it.
-  var TABS = ['details', 'studies', 'projects', 'connections', 'linked-accounts', 'agents'];
+  // accounts, Agents (pages/profile-api.js) and Settings, one shown at a time; the #hash names it.
+  var TABS = ['details', 'studies', 'projects', 'connections', 'linked-accounts', 'agents', 'settings'];
   var connectionsFor = '', connectionsUser = null;
   function drawConnections(){
     // connections.js loads after this script.

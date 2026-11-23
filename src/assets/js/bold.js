@@ -852,24 +852,35 @@
     BOLD.onAccess(draw);
   }
 
+  // Profile > Settings chooses how everyone’s portraits look in this browser, independently of the theme.
+  BOLD.getPhotoStyle = function(){
+    return document.documentElement.getAttribute('data-photo-style') === 'original' ? 'original' : 'greyscale';
+  };
+  function applyPhotoStyle(style){
+    var root = document.documentElement;
+    if (style === 'original') root.setAttribute('data-photo-style', 'original'); else root.removeAttribute('data-photo-style');
+    document.dispatchEvent(new Event('bold:photostyle'));
+  }
+  BOLD.setPhotoStyle = function(style){
+    style = style === 'original' ? 'original' : 'greyscale';
+    try { localStorage.setItem('boldPhotoStyle', style); } catch (e){}
+    applyPhotoStyle(style);
+  };
+  window.addEventListener('storage', function(e){
+    if (e.key === 'boldPhotoStyle' || e.key === null) applyPhotoStyle(e.newValue);
+  });
+
   // The theme: the masthead's sun/moon button shows the one in use, and opens a menu choosing Light, Dark
   // or Auto (light from sunrise to sunset in London, dark otherwise: sun.js, inlined in base.njk). The choice is
   // kept in localStorage (boldTheme: light, dark, auto, or the lamp) and applied before the page paints by the
   // line at the top of base.njk; Auto changes over at sunrise and sunset on an open page; other tabs follow.
-  // Profile pictures have their own choice, independent of the theme (boldPhotoStyle: greyscale or original).
   var THEMES = [['light', 'Light'], ['dark', 'Dark'], ['auto', 'Auto']];
-  var PHOTO_STYLES = [['greyscale', 'Greyscale'], ['original', 'Original colours']];
   function mountTheme(){
     var btn = document.getElementById('themeToggle'), root = document.documentElement;
     if (!btn) return;
     var box = btn.parentNode, menu = document.getElementById('themeMenu'), timer = null;
     var stored = function(){ try { return localStorage.getItem('boldTheme') || 'light'; } catch (e){ return 'light'; } };
     var mode = stored();
-    var photoStyle = 'greyscale';
-    try { if (localStorage.getItem('boldPhotoStyle') === 'original') photoStyle = 'original'; } catch (e){}
-    var applyPhotos = function(){
-      if (photoStyle === 'original') root.setAttribute('data-photo-style', 'original'); else root.removeAttribute('data-photo-style');
-    };
     var show = function(){
       var t = root.getAttribute('data-theme'), dark = t === 'dark';
       btn.title = t === 'lamp' ? 'Paper under a lamp. Choose a theme to go back.' :
@@ -894,15 +905,10 @@
         return '<li role="none"><button type="button" role="menuitemradio" aria-checked="' + on + '" class="mast-theme-opt" data-theme-mode="' + o[0] + '">' +
           '<span class="mt-tick" aria-hidden="true">' + (on ? '✓' : '') + '</span><span>' + esc(o[1]) +
           (o[0] === 'auto' ? '<span class="mt-note">Light at dawn, dark at dusk</span>' : '') + '</span></button></li>';
-      }).join('') + '<li role="none" class="mast-menu-head">Profile pictures</li>' + PHOTO_STYLES.map(function(o){
-        var on = photoStyle === o[0];
-        return '<li role="none"><button type="button" role="menuitemradio" aria-checked="' + on + '" class="mast-theme-opt" data-photo-mode="' + o[0] + '">' +
-          '<span class="mt-tick" aria-hidden="true">' + (on ? '✓' : '') + '</span><span>' + esc(o[1]) + '</span></button></li>';
       }).join('');
     };
     var open = function(yes){ if (yes) draw(); menu.hidden = !yes; btn.setAttribute('aria-expanded', String(yes)); };
     apply();
-    applyPhotos();
     var clicks = [];
     btn.addEventListener('click', function(e){
       e.stopPropagation();
@@ -915,29 +921,15 @@
     });
     menu.addEventListener('click', function(e){
       var o = e.target.closest && e.target.closest('[data-theme-mode]');
-      var p = e.target.closest && e.target.closest('[data-photo-mode]');
-      if (o) choose(o.getAttribute('data-theme-mode'));
-      else if (p) {
-        photoStyle = p.getAttribute('data-photo-mode');
-        try { localStorage.setItem('boldPhotoStyle', photoStyle); } catch (e){}
-        applyPhotos();
-      } else return;
-      open(false); btn.focus();
+      if (!o) return;
+      choose(o.getAttribute('data-theme-mode')); open(false); btn.focus();
     });
     document.addEventListener('click', function(e){ if (!box.contains(e.target)) open(false); });
     document.addEventListener('focusin', function(e){ if (!box.contains(e.target)) open(false); });
     box.addEventListener('keydown', function(e){ if (e.key === 'Escape' && !menu.hidden) { open(false); btn.focus(); } });
     // A laptop asleep past sunset: check again when the page is looked at.
     document.addEventListener('visibilitychange', function(){ if (!document.hidden && mode === 'auto') apply(); });
-    window.addEventListener('storage', function(e){
-      if (e.key !== 'boldTheme' && e.key !== 'boldPhotoStyle' && e.key !== null) return;
-      if (e.key === 'boldTheme' || e.key === null) { mode = stored(); apply(); }
-      if (e.key === 'boldPhotoStyle' || e.key === null) {
-        photoStyle = e.key !== null && e.newValue === 'original' ? 'original' : 'greyscale';
-        applyPhotos();
-      }
-      if (!menu.hidden) draw();
-    });
+    window.addEventListener('storage', function(e){ if (e.key !== 'boldTheme') return; mode = e.newValue || 'light'; apply(); if (!menu.hidden) draw(); });
   }
 
   // Called right after the masthead markup.

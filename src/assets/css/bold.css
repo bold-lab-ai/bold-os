@@ -368,7 +368,7 @@ footer{
 .mast-sep{width:1px; height:20px; background:var(--line); margin:0 4px;}
 .mast-bell[hidden] + .mast-sep, #authRegion:empty{display:none;}
 /* The theme button (bold.js mountTheme) shows the theme in use: a sun in light, a moon in dark; its menu
-   chooses Light, Dark or Auto (dark from sunset to sunrise), then the profile-picture style, each choice ticked. */
+   chooses Light, Dark or Auto (dark from sunset to sunrise), the one chosen ticked. */
 .mast-theme-box{position:relative; display:flex;}
 .mast-theme-menu{width:240px;}
 .mast-menu .mast-theme-opt{display:flex; gap:8px; align-items:baseline;}
