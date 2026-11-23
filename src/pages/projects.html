@@ -5,7 +5,7 @@ title: "Projects | BOLD Lab"
 description: "Every project registered in BOLD."
 sdk: ["functions", "firestore"]
 css: "projects"
-scripts: ["project-join.js", "project-health.js", "pages/projects.js"]
+scripts: ["project-join.js", "project-health.js", "research-map.js", "pages/projects.js"]
 permalink: "projects.html"
 ---
 <div class="hero">
@@ -19,7 +19,14 @@ permalink: "projects.html"
       <button type="button" class="view-btn" data-view="list" aria-pressed="true">List</button>
       <button type="button" class="view-btn" data-view="grid" aria-pressed="false">Grid</button>
     </div>
-    <a class="btn btn-primary proj-add" href="projects-register.html">+ Propose a project</a>
+    <a class="btn btn-primary proj-add" href="projects-register.html">+ Propose&hellip;</a>
+  </div>
+
+  <div class="proj-levels" role="group" aria-label="Level">
+    <button type="button" class="view-btn" data-level="project" aria-pressed="true">Stepping stones<span class="proj-count" id="lvProject"></span></button>
+    <button type="button" class="view-btn" data-level="moonshot" aria-pressed="false">Moonshots<span class="proj-count" id="lvMoonshot"></span></button>
+    <button type="button" class="view-btn" data-level="northstar" aria-pressed="false">Northstars<span class="proj-count" id="lvNorthstar"></span></button>
+    <a class="btn-text proj-map" href="research-map.html">Map &rarr;</a>
   </div>
 
   <div class="filters" role="search">

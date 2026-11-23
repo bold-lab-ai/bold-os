@@ -1,0 +1,45 @@
+/* The Map (#248): northstars, moonshots, stepping stones, problems and people, in columns. */
+main{font-family:var(--sans); font-size:16px; line-height:1.55;}
+main button{font-family:inherit;}
+.hero{max-width:var(--content-max); margin:0 auto; padding:64px var(--gutter) 10px;}
+.hero h1{font-size:clamp(30px, 5vw, 44px); line-height:1.14; overflow-wrap:break-word; max-width:var(--article-max); text-wrap:balance;}
+.hero-note{margin:20px 0 0; font-size:16px; color:var(--ink-soft); max-width:var(--article-max); font-family:var(--serif);}
+main{max-width:var(--content-max); margin:0 auto; padding:8px var(--gutter) 24px;}
+
+.rm-controls{display:flex; flex-wrap:wrap; align-items:center; gap:10px; margin-top:24px;}
+.rm-controls select, .rm-controls input{font-family:var(--sans); font-size:14px; color:var(--ink); background:var(--surface); border:1px solid var(--line); border-radius:var(--radius); padding:5px 8px;}
+.rm-controls input{flex:1 1 160px; min-width:120px;}
+.rm-add{margin-left:auto; font-size:14px;}
+
+/* The map itself: wider than the column, centred under it, scrolling sideways on a narrow screen. */
+.rm-graph{margin:18px calc(50% - min(50vw - var(--gutter), 620px)) 0; overflow-x:auto; border-top:1px solid var(--line); border-bottom:1px solid var(--line);}
+.rm-svg{display:block; margin:0 auto; font-family:var(--sans);}
+.rm-col{font-size:11.5px; letter-spacing:.06em; text-transform:uppercase; fill:var(--muted);}
+.rm-edge{fill:none; stroke:color-mix(in srgb, var(--ink) 22%, transparent); stroke-width:1;}
+.rm-edge.rm-explores, .rm-edge.rm-problem{stroke-dasharray:3 3;}
+.rm-edge.rm-member{stroke:color-mix(in srgb, var(--ink) 10%, transparent);}
+.rm-edge.is-on{stroke:var(--accent); stroke-width:1.6;}
+.rm-edge.is-off{opacity:.25;}
+.rm-node{cursor:pointer;}
+.rm-node text{font-size:12.5px; fill:var(--ink); paint-order:stroke; stroke:var(--paper); stroke-width:3px; stroke-linejoin:round;}
+.rm-node circle{stroke:var(--paper); stroke-width:1.5;}
+.rm-northstar circle{fill:var(--accent);}
+.rm-northstar text{font-weight:700;}
+.rm-moonshot circle{fill:var(--plum);}
+.rm-moonshot text{font-weight:600;}
+.rm-project circle{fill:var(--ink-soft);}
+.rm-problem circle{fill:var(--green);}
+.rm-person circle{fill:var(--muted);}
+.rm-person text{fill:var(--ink-soft);}
+.rm-node.is-proposed circle{fill:var(--paper); stroke:var(--ink-soft); stroke-dasharray:2 2;}
+.rm-node.is-completed text{fill:var(--muted);}
+.rm-node.is-unlinked text{fill:var(--danger-text);}
+.rm-node.is-off{opacity:.25;}
+.rm-node.is-selected circle{stroke:var(--accent); stroke-width:3;}
+.rm-node:focus-visible{outline:none;}
+.rm-node:focus-visible circle{stroke:var(--accent); stroke-width:3;}
+
+.rm-detail h2{font-family:var(--serif); font-size:22px; margin:22px 0 8px;}
+.rm-dl{display:grid; grid-template-columns:max-content 1fr; gap:4px 16px; margin:0; font-size:14.5px;}
+.rm-dl dt{color:var(--muted);}
+.rm-dl dd{margin:0;}

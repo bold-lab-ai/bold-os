@@ -452,7 +452,7 @@ service cloud.firestore {
           request.resource.data.reviewers == resource.data.reviewers ||
           email() == resource.data.submittedBy.email ||
           hasFullWrite()
-        ) && request.resource.data.get('projectId', '') == resource.data.get('projectId', '');
+        ) && request.resource.data.get('projectId', '') == resource.data.get('projectId', '') && researchLinksOk();
         allow delete: if (may('ml-cycle', 'edit') || may('projects', 'edit')) && (
           email() == resource.data.submittedBy.email ||
           email() == resource.data.reviewers.junior ||
@@ -482,6 +482,24 @@ service cloud.firestore {
     }
     match /benchmarkReceipts/{id} { allow read, write: if false; }
 
+    // A project's level and what it's part of (#248, functions/research-map.js): a northstar is part of
+    // nothing; a moonshot of northstars; a stepping stone (no level, as from before) of moonshots or problems.
+    function researchLinksShape(d){
+      return d.get('level', 'project') in ['northstar', 'moonshot', 'project'] &&
+        d.get('parents', []) is list && d.get('parents', []).size() <= 20 &&
+        d.get('problems', []) is list && d.get('problems', []).size() <= 20 &&
+        d.get('connection', '') is string && d.get('connection', '').size() <= 2000;
+    }
+    function researchLinked(d){
+      return d.get('level', 'project') == 'northstar' || d.get('parents', []).size() > 0 ||
+        (d.get('level', 'project') == 'project' && d.get('problems', []).size() > 0);
+    }
+    // On an update: the shape always; linked up once its level or links change (older ones stay editable meanwhile).
+    function researchLinksOk(){
+      return researchLinksShape(request.resource.data) && (
+        !request.resource.data.diff(resource.data).affectedKeys().hasAny(['level', 'parents', 'problems']) ||
+        researchLinked(request.resource.data));
+    }
     match /projects/{projectId} {
       allow read: if seesProject(resource.data.get('projectId', projectId));
       // A new project is proposed (#226): within the standard compute allowance (proposal.more false, no GPU hours),
@@ -489,7 +507,10 @@ service cloud.firestore {
       allow create: if may('projects', 'edit') && request.resource.data.submittedBy.email == email() &&
         request.resource.data.get('projectId', projectId) == projectId &&
         request.resource.data.proposal.status == 'proposed' &&
-        !('dueAt' in request.resource.data.proposal) && (
+        !('dueAt' in request.resource.data.proposal) &&
+        researchLinksShape(request.resource.data) && researchLinked(request.resource.data) &&
+        // Only a stepping stone asks for more compute.
+        (request.resource.data.get('level', 'project') == 'project' || request.resource.data.proposal.get('more', true) == false) && (
           (request.resource.data.proposal.get('more', true) == false && !('gpuHours' in request.resource.data.proposal)) ||
           (request.resource.data.proposal.get('more', true) == true &&
             request.resource.data.proposal.gpuHours is number && request.resource.data.proposal.gpuHours > 0 && request.resource.data.proposal.gpuHours <= 10000000));
@@ -498,7 +519,8 @@ service cloud.firestore {
         email() in resource.data.get('authorEmails', []) ||
         hasFullWrite()
       ) && request.resource.data.get('projectId', '') == resource.data.get('projectId', '') &&
-        (hasFullWrite() || request.resource.data.get('proposal', null) == resource.data.get('proposal', null));
+        (hasFullWrite() || request.resource.data.get('proposal', null) == resource.data.get('proposal', null)) &&
+        researchLinksOk();
       allow delete: if may('projects', 'edit') && (
         email() == resource.data.submittedBy.email || hasFullWrite()
       );

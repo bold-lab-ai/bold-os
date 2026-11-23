@@ -7,27 +7,42 @@ sdk: ["firestore", "functions"]
 headExtra: "<!-- KaTeX, for rendering LaTeX pasted into a card's Abstract field.\n     docs/AGENTS.md-approved CDN exception, 2026-09-18, per Eduardo. Bump the\n     pinned version deliberately, not silently. -->\n<link rel=\"stylesheet\" href=\"https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.18.7/katex.min.css\">\n<script src=\"https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.18.7/katex.min.js\"></script>"
 css: "projects-register"
 nav: "projects.html"
-scripts: ["card-model.js", "project-fields.js", "pages/projects-register.js"]
+scripts: ["card-model.js", "project-fields.js", "research-map.js", "research-picker.js", "pages/projects-register.js"]
 permalink: "projects-register.html"
 ---
 <div class="hero">
   <a class="back-link" href="projects.html">&larr; Projects</a>
-  <h1>Propose a new project</h1>
+  <h1 id="prHeading">Propose a new project</h1>
   <p class="hero-note">Once it&rsquo;s approved, its channel, meeting, slides, notes and repository are made.</p>
 </div>
 
 <main>
   <form id="projectForm" novalidate>
+    <fieldset class="field pf-level">
+      <legend>It&rsquo;s a</legend>
+      <label class="check-row"><input type="radio" name="pfLevel" value="project" checked> Stepping stone <span class="field-hint">a project</span></label>
+      <label class="check-row"><input type="radio" name="pfLevel" value="moonshot"> Moonshot <span class="field-hint">an ambitious result its stepping stones lead to</span></label>
+      <label class="check-row"><input type="radio" name="pfLevel" value="northstar"> Northstar <span class="field-hint">a long-term goal its moonshots serve</span></label>
+    </fieldset>
     <div class="field">
       <label for="pfTitle">Title</label>
       <input type="text" id="pfTitle" maxlength="200" autocomplete="off">
     </div>
     <div id="abstractField"></div>
-    <div class="field">
+    <div class="field" id="pfPartField">
+      <label id="pfPartLabel">Part of</label>
+      <div id="pfPart"><p class="field-hint">Loading&hellip;</p></div>
+      <div class="field-hint" id="pfPartHint"></div>
+    </div>
+    <div class="field" id="pfConnectionField">
+      <label for="pfConnection">How it connects (optional)</label>
+      <textarea id="pfConnection" maxlength="2000" rows="3"></textarea>
+    </div>
+    <div class="field pf-project">
       <label class="check-row"><input type="checkbox" id="pfMore"> It needs more compute than the standard allowance</label>
       <div class="field-hint" id="pfMoreHint"></div>
     </div>
-    <div class="field" id="pfHoursField" hidden>
+    <div class="field pf-project" id="pfHoursField" hidden>
       <label for="pfGpuHours">GPU hours it needs</label>
       <input type="number" id="pfGpuHours" min="1" step="1" inputmode="numeric" placeholder="e.g. 2000">
       <div class="field-hint">In all, roughly: PIs and admins see it when they decide.</div>
@@ -41,12 +56,12 @@ permalink: "projects-register.html"
       <div id="channelEntry"></div>
       <div class="field-hint">Leave it empty if the project&rsquo;s channel is in another Slack.</div>
     </div>
-    <div class="field">
+    <div class="field pf-project">
       <label for="prMode">GitHub repository (optional)</label>
       <div id="repoEntry"></div>
       <div class="field-hint">A private repository in bold-lab-ai made from the lab&rsquo;s template, named after the Slack channel (or the title, without one). Everyone on the project who has linked their GitHub account can push to it.</div>
     </div>
-    <div class="field">
+    <div class="field pf-project">
       <label for="pmDay">Meeting (optional)</label>
       <div id="meetingEntry"></div>
       <div class="field-hint">A recurring Google Calendar meeting with a Meet link. Everyone who joins the project is invited and gets the project&rsquo;s slides and notes. Leave the time empty if another group organises its meetings.</div>
