@@ -116,6 +116,14 @@ function parseText(text, now, tz){
   return { title, start, minutes: minutes && okMinutes(minutes) ? minutes : null };
 }
 
+// Pure: the form's title. What was typed, else "<channel> meeting"; none for a group DM (Slack's
+// 'privategroup', which has no name to give), so its invite isn't called "this conversation meeting".
+function defaultTitle(typed, channelName){
+  const t = String(typed || '').trim(), n = String(channelName || '').trim();
+  if (t) return t;
+  return n && n !== 'privategroup' && n !== 'directmessage' ? n + ' meeting' : '';
+}
+
 // Pure: the form. in: { triggerId, title, channelId, channelName, names, others, now }.
 function formView(o){
   const typed = okMinutes(Number(o.minutes)) ? Number(o.minutes) : 60;
@@ -244,4 +252,4 @@ function whenText(start, minutes){
     f(start, hm) + '–' + f(start + minutes * 60000, hm) + ' (London)';
 }
 
-module.exports = { TZ, LENGTHS, SUGGEST, PICK, viewOf, slotText, withSuggestions, withWhen, minutesOf, parseText, MAX_GUESTS, CALLBACK, inviteesOf, nextSlot, namesText, formView, meetingOf, eventOf, whenText };
+module.exports = { TZ, LENGTHS, SUGGEST, PICK, viewOf, slotText, withSuggestions, withWhen, minutesOf, parseText, MAX_GUESTS, CALLBACK, inviteesOf, nextSlot, namesText, defaultTitle, formView, meetingOf, eventOf, whenText };
