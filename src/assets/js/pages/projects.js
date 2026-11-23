@@ -74,7 +74,7 @@
       return l;
     };
     if (p.titleOnly) {
-      parts.push(textNode(p.talk ? 'Its people see it: talk to the lead, who adds you if it fits' : p.ask ? 'Its people see it: ask to join, and its owner decides' : 'Join it to see it'));
+      parts.push(textNode(levelOf(p) !== 'project' ? 'Join one of its stepping stones' : p.talk ? 'Its people see it: talk to the lead, who adds you if it fits' : p.ask ? 'Its people see it: ask to join, and its owner decides' : 'Join it to see it'));
     } else if (p.boardId) {
       var inVenue = document.createElement('span');
       inVenue.appendChild(textNode('In: '));
@@ -138,6 +138,8 @@
       main.appendChild(row);
     }
     li.appendChild(main);
+    // A northstar or moonshot isn't joined (#248): its stepping stones are.
+    if (levelOf(p) !== 'project') return li;
     // Makes the signed-in user a member: invited to its meeting and Slack channel,
     // and able to edit its slides and notes (projectWorkspace).
     var join = document.createElement('button');
