@@ -8,7 +8,7 @@ An open problem can exist before a project starts. It can link to several BOLD O
 
 ## Onboard an open problem
 
-1. Select **Add problem**. Enter the title, select the person who defined it, and describe its significance, difficulties and current frontier. Link existing projects and name collaborators if applicable. Save the problem. To propose a new project, follow **All projects**, select **Propose a project**, and choose the open problem. The project then appears on the problem page.
+1. Select **Add problem**. Enter the title, select the person who defined it, and describe its significance, difficulties and current frontier. Link existing projects and name collaborators if applicable. Save the problem. To propose a new project, follow **All projects**, select **Propose a project**, and choose the open problem. If the problem is missing, follow **here** below the project form’s **Open problem** field. The bank opens in a separate tab. Save the problem and return to the proposal to select it. **Refresh list** reloads the choices if needed. The project then appears on the problem page.
 2. Select **Add verifier**. If several projects are linked, choose the one that will own this verifier. Confirm the transfer to AutoKaggle Lite. The handoff includes the problem and project IDs, title, and a research brief of up to 4,000 characters in the URL fragment. Lite asks for storage consent. Each verifier has its own session, releases, data and assets, repository, metrics and score format, submission format, and constraints. Open **Verifiers** to compare releases. Older releases can lack recorded contract details.
 3. **Autoresearch baseline** is planned. This release does not start a baseline run or send a result email.
 

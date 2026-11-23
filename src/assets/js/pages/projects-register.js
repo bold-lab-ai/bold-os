@@ -5,22 +5,45 @@
   var el = function(id){ return document.getElementById(id); };
   var form = el('projectForm'), errorBox = el('projectError'), submitBtn = el('submitBtn');
   var me;
-  var problemGeneration=0;
+  var problemGeneration = 0, returningFromBank = false;
   async function loadProblems(){
-    var generation=++problemGeneration, select=el('pfProblem'), status=el('pfProblemStatus'), previous=select.value;
-    select.replaceChildren(new Option('Choose an open problem','')); select.disabled=true;
-    if(!me){status.textContent='Sign in to choose a problem.';return;}
-    status.textContent='Loading open problems…';
-    try{
-      var result=await firebase.app().functions('europe-west2').httpsCallable('benchmarkRegistry')({action:'open_choices'});
-      if(generation!==problemGeneration)return;
-      result.data.items.forEach(function(p){select.add(new Option(p.title,p.id));});
-      select.value=previous; select.disabled=!result.data.items.length;
-      status.textContent=select.disabled?'Add an open problem before proposing a project.':'';
-    }catch(e){if(generation===problemGeneration)status.textContent='Could not load open problems. Refresh to try again.';}
+    var generation = ++problemGeneration, select = el('pfProblem'), status = el('pfProblemStatus');
+    select.disabled = true;
+    if (!me) {
+      select.replaceChildren(new Option('Choose an open problem', ''));
+      status.textContent = 'Sign in to choose a problem.';
+      return false;
+    }
+    status.textContent = 'Loading open problems…';
+    try {
+      var result = await firebase.app().functions('europe-west2').httpsCallable('benchmarkRegistry')({action:'open_choices'});
+      if (generation !== problemGeneration) return false;
+      var previous = select.value;
+      select.replaceChildren(new Option('Choose an open problem', ''));
+      result.data.items.forEach(function(p){ select.add(new Option(p.title, p.id)); });
+      select.value = previous;
+      if (!select.value) select.selectedIndex = 0;
+      select.disabled = !result.data.items.length;
+      status.textContent = select.disabled ? 'Add an open problem before proposing a project.' :
+        previous && !select.value ? 'The selected problem is no longer open. Choose another problem.' : '';
+      return true;
+    } catch (e) {
+      if (generation === problemGeneration) status.textContent = 'Could not load open problems. Refresh to try again.';
+      return false;
+    }
   }
-  el('refreshProblems').onclick=loadProblems;
-  BOLD.onUser(function(user){me=user;loadProblems();});
+  el('refreshProblems').onclick = loadProblems;
+  el('pfProblemBank').addEventListener('click', function(){ returningFromBank = true; });
+  window.addEventListener('storage', function(event){
+    if (event.key === 'boldOpenProblemsChanged' && me) {
+      returningFromBank = false;
+      loadProblems();
+    }
+  });
+  window.addEventListener('focus', function(){
+    if (returningFromBank) { returningFromBank = false; loadProblems(); }
+  });
+  BOLD.onUser(function(user){ me = user; loadProblems(); });
 
   var db = null;
   try { db = firebase.firestore(BOLD.getApp()); } catch (e){}
@@ -135,11 +158,15 @@
       try { localStorage.removeItem('boldProjects:getAllProjects:' + me.email.toLowerCase()); } catch (err){}
       // Approved at once (BOLD-internal, the standard allowance): its own page, being set up; else the proposed ones.
       location.href = internal() && !more ? 'project.html#id=' + encodeURIComponent(id) : 'projects.html#proposed';
-    }).catch(function(err){
+    }).catch(async function(err){
       console.error('[BOLD Lab] register project failed', err);
       submitBtn.disabled = false;
       channelField.refresh();
       var code = err && err.code;
+      if (code === 'permission-denied' && await loadProblems()) {
+        var stillOpen = Array.from(el('pfProblem').options).some(function(option){ return option.value === problem; });
+        if (!stillOpen) return showError('The selected problem is no longer open. Choose another problem.');
+      }
       showError(code === 'permission-denied'
         ? 'You don\u2019t have permission to do that \u2014 check with a PI or lab admin.'
         : (code === 'functions/failed-precondition' || code === 'functions/invalid-argument') && err.message

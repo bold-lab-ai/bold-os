@@ -41,7 +41,11 @@
       if (!submission || submission.signature !== signature) submission = { signature: signature, id: crypto.randomUUID() };
       status.textContent = 'Saving…';
       var result = await call(Object.assign(data, { request_id: submission.id }));
-      if (generation === epoch) location.assign('problem.html?problem=' + encodeURIComponent(result.problem_id));
+      if (generation === epoch) {
+        // Let an open project proposal reload its choices. Keep the problem data out of browser storage.
+        try { localStorage.setItem('boldOpenProblemsChanged', submission.id); } catch (ignored) {}
+        location.assign('problem.html?problem=' + encodeURIComponent(result.problem_id));
+      }
     } catch (e){ if (generation === epoch) status.textContent = e.message || 'Could not save. Try again.'; }
     finally { if (generation === epoch) { busy = false; controls(); } }
   });

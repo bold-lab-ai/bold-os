@@ -30,9 +30,10 @@ async function req(path, method, token, body, mask) {
   await db.doc('roles/pis').set({ emails: [PI] });
   await db.doc('roles/admins').set({ emails: [] });
   await db.doc('members/' + MEMBER).set({ category: 'internal' });
-  const run = Date.now(), id='ak-'+'3'.repeat(24), closed='ak-'+'4'.repeat(24);
+  const run = Date.now(), id='ak-'+'3'.repeat(24), closed='ak-'+'4'.repeat(24), checked='ak-'+'6'.repeat(24);
   await db.doc('problemBank/'+id).set({stage:'open',archived:false});
   await db.doc('problemBank/'+closed).set({stage:'open',archived:true});
+  await db.doc('problemBank/'+checked).set({stage:'checked',archived:false});
   await db.doc('settings/access').set({projects:{view:'internal',edit:'internal'}},{merge:true});
   let n = 0;
   const make = (proposal, by = MEMBER, link = id) => req('projects?documentId=p' + run + '-' + (++n), 'POST', jwt(by), { title: 'P', ...(link ? {openProblemId:link} : {}), submittedBy: { email: by }, proposal });
@@ -47,7 +48,7 @@ async function req(path, method, token, body, mask) {
   assert.equal(await make({ status: 'proposed', at, by: MEMBER }), 403, 'neither');
   assert.equal(await make({ status: 'approved', more: false, at, by: MEMBER }), 403, 'approved by its proposer');
   assert.equal(await make({ status: 'proposed', more: true, gpuHours: 2000, dueAt: at, at, by: MEMBER }), 403, 'its own deadline');
-  for (const link of [null, closed, 'ak-'+'5'.repeat(24)]) assert.equal(await make({status:'proposed',more:false,at,by:MEMBER},MEMBER,link),403);
+  for (const link of [null, closed, checked, 'ak-'+'5'.repeat(24)]) assert.equal(await make({status:'proposed',more:false,at,by:MEMBER},MEMBER,link),403);
   assert.equal(await req('projects/p'+run+'-1','PATCH',jwt(MEMBER),{openProblemId:closed},['openProblemId']),403);
   console.log('project proposal rules: ok');
 })().catch((e) => { console.error(e); process.exit(1); });

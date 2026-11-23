@@ -22,8 +22,12 @@ permalink: "projects-register.html"
       <label for="pfTitle">Title</label>
       <input type="text" id="pfTitle" maxlength="200" autocomplete="off">
     </div>
-    <div class="field"><label for="pfProblem">Open problem</label><select id="pfProblem" required><option value="">Choose an open problem</option></select>
-      <div class="field-hint"><span id="pfProblemStatus" role="status"></span> <a href="problem-new.html" target="_blank" rel="noopener">Add an open problem ↗</a> · <button class="btn-text" id="refreshProblems" type="button">Refresh list</button></div></div>
+    <div class="field">
+      <label for="pfProblem">Open problem</label>
+      <select id="pfProblem" required disabled aria-describedby="pfProblemHint pfProblemStatus"><option value="">Choose an open problem</option></select>
+      <div class="field-hint"><span id="pfProblemStatus" role="status"></span> <button class="btn-text" id="refreshProblems" type="button">Refresh list</button></div>
+      <div class="field-hint" id="pfProblemHint">Can't find the appropriate problem? Define one <a id="pfProblemBank" href="problems.html" target="_blank" rel="noopener" aria-label="here, in the Problem Bank (opens in a new tab)">here</a>.</div>
+    </div>
     <div id="abstractField"></div>
     <div class="field">
       <label class="check-row"><input type="checkbox" id="pfMore"> It needs more compute than the standard allowance</label>
