@@ -128,101 +128,70 @@
   }
 
   /* ---------- Topics: clustered by what they're about, zoomable ---------- */
-  var TW = 1400, TH = 950, topic = null, vb = { x: 0, y: 0, w: TW, h: TH };
+  // A board (research-map.js topicBoard): each topic a card listing its stepping stones, cards down both sides,
+  // moonshots and northstars in the middle, linked to what's part of them. One unit is one pixel when it all
+  // fits, so its text is the page's size; zooming in makes everything bigger.
+  var TW = 1200, TH = 800, topic = null, vb = { x: 0, y: 0, w: TW, h: TH };
   function topicData(){
     var items = map.nodes.filter(function(n){ return n.kind !== 'problem'; });
-    var key = items.map(function(n){ return n.id; }).join(',') + '|' + map.nodes.length;
+    var width = Math.max(980, Math.round(graph.clientWidth || 1200));
+    var key = items.map(function(n){ return n.id; }).join(',') + '|' + width;
     if (topic && topic.key === key) return topic;
-    // Only the stepping stones are clustered; moonshots and northstars sit among what's linked to them.
-    var cl = R.clusters(items.filter(function(n){ return n.kind === 'project'; })), links = map.edges.filter(function(e){ return e.kind === 'part'; });
-    topic = { key: key, cl: cl, pos: R.topicLayout(items, links, cl, TW, TH) };
-    // A problem beside what it belongs to.
-    map.nodes.forEach(function(n){
-      if (n.kind !== 'problem') return;
-      var e = map.edges.filter(function(x){ return x.from === n.id || x.to === n.id; })[0], o = e && topic.pos[e.from === n.id ? e.to : e.from];
-      if (o) topic.pos[n.id] = { x: o.x + 24, y: o.y + 18 };
-    });
+    var cl = R.clusters(items.filter(function(n){ return n.kind === 'project'; }));
+    var links = map.edges.filter(function(e){ return e.kind === 'part'; });
+    var board = R.topicBoard(items, links, cl, width);
+    TW = width; TH = Math.max(420, board.h);
+    topic = { key: key, cl: cl, board: board, pos: board.pos };
     vb = { x: 0, y: 0, w: TW, h: TH };
     return topic;
   }
   function topicsSvg(){
-    var t = topicData(), on = lit(), pos = t.pos;
-    var hulls = t.cl.clusters.map(function(c, j){
-      if (!c.size) return '';
-      // Its name above it, as large on screen however far it's zoomed (rm-s: fitLabels).
-      return '<g class="rm-cluster rm-hue-' + HUES[j % HUES.length] + '"><circle vector-effect="non-scaling-stroke" cx="' + c.x.toFixed(1) + '" cy="' + c.y.toFixed(1) + '" r="' + c.r.toFixed(1) + '"></circle>' +
-        '<g transform="translate(' + c.x.toFixed(1) + ',' + (c.y - c.r).toFixed(1) + ')"><g class="rm-s"><text class="rm-cluster-label" y="-8" text-anchor="middle">' + esc(c.terms.join(' \u00b7 ')) + '</text></g></g></g>';
+    var t = topicData(), on = lit(), pos = t.pos, f = function(n){ return n.toFixed(1); };
+    var cards = t.board.cards.map(function(c){
+      var name = t.cl.clusters[c.j].terms.join(' \u00b7 ');
+      return '<g class="rm-card rm-hue-' + HUES[c.j % HUES.length] + '"><rect x="' + f(c.x) + '" y="' + f(c.y) + '" width="' + f(c.w) + '" height="' + f(c.h) + '" rx="6"><title>' + esc(name) + '</title></rect>' +
+        '<text class="rm-card-head" x="' + f(c.x + 14) + '" y="' + f(c.y + 22) + '">' + esc(short(name, Math.floor((c.w - 28) / 8.6))) + '</text></g>';
     }).join('');
+    // Links: a stepping stone's dot to its moonshot, a moonshot to its northstar, curving across.
     var lines = map.edges.map(function(e){
+      if (e.kind !== 'part') return '';
       var p = pos[e.from], q = pos[e.to];
       if (!p || !q) return '';
-      var hot = on && on[e.from] && on[e.to];
-      // Bowed a little, always to the same side for a pair (as Network's).
-      var mx = (p.x + q.x) / 2, my = (p.y + q.y) / 2, b = 0.12;
-      return '<path vector-effect="non-scaling-stroke" class="cx-edge rm-e-' + e.kind + (hot ? ' is-lit' : '') + '" d="M' + p.x.toFixed(1) + ' ' + p.y.toFixed(1) + 'Q' + (mx - (q.y - p.y) * b).toFixed(1) + ' ' + (my + (q.x - p.x) * b).toFixed(1) + ' ' + q.x.toFixed(1) + ' ' + q.y.toFixed(1) + '"></path>';
+      var hot = on && on[e.from] && on[e.to], mx = (p.x + q.x) / 2, d;
+      if (q.side === 'top') {
+        // Up to a northstar: out to one side first (its side, or for the middle one, the moonshot's own turn), then up.
+        var dir = q.x < p.x - 1 ? -1 : q.x > p.x + 1 ? 1 : ((p.y / 46 | 0) % 2 ? 1 : -1);
+        d = 'M' + f(p.x) + ' ' + f(p.y) + 'C' + f(p.x + dir * 150) + ' ' + f(p.y) + ' ' + f(q.x + dir * 40) + ' ' + f(q.y + 90) + ' ' + f(q.x) + ' ' + f(q.y);
+      } else d = 'M' + f(p.x) + ' ' + f(p.y) + 'C' + f(mx) + ' ' + f(p.y) + ' ' + f(mx) + ' ' + f(q.y) + ' ' + f(q.x) + ' ' + f(q.y);
+      return '<path class="cx-edge rm-e-part' + (q.side === 'top' ? ' rm-up' : '') + (hot ? ' is-lit' : '') + '" d="' + d + '"></path>';
     }).join('');
     var nodes = map.nodes.map(function(n){
       var p = pos[n.id];
       if (!p) return '';
-      var j = t.cl.of[n.id], loud = n.kind === 'northstar' || n.kind === 'moonshot';
-      var r = n.kind === 'northstar' ? 9 : n.kind === 'moonshot' ? 6.5 : 5.5;
-      return '<g class="' + nodeCls(n, on) + (j !== undefined ? ' rm-hue-' + HUES[j % HUES.length] : '') + '" data-id="' + esc(n.id) + '" transform="translate(' + p.x.toFixed(1) + ',' + p.y.toFixed(1) + ')" tabindex="0" role="button">' +
-        '<g class="rm-s">' + mark(n.kind, r) + '<text class="cx-label' + (loud ? ' rm-loud' : '') + '" x="' + (r + 5) + '" y="4">' + esc(short(n.title, loud ? 34 : 40)) + '</text></g>' +
+      var j = t.cl.of[n.id], r = n.kind === 'northstar' ? 9 : n.kind === 'moonshot' ? 6.5 : 4.5;
+      // A row's title on its card, away from the middle; a moonshot's toward the middle; a northstar's under it.
+      var lx = r + 7, ly = 4.5, anchor = 'start', max = 40;
+      if (n.kind === 'project') { anchor = p.side === 'left' ? 'end' : 'start'; lx = p.side === 'left' ? -(r + 7) : r + 7; max = Math.floor((t.board.cards[0] ? t.board.cards[0].w - 34 : 260) / 7.4); }
+      else if (n.kind === 'moonshot') { anchor = 'middle'; lx = 0; ly = r + 16; max = Math.max(18, Math.floor((t.board.mid - 40) / 7.6)); }
+      else if (n.kind === 'northstar') { anchor = 'middle'; lx = 0; ly = r + 22; max = 40; }
+      return '<g class="' + nodeCls(n, on) + (j !== undefined ? ' rm-hue-' + HUES[j % HUES.length] : '') + '" data-id="' + esc(n.id) + '" transform="translate(' + f(p.x) + ',' + f(p.y) + ')" tabindex="0" role="button">' +
+        mark(n.kind, r) + '<text class="cx-label" x="' + lx + '" y="' + ly + '" text-anchor="' + anchor + '">' + esc(short(n.title, max)) + '</text>' +
         '<title>' + tip(n) + '</title></g>';
     }).join('');
     return '<div class="cx-graph rm-zoom"><div class="rm-zoom-ctl view-toggle" role="group" aria-label="Zoom">' +
-      '<button type="button" class="view-btn" data-zoom="in" aria-label="Zoom in">+</button><button type="button" class="view-btn" data-zoom="out" aria-label="Zoom out">−</button>' +
+      '<button type="button" class="view-btn" data-zoom="in" aria-label="Zoom in">+</button><button type="button" class="view-btn" data-zoom="out" aria-label="Zoom out">\u2212</button>' +
       '<button type="button" class="view-btn" data-zoom="fit" aria-label="Fit it all in">\u2922</button></div>' +
       '<p class="rm-zoom-hint">Scroll to zoom \u00b7 drag to move</p>' +
-      '<svg class="cx-svg rm-svg rm-topics' + (on ? ' has-selected' : '') + '" viewBox="' + box() +
-      '" preserveAspectRatio="xMidYMid meet" role="img" aria-label="Everything, clustered by what it’s about">' +
-      '<g>' + hulls + '</g><g>' + lines + '</g><g>' + nodes + '</g></svg></div>';
+      '<svg class="cx-svg rm-svg rm-topics' + (on ? ' has-selected' : '') + '" viewBox="' + box() + '" style="height:' + Math.round(TH) + 'px; max-height:80vh"' +
+      ' preserveAspectRatio="xMidYMin meet" role="img" aria-label="Stepping stones by topic, with their moonshots and northstars">' +
+      '<g>' + cards + '</g><g>' + lines + '</g><g>' + nodes + '</g></svg></div>';
   }
   function box(){ return [vb.x, vb.y, vb.w, vb.h].map(function(v){ return v.toFixed(1); }).join(' '); }
   function setBox(next){
-    var w = Math.max(160, Math.min(TW * 1.5, next.w)), h = w * TH / TW;
+    var w = Math.max(TW / 6, Math.min(TW * 1.5, next.w)), h = w * TH / TW;
     vb = { x: next.x + (next.w - w) / 2, y: next.y + (next.h - h) / 2, w: w, h: h };
     var svg = graph.querySelector('.rm-topics');
-    if (!svg) return;
-    svg.setAttribute('viewBox', box());
-    fitLabels(svg);
-  }
-  // Marks and labels stay the same size on screen however far it's zoomed (each node's rm-s, scaled back), so
-  // zooming in gives them room; and only the labels with room show, the most telling first: what's chosen and
-  // lit, the topics' names, northstars, moonshots, then the rest. A hidden one shows on hover.
-  function fitLabels(svg){
-    // One map unit is 1/s pixels on screen: marks and labels drawn at their size in pixels.
-    var b0 = svg.getBoundingClientRect(), s0 = b0.width && b0.height ? Math.min(b0.width / vb.w, b0.height / vb.h) : TW / vb.w;
-    var k = 1 / s0, sc = 'scale(' + k.toFixed(4) + ')', taken = [];
-    var groups = svg.querySelectorAll('.rm-s');
-    for (var i = 0; i < groups.length; i++) groups[i].setAttribute('transform', sc);
-    var all = [];
-    svg.querySelectorAll('.rm-cluster-label, .cx-node .cx-label').forEach(function(t){
-      var g = t.closest('.cx-node'), at = t.parentNode.parentNode.getAttribute('transform') || '';
-      var m = at.match(/translate\(([-\d.]+),([-\d.]+)\)/);
-      if (!m) return;
-      var len = 0;
-      try { len = t.getComputedTextLength(); } catch (e){}
-      if (!len) len = t.textContent.length * 6.6;
-      var cls = g ? g.getAttribute('class') : '', x = +m[1], y = +m[2];
-      var rank = !g ? 1 : /is-selected/.test(cls) ? 0 : /is-lit/.test(cls) ? 0.5 : /rm-northstar/.test(cls) ? 2 : /rm-moonshot/.test(cls) ? 3 : 4;
-      var lx = !g ? x - len / 2 * k : x + (+t.getAttribute('x')) * k, ly = !g ? y - 20 * k : y - 9 * k;
-      all.push({ t: t, rank: rank, id: g ? g.getAttribute('data-id') : '', box: [lx - 3 * k, ly - 2 * k, lx + len * k + 3 * k, ly + 16 * k] });
-    });
-    // Every mark is in the way of every label but its own.
-    var marks = [];
-    svg.querySelectorAll('.cx-node[data-id]').forEach(function(g){
-      var m = (g.getAttribute('transform') || '').match(/translate\(([-\d.]+),([-\d.]+)\)/);
-      if (m) marks.push({ id: g.getAttribute('data-id'), box: [+m[1] - 8 * k, +m[2] - 8 * k, +m[1] + 8 * k, +m[2] + 8 * k] });
-    });
-    all.sort(function(a, b){ return a.rank - b.rank; });
-    var inView = function(b){ return b[2] > vb.x && b[0] < vb.x + vb.w && b[3] > vb.y && b[1] < vb.y + vb.h; };
-    all.forEach(function(a){
-      var b = a.box, hit = function(o){ return b[0] < o[2] && b[2] > o[0] && b[1] < o[3] && b[3] > o[1]; };
-      var free = a.rank === 0 || (!taken.some(hit) && !marks.some(function(m){ return m.id !== a.id && hit(m.box); }));
-      a.t.classList.toggle('is-culled', !free);
-      if (free && inView(b)) taken.push(b);
-    });
+    if (svg) svg.setAttribute('viewBox', box());
   }
   // Zooms by `f` around a point in the map's units (its middle when none).
   function zoomBy(f, px, py){
@@ -233,7 +202,7 @@
   // A point on screen in the map's units, and how many screen pixels make one of them.
   function toMap(svg, cx, cy){
     var b = svg.getBoundingClientRect(), s = Math.min(b.width / vb.w, b.height / vb.h);
-    var ox = (b.width - vb.w * s) / 2, oy = (b.height - vb.h * s) / 2;
+    var ox = (b.width - vb.w * s) / 2, oy = 0;   // xMidYMin
     return { x: vb.x + (cx - b.left - ox) / s, y: vb.y + (cy - b.top - oy) / s, s: s };
   }
   var drag = null;
@@ -265,7 +234,6 @@
     build();
     graph.innerHTML = opts.view === 'topics' ? topicsSvg() : lineageSvg();
     graph.hidden = false;
-    if (graph.querySelector('.rm-topics')) fitLabels(graph.querySelector('.rm-topics'));
     el('rmMsg').hidden = true;
     legend();
     detail();

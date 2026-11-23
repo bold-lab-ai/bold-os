@@ -38,25 +38,24 @@ main{max-width:var(--content-max); margin:0 auto; padding:8px var(--gutter) 24px
    zoomed with the wheel or the buttons and dragged around. */
 .rm-zoom{position:relative; margin:6px calc(50% - min(50vw - var(--gutter), 640px)) 0; border:1px solid var(--line); border-radius:var(--radius);
   background:var(--paper); overflow:hidden; touch-action:none; isolation:isolate;}
-.cx-svg.rm-topics{display:block; width:100%; height:min(72vh, 760px); overflow:hidden; cursor:grab; user-select:none;}
+.cx-svg.rm-topics{display:block; width:100%; overflow:hidden; cursor:grab; user-select:none;}
 .is-dragging .rm-topics{cursor:grabbing;}
 .rm-zoom-ctl{position:absolute; top:12px; right:12px; z-index:1; display:flex; flex-direction:column; background:var(--paper);
   border:1px solid var(--line); border-radius:var(--radius); box-shadow:0 1px 4px color-mix(in srgb, var(--shade) 18%, transparent); overflow:hidden;}
 .rm-zoom-ctl .view-btn{width:34px; height:32px; padding:0; font-size:17px; line-height:1;}
 .rm-zoom-ctl .view-btn + .view-btn{border-left:none; border-top:1px solid var(--line);}
 .rm-zoom-hint{position:absolute; left:14px; bottom:10px; margin:0; font-family:var(--sans); font-size:11.5px; color:var(--muted); pointer-events:none;}
-.rm-topics .cx-edge{opacity:.22; stroke-width:1;}
-.rm-topics .rm-e-member{display:none;}
-.rm-topics .cx-label{font-family:var(--sans); font-size:13.5px;}
-.rm-topics .cx-node.rm-northstar .cx-label{font-family:var(--serif); font-size:19px;}
-.rm-topics .rm-moonshot .cx-label{font-size:14.5px;}
-.rm-topics .cx-label.is-culled, .rm-topics .rm-cluster-label.is-culled{opacity:0; transition:opacity .12s;}
-.rm-topics .cx-node:hover .cx-label.is-culled, .rm-topics .cx-node:focus .cx-label.is-culled{opacity:1;}
-.rm-topics .cx-node:hover{isolation:isolate;}
-.rm-topics .cx-node.rm-project .cx-mark, .rm-topics .cx-node.rm-problem .cx-mark{fill:color-mix(in srgb, currentColor 22%, var(--paper)); stroke-width:1.4;}
+/* The cards: one a topic, tinted in its hue, its name at the top. */
+.rm-card rect{fill:color-mix(in srgb, currentColor 5%, var(--paper)); stroke:color-mix(in srgb, currentColor 30%, transparent); stroke-width:1;}
+.rm-card-head{font-family:var(--sans); font-size:11.5px; font-weight:700; letter-spacing:.09em; text-transform:uppercase; fill:currentColor;}
+.rm-topics .cx-edge{opacity:.28; stroke-width:1;}
+.rm-topics .cx-label{font-family:var(--sans); font-size:13px; stroke:none;}
+.rm-topics .cx-node.rm-project .cx-label{fill:var(--ink);}
+.rm-topics .cx-node.rm-northstar .cx-label{font-family:var(--serif); font-size:17px; font-weight:700; paint-order:stroke; stroke:var(--paper); stroke-width:4px;}
+.rm-topics .cx-node.rm-moonshot .cx-label{font-size:13.5px; font-weight:600; paint-order:stroke; stroke:var(--paper); stroke-width:4px;}
+.rm-topics .cx-node.rm-project .cx-mark{fill:color-mix(in srgb, currentColor 25%, var(--paper)); stroke-width:1.4;}
 .rm-topics .cx-node:hover .cx-mark{fill:currentColor;}
-.rm-cluster circle{fill:color-mix(in srgb, currentColor 6%, transparent); stroke:color-mix(in srgb, currentColor 28%, transparent); stroke-width:1;}
-.rm-cluster-label{font-family:var(--sans); font-size:12.5px; font-weight:600; letter-spacing:.1em; text-transform:uppercase; fill:currentColor; paint-order:stroke; stroke:var(--paper); stroke-width:4px; stroke-linejoin:round;}
+.rm-topics .cx-node.rm-project:hover .cx-label{fill:var(--link);}
 .rm-swatch{fill:color-mix(in srgb, currentColor 22%, transparent); stroke:currentColor; stroke-width:1.2;}
 .rm-hue-accent{color:var(--accent);} .rm-hue-teal{color:var(--teal);} .rm-hue-plum{color:var(--plum);} .rm-hue-amber{color:var(--amber);}
 .rm-hue-green{color:var(--green);} .rm-hue-brown{color:var(--brown);} .rm-hue-danger-text{color:var(--danger-text);}
@@ -67,3 +66,5 @@ main{max-width:var(--content-max); margin:0 auto; padding:8px var(--gutter) 24px
 .rm-dl{display:grid; grid-template-columns:max-content 1fr; gap:4px 16px; margin:0; font-size:14.5px;}
 .rm-dl dt{color:var(--muted);}
 .rm-dl dd{margin:0;}
+/* A moonshot's link up to its northstar: quieter (Lineage has them plainly), lit when chosen. */
+.rm-topics .cx-edge.rm-up:not(.is-lit){opacity:.16; stroke-dasharray:2 4;}

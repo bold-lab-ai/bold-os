@@ -87,9 +87,14 @@ test('Topics: projects about the same thing cluster together, the same way every
   assert.deepStrictEqual(R.clusters(items, 3), c);
   // A title's [tags] name no topic.
   assert.ok(!c.clusters.some((x) => x.terms.some((t) => /paused|amaze/.test(t))));
-  const pos = R.topicLayout(items.concat([{ pid: 'm' }]), [{ from: 'a', to: 'm' }, { from: 'b', to: 'm' }], c, 1000, 700);
-  Object.values(pos).forEach((p) => { assert.ok(p.x >= 20 && p.x <= 980 && p.y >= 20 && p.y <= 680); });
-  // The moonshot sits nearer its stepping stones than the others.
-  const d = (p, q) => Math.hypot(pos[p].x - pos[q].x, pos[p].y - pos[q].y);
-  assert.ok(d('m', 'a') < d('m', 'c') && d('m', 'a') < d('m', 'e'));
+  // The board: rows in cards on either side never overlap; a moonshot sits in the middle, by its stepping stones.
+  const board = R.topicBoard(items.concat([{ pid: 'm', level: 'moonshot' }, { pid: 'n', level: 'northstar' }]),
+    [{ from: 'a', to: 'm' }, { from: 'b', to: 'm' }, { from: 'm', to: 'n' }], c, 1200);
+  const rows = items.map((i) => board.pos[i.pid]);
+  rows.forEach((p, i) => rows.forEach((q, j) => { if (i < j && p.x === q.x) assert.ok(Math.abs(p.y - q.y) >= 24); }));
+  board.cards.forEach((x) => { assert.ok(x.x >= 0 && x.x + x.w <= 1200); });
+  const m = board.pos.m, n = board.pos.n;
+  assert.ok(m.x > board.cards[0].w && m.x < 1200 - board.cards[0].w, 'the moonshot is in the middle');
+  assert.strictEqual(n.x, 600);
+  assert.ok(Math.abs(m.y - (board.pos.a.y + board.pos.b.y) / 2) < 40, 'beside its stepping stones');
 });

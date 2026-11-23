@@ -195,72 +195,63 @@
     items.forEach(function(i, x){ out.of[i.pid] = of[x]; out.clusters[of[x]].size++; });
     return out;
   }
-  // A stable number in [0, 1) for a string, so the layout is the same each time.
+  // A stable number in [0, 1) for a string, so the same every time.
   function seed(s){ var h = 2166136261; for (var i = 0; i < s.length; i++) { h ^= s.charCodeAt(i); h = Math.imul(h, 16777619); } return ((h >>> 0) % 100000) / 100000; }
-  // Where each item sits (w × h). First the clustered ones: each cluster around its own centre (on a ring),
-  // pushed apart and pulled to their centre, so each cluster stays together. Then the rest (moonshots, northstars):
-  // each among what's linked to it (a moonshot among its stepping stones, a northstar among its moonshots),
-  // pushed off everything else. → { pid: { x, y } }, and each cluster's { x, y, r } in `cl.clusters`.
-  function topicLayout(items, links, cl, w, h){
-    var pos = {}, cx = w / 2, cy = h / 2, k = cl.clusters.length, R = Math.min(w, h) * (k > 1 ? 0.36 : 0), sx = w / Math.min(w, h);
-    var centre = cl.clusters.map(function(c, j){ var a = -Math.PI / 2 + j * 2 * Math.PI / Math.max(1, k); return { x: cx + Math.cos(a) * R * sx * 0.9, y: cy + Math.sin(a) * R }; });
-    var inC = items.filter(function(i){ return cl.of[i.pid] !== undefined; }).map(function(i){ return i.pid; });
-    var free = items.filter(function(i){ return cl.of[i.pid] === undefined; }).map(function(i){ return i.pid; });
-    inC.forEach(function(id){
-      var c = centre[cl.of[id]], a = seed(id) * 2 * Math.PI, r = 10 + seed(id + '.') * 40;
-      pos[id] = { x: c.x + Math.cos(a) * r, y: c.y + Math.sin(a) * r };
-    });
-    var clamp = function(p){ p.x = Math.max(20, Math.min(w - 20, p.x)); p.y = Math.max(20, Math.min(h - 20, p.y)); };
-    var MIN = 40;
-    var push = function(ids, movable, rounds, pull){
-      for (var it = 0; it < rounds; it++) {
-        var heat = 1 - it / rounds, f = {};
-        movable.forEach(function(id){ f[id] = { x: 0, y: 0 }; });
-        for (var a = 0; a < ids.length; a++) for (var b = a + 1; b < ids.length; b++) {
-          var A = ids[a], B = ids[b];
-          if (!f[A] && !f[B]) continue;
-          var p = pos[A], q = pos[B], dx = q.x - p.x, dy = q.y - p.y, d2 = dx * dx + dy * dy + 0.01, d = Math.sqrt(d2);
-          // Two that carry labels (neither clustered: moonshots, northstars) keep further apart, sideways most.
-          var same = cl.of[A] !== undefined && cl.of[A] === cl.of[B], both = cl.of[A] === undefined && cl.of[B] === undefined;
-          var near = both ? (Math.abs(dy) < 22 && Math.abs(dx) < 240 ? 60 : 0) : 0;
-          var fr = (same ? 700 : both ? 5000 : 2200) / d2 + (d < MIN ? (MIN - d) * 0.6 : 0) + near * (1 - Math.abs(dy) / 22) * 0.4;
-          if (f[A]) { f[A].x -= dx / d * fr; f[A].y -= dy / d * fr; }
-          if (f[B]) { f[B].x += dx / d * fr; f[B].y += dy / d * fr; }
-        }
-        pull(f);
-        movable.forEach(function(id){
-          var len = Math.sqrt(f[id].x * f[id].x + f[id].y * f[id].y) || 1, step = Math.min(24 * heat + 0.5, len);
-          pos[id].x += f[id].x / len * step; pos[id].y += f[id].y / len * step; clamp(pos[id]);
-        });
-      }
-    };
-    push(inC, inC, 260, function(f){ inC.forEach(function(id){ var c = centre[cl.of[id]]; f[id].x += (c.x - pos[id].x) * 0.05; f[id].y += (c.y - pos[id].y) * 0.05; }); });
-    // The rest, each at the middle of what it's linked to that's placed already (stepping stones, then moonshots).
-    var nb = {};
-    (links || []).forEach(function(e){ (nb[e.from] = nb[e.from] || []).push(e.to); (nb[e.to] = nb[e.to] || []).push(e.from); });
-    for (var pass = 0; pass < 3; pass++) free.forEach(function(id){
-      if (pos[id] && pass < 2) return;
-      var near = (nb[id] || []).filter(function(o){ return pos[o]; });
-      if (!near.length) return;
-      pos[id] = { x: near.reduce(function(s, o){ return s + pos[o].x; }, 0) / near.length + (seed(id) - 0.5) * 30,
-        y: near.reduce(function(s, o){ return s + pos[o].y; }, 0) / near.length + (seed(id + '.') - 0.5) * 30 };
-    });
-    free.forEach(function(id){ if (!pos[id]) pos[id] = { x: cx + (seed(id) - 0.5) * 120, y: cy + (seed(id + '.') - 0.5) * 120 }; });
-    push(inC.concat(free), free, 200, function(f){
-      free.forEach(function(id){
-        (nb[id] || []).forEach(function(o){ if (pos[o]) { f[id].x += (pos[o].x - pos[id].x) * 0.02; f[id].y += (pos[o].y - pos[id].y) * 0.02; } });
+
+  // The Topics board, `w` wide: each cluster a card listing its items as rows, the cards stacked in a left and a
+  // right column (as even as can be) under a band with the northstars across the top; the moonshots down the
+  // middle, each at the height of what's part of it, none closer than `gap` to the next. → { cards: [{ j, x, y,
+  // w, h, side }], pos: { id: { x, y, side } } (a row's dot, on its card's inner edge), h, mid: the middle's width }.
+  function topicBoard(items, links, cl, w){
+    var ROW = 24, HEAD = 34, PAD = 12, GAP = 22, M = 16, TOPBAND = 86;
+    var CARD = Math.min(340, Math.max(230, w * 0.28));
+    var byCluster = cl.clusters.map(function(){ return []; });
+    items.forEach(function(i){ var j = cl.of[i.pid]; if (j !== undefined) byCluster[j].push(i); });
+    byCluster.forEach(function(list){ list.sort(function(a, b){ return String(a.title).localeCompare(String(b.title)); }); });
+    var order = cl.clusters.map(function(c, j){ return j; }).filter(function(j){ return byCluster[j].length; })
+      .sort(function(a, b){ return byCluster[b].length - byCluster[a].length || a - b; });
+    var hOf = function(j){ return HEAD + byCluster[j].length * ROW + PAD; };
+    var col = { left: [], right: [] }, tall = { left: 0, right: 0 };
+    order.forEach(function(j){ var side = tall.left <= tall.right ? 'left' : 'right'; col[side].push(j); tall[side] += hOf(j) + GAP; });
+    var out = { cards: [], pos: {}, h: 0, mid: w - 2 * (M + CARD) };
+    ['left', 'right'].forEach(function(side){
+      var y = TOPBAND;
+      col[side].forEach(function(j){
+        var x = side === 'left' ? M : w - M - CARD, hh = hOf(j);
+        out.cards.push({ j: j, x: x, y: y, w: CARD, h: hh, side: side });
+        byCluster[j].forEach(function(i, r){ out.pos[i.pid] = { x: side === 'left' ? x + CARD - 14 : x + 14, y: y + HEAD + r * ROW + ROW / 2, side: side }; });
+        y += hh + GAP;
       });
     });
-    cl.clusters.forEach(function(c, j){
-      var mine = inC.filter(function(id){ return cl.of[id] === j; });
-      if (!mine.length) { c.x = centre[j].x; c.y = centre[j].y; c.r = 0; return; }
-      c.x = mine.reduce(function(s, id){ return s + pos[id].x; }, 0) / mine.length;
-      c.y = mine.reduce(function(s, id){ return s + pos[id].y; }, 0) / mine.length;
-      c.r = Math.max.apply(null, mine.map(function(id){ return Math.sqrt(Math.pow(pos[id].x - c.x, 2) + Math.pow(pos[id].y - c.y, 2)); })) + 26;
+    out.h = TOPBAND + Math.max(tall.left, tall.right);
+    var nb = {};
+    (links || []).forEach(function(e){ (nb[e.from] = nb[e.from] || []).push(e.to); (nb[e.to] = nb[e.to] || []).push(e.from); });
+    var of = function(kind){ return items.filter(function(i){ return cl.of[i.pid] === undefined && (i.level || 'project') === kind; }); };
+    // Northstars: across the top, in the order their moonshots' stepping stones run, left to right.
+    var stars = of('northstar');
+    stars.forEach(function(i, k){ out.pos[i.pid] = { x: w * (k + 1) / (stars.length + 1), y: 26, side: 'top' }; });
+    // Moonshots: down the middle, each at the height of its stepping stones (none: just under the band).
+    var mid = w / 2, moons = of('moonshot'), gap = 46;
+    moons.forEach(function(i){
+      var near = (nb[i.pid] || []).filter(function(o){ return out.pos[o] && out.pos[o].side !== 'top'; });
+      var y = near.length ? near.reduce(function(s, o){ return s + out.pos[o].y; }, 0) / near.length : TOPBAND + 10;
+      out.pos[i.pid] = { x: mid, y: y, side: 'middle' };
     });
-    return pos;
+    moons.sort(function(a, b){ return out.pos[a.pid].y - out.pos[b.pid].y || String(a.title).localeCompare(String(b.title)); });
+    for (var it = 0; it < 60; it++) for (var k = 1; k < moons.length; k++) {
+      var p = out.pos[moons[k - 1].pid], q = out.pos[moons[k].pid], d = q.y - p.y;
+      if (d < gap) { p.y -= (gap - d) / 2; q.y += (gap - d) / 2; }
+    }
+    var floor = TOPBAND + 10;
+    moons.forEach(function(i){ var p = out.pos[i.pid]; if (p.y < floor) p.y = floor; floor = p.y + gap; out.h = Math.max(out.h, p.y + 40); });
+    // The northstars, left to right as their moonshots run top to bottom… across the top they go by order of mean height.
+    var rank = function(i){ var ys = (nb[i.pid] || []).filter(function(o){ return out.pos[o] && out.pos[o].side === 'middle'; }).map(function(o){ return out.pos[o].y; }); return ys.length ? ys.reduce(function(a, b){ return a + b; }, 0) / ys.length : 1e9; };
+    stars.slice().sort(function(a, b){ return rank(a) - rank(b) || String(a.title).localeCompare(String(b.title)); })
+      .forEach(function(i, k){ out.pos[i.pid].x = w * (k + 1) / (stars.length + 1); });
+    out.h += M;
+    return out;
   }
 
-  return { words: words, clusters: clusters, topicLayout: topicLayout, LEVELS: LEVELS, NAMES: NAMES, PLURAL: PLURAL, MAX_LINKS: MAX_LINKS, levelOf: levelOf, parentLevel: parentLevel, childLevel: childLevel,
+  return { words: words, clusters: clusters, topicBoard: topicBoard, LEVELS: LEVELS, NAMES: NAMES, PLURAL: PLURAL, MAX_LINKS: MAX_LINKS, levelOf: levelOf, parentLevel: parentLevel, childLevel: childLevel,
     normalizeLinks: normalizeLinks, linkIssue: linkIssue, linked: linked, buildMap: buildMap, lineage: lineage };
 });
