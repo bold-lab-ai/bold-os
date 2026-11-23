@@ -45,6 +45,7 @@ test('one turn, thinking off, with the current draft; ready only once the requir
   const turns = [{role: 'assistant', content: 'Describe it'}, {role: 'user', content: 'Runs diverge'}];
   const half = await I.interview(turns, lab, reply({reply: 'Why does it matter?', ready: true, draft: {title: 'Divergence'}}), said, jsonOf, {title: 'Mine'});
   assert.equal(sent.chat_template_kwargs.enable_thinking, false);
+  assert.deepEqual(sent.response_format, {type: 'json_object'});
   assert.match(sent.messages[0].content, /"title":"Mine"/);
   assert.equal(half.reply, 'Why does it matter?');
   assert.equal(half.ready, false);
@@ -55,4 +56,14 @@ test('one turn, thinking off, with the current draft; ready only once the requir
     draft: {title: 'T', significance: 'S', difficulties: 'D', existing_solutions: 'E', builds_benchmark: false, benchmark_known: true, collaborators: '', project_ids: [], parent_ids: [], related_ids: []}}), said, jsonOf);
   assert.equal(unsaid.ready, true, 'ready once the fields are there, even if the model forgets to say so');
   assert.deepEqual(full.draft.parent_ids, ['ms-co']);
+});
+
+test('an answer it can\u2019t read is asked again, once', async () => {
+  let n = 0;
+  const flaky = async () => ({message: {content: ++n === 1 ? '{"reply": "cut' : JSON.stringify({reply: 'Again', ready: false, draft: {}})}});
+  const r = await I.interview([{role: 'user', content: 'x'}], lab, flaky, said, jsonOf);
+  assert.equal(r.reply, 'Again'); assert.equal(n, 2);
+  let m = 0;
+  await assert.rejects(I.interview([{role: 'user', content: 'x'}], lab, async () => { m++; return {message: {content: '{'}}; }, said, jsonOf));
+  assert.equal(m, 2);
 });

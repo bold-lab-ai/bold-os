@@ -51,7 +51,7 @@ function systemPrompt({ objectives, problems, projects }){
     '',
     'Write each text field in the researcher’s voice, from what they said, concise and concrete (a few sentences). Keep every field you already have unless they change it; use "" or [] for what you don’t know yet.',
     'Set ready to true once title, significance, difficulties and existing_solutions are filled and benchmark_known is true; then sum up the problem in two or three sentences, and tell them it’s ready to check in Check and edit, under the conversation, where they can change any field and save it, or that they can keep talking to change anything.',
-    'Answer with JSON only: { "reply": what you say to them next, "ready": …, "draft": { … } }.',
+    'Answer with JSON only, exactly this shape: { "reply": what you say to them next, "ready": true or false, "draft": { "title": "", "significance": "", "difficulties": "", "existing_solutions": "", "builds_benchmark": false, "benchmark_known": false, "collaborators": "", "project_ids": [], "parent_ids": [], "related_ids": [] } }.',
     '',
     'Northstars and moonshots (id: title):', list(objectives, (o) => o.id + ': ' + o.title + ' (' + o.kind + ')'),
     '',
@@ -94,9 +94,12 @@ function complete(d){ return !!(d.title && d.significance && d.difficulties && d
 async function interview(turns, lab, sofyaComplete, said, jsonOf, current){
   const so = current && typeof current === 'object' ? JSON.stringify(current).slice(0, 30000) : '';
   const messages = [{ role: 'system', content: systemPrompt(lab) + (so ? '\n\nThe draft so far (keep it, unless what they say changes it):\n' + so : '') }].concat(turnsOf(turns));
-  const r = await sofyaComplete({ max_tokens: 3000, messages, chat_template_kwargs: { enable_thinking: false },
-    response_format: { type: 'json_schema', json_schema: { name: 'problem_interview', schema: SCHEMA, strict: true } } });
-  const v = jsonOf(said(r.message));
+  // JSON object mode, not a strict schema: under load (20 at once, 2026-11-23) the schema's guided decoding now and
+  // then ran on to the token limit (4 of 40 turns, ~42 s each); object mode answered all 40, median 5 s. The shape is
+  // in the prompt, and the answer is checked here; one retry if it still can't be read.
+  const ask = () => sofyaComplete({ max_tokens: 1500, messages, chat_template_kwargs: { enable_thinking: false }, response_format: { type: 'json_object' } })
+    .then((r) => jsonOf(said(r.message)));
+  const v = await ask().catch(() => ask());
   const known = { projects: new Set(lab.projects.map((p) => p.id)), problems: new Set(lab.problems.map((p) => p.id)),
     parents: new Set(lab.objectives.map((o) => o.id).concat(lab.problems.map((p) => p.id))) };
   const draft = cleanDraft(v && v.draft, known);
