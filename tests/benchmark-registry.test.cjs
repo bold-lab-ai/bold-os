@@ -542,3 +542,27 @@ test('a disabled handoff never issues a credential or accepts a service release'
   await assert.rejects(h.registry.runLinkedService('register_linked_verifier',{registration:record()}),{code:'failed-precondition'});
   assert.ok([...h.data.keys()].every(key=>!key.startsWith('verifierHandoffs/')));
 });
+
+test('required handoffs distinguish incomplete deployment from insufficient project access', async () => {
+  const flag='BOLD_LINKED_VERIFIER_HANDOFF_ENABLED', digest='BOLD_LINKED_VERIFIER_SERVICE_TOKEN_SHA256';
+  const previous={[flag]:process.env[flag],[digest]:process.env[digest]};
+  try {
+    process.env[flag]='true'; process.env[digest]='incomplete';
+    const h=harness(), {problem_id}=await h.call(openProblem), query={action:'get',problem_id};
+    const partial=await h.call(query);
+    assert.equal(partial.handoff_enabled,true); assert.equal(partial.problem.handoff_enabled,false);
+    assert.match(partial.problem.handoff_unavailable_reason,/administrator.*configuring/i);
+    await assert.rejects(h.call({action:'issue_verifier_handoff',problem_id}),{code:'failed-precondition'});
+    process.env[digest]='a'.repeat(64);
+    const readonly=harness((page,op)=>op==='view');
+    readonly.data.set('problemBank/'+problem_id,h.data.get('problemBank/'+problem_id));
+    const blocked=await readonly.call(query);
+    assert.equal(blocked.handoff_enabled,true); assert.equal(blocked.problem.handoff_enabled,false);
+    assert.match(blocked.problem.handoff_unavailable_reason,/permission to edit projects/);
+    await assert.rejects(readonly.call({action:'issue_verifier_handoff',problem_id}),{code:'permission-denied'});
+    const ready=await h.call(query);
+    assert.equal(ready.problem.handoff_enabled,true); assert.equal(ready.problem.handoff_unavailable_reason,undefined);
+  } finally {
+    for (const [k,v] of Object.entries(previous)) {if(v===undefined) delete process.env[k]; else process.env[k]=v;}
+  }
+});

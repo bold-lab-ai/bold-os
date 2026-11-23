@@ -8,14 +8,14 @@ const script = fs.readFileSync(require.resolve('../src/assets/js/pages/problem.j
 const id = 'ak-' + '3'.repeat(24);
 const token = '1a'.repeat(32);
 
-async function page({configured, permitted, confirm = true, handoff = token, projects = []} = {}) {
+async function page({configured, permitted, reason, confirm = true, handoff = token, projects = []} = {}) {
   const {document} = parseHTML('<html><head></head><body><p id="detailMsg"></p><div id="problemBody"></div></body></html>');
   const requests = [], visits = [];
   const location = {search:'?problem='+id, hash:'#tab=releases',assign:url => visits.push(new URL(url))};
   const callable = async data => {
     if (data.action === 'projects') return {data:{items:projects}};
     if (data.action === 'get') return {data:{handoff_enabled:configured,
-      problem:{id,title:'Rates & kinetics',objective:'Measure decay',stage:'open',papers:[],projects,handoff_enabled:permitted}}};
+      problem:{id,title:'Rates & kinetics',objective:'Measure decay',stage:'open',papers:[],projects,handoff_enabled:permitted,handoff_unavailable_reason:reason}}};
     assert.equal(data.action,'issue_verifier_handoff');
     requests.push(JSON.parse(JSON.stringify(data)));
     if (handoff instanceof Error) throw handoff;
@@ -72,4 +72,15 @@ test('legacy deployments still launch a verifier with its problem and no project
   assert.equal(fields.get('problem'),id);
   assert.equal(fields.has('handoff'),false);
   assert.equal(fields.has('project'),false);
+});
+
+test('partially configured and read-only handoffs stay blocked even when no availability flag arrives', async()=>{
+  for (const [permitted,reason] of [[false,'Ask the administrator to configure the connection.'],[undefined,'You need permission to edit projects.']]) {
+    const ui=await page({configured:true,permitted,reason});
+    assert.equal(ui.button.disabled,true);
+    assert.ok(ui.document.getElementById('problemBody').textContent.includes(reason));
+    ui.button.disabled=false; // The navigation handler also checks the saved member permission.
+    await ui.launch();
+    assert.deepEqual(ui.visits,[]); assert.deepEqual(ui.requests,[]);
+  }
 });

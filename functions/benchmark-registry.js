@@ -309,8 +309,13 @@ module.exports = function({ db, onCall, callerEmail, isFullWrite, access, HttpsE
       ]);
       const problem = withLinks(doc,directory);
       problem.selected_projects = storedProjects(doc.data());
+      const handoffRequired = linkedVerifier.enabled();
       problem.handoff_enabled = linkedVerifier.configured() && mayEdit && !problem.archived && !problem.builds_benchmark;
-      return { handoff_enabled: linkedVerifier.enabled(), can_manage_reminders: !problem.builds_benchmark && mayEdit && doc.data().createdBy === email, history: history.docs.map((x) => publicRow(x)), problem, can_approve: full,
+      if (handoffRequired && !problem.handoff_enabled) {
+        if (!linkedVerifier.configured()) problem.handoff_unavailable_reason = 'A BOLD OS administrator must finish configuring the AutoKaggle Lite connection.';
+        else if (!mayEdit) problem.handoff_unavailable_reason = 'You need permission to edit projects to start a verifier in Lite.';
+      }
+      return { handoff_enabled: handoffRequired, can_manage_reminders: !problem.builds_benchmark && mayEdit && doc.data().createdBy === email, history: history.docs.map((x) => publicRow(x)), problem, can_approve: full,
         versions: releases.docs.map((x) => publicRow(x)).sort((a, b) => b.createdAt - a.createdAt || b.evaluator.version - a.evaluator.version) };
     }
 

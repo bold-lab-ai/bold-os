@@ -17,7 +17,7 @@
   var urls = BOLDRegistryLinks.defaults;
 
   var p = null, releases = [], history = [], canApprove = false, canRemind = false, projects = [], projectsLoaded = false, editing = false, busy = false;
-  var handoffEnabled = false, launching = false;
+  var handoffRequired = false, launching = false;
   var userEpoch = 0, familyGraph = null, familyError = '', familySaving = false, familyRead = 0;
   var tab = (location.hash.match(/[#&]tab=([^&]+)/) || [])[1];
   var initialRelease = tab === 'releases' ? new URLSearchParams(location.hash.slice(1)).get('release') : null;
@@ -47,13 +47,19 @@
     url.hash = fields.toString();
     return url.href;
   }
+  function verifierUnavailable(){
+    if (p.archived) return 'Restore this problem first.';
+    if (handoffRequired && p.handoff_enabled !== true)
+      return p.handoff_unavailable_reason || 'The verifier handoff is unavailable. Ask a BOLD OS administrator to check access and settings.';
+    return BOLD.can('projects','edit') ? '' : BOLD.cannotReason('projects','edit');
+  }
   async function openVerifier(){
-    if (launching || !p || p.builds_benchmark || p.archived || this.disabled) return;
+    if (launching || !p || p.builds_benchmark || this.disabled || verifierUnavailable()) return;
     var picker = el('verifierProject');
     var project = picker && picker.value !== '' ? p.projects[Number(picker.value)] : null;
     var url = verifierLink(project);
     if (!url) return alertLine(new Error('Check the AutoKaggle Lite address in Settings.'));
-    var epoch = userEpoch, scoped = handoffEnabled;
+    var epoch = userEpoch, scoped = handoffRequired;
     launching = true; this.disabled = true;
     try {
       var effects = ['Share the problem ID, title, and research question' + (project ? ', plus the selected project ID' : '') + ' with AutoKaggle Lite.'];
@@ -196,9 +202,9 @@
     } else {
       if(links.length) html += '<label for="verifierProject">Project (optional)</label> <select id="verifierProject"><option value="">No project</option>' +
         links.map(function(x,i){return '<option value="'+i+'">'+esc(x.title)+'</option>';}).join('')+'</select> ';
-      var blocked = p.archived ? 'Restore this problem first.' : !BOLD.can('projects','edit') ? BOLD.cannotReason('projects','edit') : '';
-      if (!blocked && handoffEnabled && !p.handoff_enabled) blocked = 'A verifier handoff is unavailable. Ask a BOLD OS administrator to check access and settings.';
+      var blocked = verifierUnavailable();
       html += '<button type="button" class="btn-primary btn-box" id="addVerifier"' + (blocked ? ' disabled title="'+esc(blocked)+'"' : '')+'>' + (p.evaluator?'Add another verifier':'Add verifier') + '</button>';
+      if (blocked && handoffRequired) html += ' <small>' + esc(blocked) + '</small>';
       html += '</li><li>Autoresearch baseline <small>Coming soon</small></li></ol>';
     }
     if (canRemind && !p.archived && !p.evaluator && !p.builds_benchmark) html += '<p><button type="button" class="btn-text" id="toggleReminder">' +
@@ -333,7 +339,7 @@
     var epoch = userEpoch;
     return call({ action: 'get', problem_id: id }).then(function(data){
       if (epoch !== userEpoch) return;
-      p = data.problem; handoffEnabled = !!(data.handoff_enabled || p.handoff_enabled);
+      p = data.problem; handoffRequired = data.handoff_enabled === true || p.handoff_enabled === true;
       releases = data.versions || []; history = data.history || []; canApprove = !!data.can_approve; canRemind = !!data.can_manage_reminders; busy = false;
       render();
     });
@@ -353,7 +359,7 @@
   BOLD.onUser(function(user){
     var epoch = ++userEpoch;
     familyRead++; familyGraph = null; familyError = ''; familySaving = false; p = null; editing = false;
-    handoffEnabled = false; launching = false;
+    handoffRequired = false; launching = false;
     projects = []; projectsLoaded = false; el('problemBody').replaceChildren(); el('problemBody').hidden = true;
     el('detailMsg').hidden = false; el('detailMsg').textContent = user ? 'Loading…' : 'Sign in to view this problem.';
     if (!user) return;

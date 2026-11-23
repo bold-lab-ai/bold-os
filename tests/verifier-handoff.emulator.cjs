@@ -52,6 +52,13 @@ function registration(parent,id) {
     assert.equal(detail.handoff_enabled,true); assert.equal(detail.problem.handoff_enabled,true);
     await issue(parent,{},403,jwt(false));
     await issue(building,{},400); await issue(parent,{project_id:'diverging-runs'},400);
+    const serviceDoc=db.doc('apiTokens/'+sha(service));
+    // Simulate the first ever request with the configured credential, before its scope marker exists.
+    await serviceDoc.update({liteVerifierOnly:admin.firestore.FieldValue.delete()});
+    assert.equal((await serviceDoc.get()).data().liteVerifierOnly,undefined);
+    await api('edit_problem',{problem_id:parent,changes:{title:'unexpected general write'}},403);
+    assert.equal((await serviceDoc.get()).data().liteVerifierOnly,true);
+    assert.equal((await db.doc('problemBank/'+parent).get()).data().title,create.title);
     const grant=await issue(parent), id=crypto.randomUUID();
     assert.match(grant.handoff,/^[a-f0-9]{64}$/); assert.ok(grant.expires_at>Date.now());
     const grantRef=db.doc('verifierHandoffs/'+sha(grant.handoff));
@@ -85,6 +92,12 @@ function registration(parent,id) {
     await api('register_benchmark',{registration:r},403,write);
     await register({...r,problem_id:other},403); await register({...r,project_id:'diverging-runs'},403);
     await register({...r,source_id:'autokaggle:'+crypto.randomUUID()},403);
+    await register({...r,source_id:undefined},400);
+    for (const session of [undefined,null,{}, {application:'full'}, {application:'lite',project_id:next}])
+      await register({...r,session},400);
+    // Source ID is canonical. An omitted redundant session ID still needs a Lite session.
+    assert.equal(r.session.application,'lite'); assert.equal(r.session.project_id,undefined);
+    assert.equal((await db.collection('benchmarks').where('problem_id','==',parent).get()).size,0);
     await register({...r,human_approval:undefined},409);
     const lower={...r,human_approval:undefined,validation:{...r.validation,research_data:'not_run'}};
     await register(lower,409);
