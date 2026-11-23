@@ -3,7 +3,7 @@ import { always, eventually } from "@antithesishq/bombadil";
 import { actions, extract, registerCustomAction } from "@antithesishq/bombadil/browser";
 export { noUncaughtExceptions, noUnhandledPromiseRejections } from "@antithesishq/bombadil/browser/defaults";
 
-const screen = extract(({ document: d }) => ({
+const screen = extract(({ document: d, window: w }) => ({
   demo: !!d.querySelector("#testBar"), picker: !!d.querySelector(".test-picker"),
   signedOut: !!d.querySelector("#testBar") && d.querySelector("#testBar")!.textContent!.includes("signed out"),
   form: !!d.querySelector("#pbInputs:not(:disabled)"), confirm: !!d.querySelector("dialog[open] [data-key=reminders]"),
@@ -11,13 +11,18 @@ const screen = extract(({ document: d }) => ({
   consent: !!d.querySelector("dialog[open] [data-yes]"),
   badge: !!d.querySelector("#problemBody .pb-missing"),
   steps: d.querySelectorAll("#problemBody .pb-steps li").length,
+  extraPanels: Array.from(d.querySelectorAll("#problems:not([hidden]) [role=tabpanel][hidden]"))
+    .some(panel => w.getComputedStyle(panel).display !== "none"),
+  revisiting: w.sessionStorage.getItem("bombadil-problem-visited") === "yes",
   missing: Array.from(d.querySelectorAll<HTMLInputElement>("#pbCreate [required]")).filter(x => !x.value).map(x => x.id),
 }));
 export const opensSavedProblem = eventually(() => screen.current.detail).within(55, "seconds");
+export const showsOnlySelectedStage = always(() => !screen.current.extraPanels);
 export const savedProblemHasVerifierAction = always(() => !screen.current.detail || (screen.current.badge && screen.current.steps === 3));
 
 const click = registerCustomAction("clickProblemControl", async (d, w, selector: string) => {
   if (!["localhost","127.0.0.1"].includes(w.location.hostname) || !d.querySelector("#testBar")) throw Error("Demo site required");
+  if (selector === ".detail-back") w.sessionStorage.setItem("bombadil-problem-visited","yes");
   d.querySelector<HTMLElement>(selector)?.click();
 });
 const fill = registerCustomAction("fillProblemField", async (d, w, id: string) => {
@@ -33,10 +38,12 @@ export const exercise = actions(() => {
   if (!s.demo) return ["Wait"];
   if (s.picker) return [click(".test-picker [data-i='1']")];
   if (s.signedOut) return [click("#testBar [data-switch]")];
+  if (s.add && s.revisiting) return ['[data-view="list"].view-btn','[data-view="grid"].view-btn',
+    '[data-tab=open]','[data-tab=checked]','[data-tab=validated]','[data-tab=archived]'].map(selector => click(selector));
   if (s.add) return [click("#pbAdd")];
   if (s.confirm) return [click("dialog [data-yes]"), click("dialog [data-yes]"), click("dialog [data-no]")];
   if (s.form) return s.missing.length ? s.missing.map(fillField => fill(fillField)) : [click("#pbCreate [type=submit]")];
   if (s.consent) return [click("dialog [data-no]")];
-  if (s.detail) return [click("#addVerifier"), click("[data-tab=releases]"), click("[data-tab=history]"), click("[data-tab=overview]")];
+  if (s.detail) return [click(".detail-back"), click("#addVerifier"), click("[data-tab=releases]"), click("[data-tab=history]"), click("[data-tab=overview]")];
   return ["Wait"];
 });

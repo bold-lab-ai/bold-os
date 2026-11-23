@@ -50,7 +50,7 @@ a.btn{display:inline-block; text-decoration:none;}
 .proj-empty{margin:0; font-family:var(--sans); font-size:14px; color:var(--muted);}
 #pbMore{margin-top:16px;}
 /* grid, as Projects' */
-#problems[data-view="grid"] .proj-list{display:grid; grid-template-columns:repeat(auto-fill, minmax(260px, 1fr)); gap:16px;}
+#problems[data-view="grid"] .proj-list:not([hidden]){display:grid; grid-template-columns:repeat(auto-fill, minmax(260px, 1fr)); gap:16px;}
 #problems[data-view="grid"] .proj-list li{padding:16px; border:1px solid var(--line);}
 #problems[data-view="grid"] .proj-list li.proj-none{grid-column:1 / -1; padding:0; border:none;}
 
