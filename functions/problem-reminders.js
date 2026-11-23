@@ -10,7 +10,7 @@ async function sendDue(db, ref, send, now = Date.now()) {
     const snap = await tx.get(ref);
     if (!snap.exists) return;
     const p = snap.data();
-    if (!p.reminders || p.archived || p.evaluator || !Number.isFinite(p.verifierNoticeDue) || p.verifierNoticeDue > now) return;
+    if (!p.reminders || p.builds_benchmark === true || p.archived || p.evaluator || !Number.isFinite(p.verifierNoticeDue) || p.verifierNoticeDue > now) return;
     const cycle = p.verifierNoticeCycle ?? p.verifierNoticeDue;
     tx.update(ref, { verifierNoticeDue: claimedUntil, verifierNoticeCycle: cycle });
     return { id: ref.id, title: p.title, email: p.createdBy, cycle };

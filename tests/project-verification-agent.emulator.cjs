@@ -32,15 +32,21 @@ async function call(name,args,expected=200) {
   assert.equal(catalogue.items.find(i=>i.id===release).problem_id,source);
   const proposal={action:'register',title:'Test project proposal',abstract:'Validate the benchmark selection.',problem_id:question,slack_channel:'proj-emulator',gpu_hours:12000};
   await call('projects',proposal,400);
-  for(const verification_plan of [{mode:'linked',releaseIds:[release]},{mode:'deferred',reason:'Missing licence',expectedOnboarding:'Next sprint'}]){
+  for(const verification_plan of [{mode:'linked',releaseIds:[release]},{mode:'deferred',reason:'Missing licence',expectedOnboarding:'Next sprint'},{mode:'benchmark'}]){
    const out=await call('projects',{...proposal,verification_plan});
    const p=db.doc('projects/'+out.id); docs.push(p,db.doc('projectProposalReceipts/'+out.id));
    const stored=(await p.get()).data();
    assert.equal(stored.openProblemId,question);
    assert.equal(stored.verificationPlan.mode,verification_plan.mode);
    if (verification_plan.mode==='linked') assert.deepEqual(stored.verificationPlan.releases,[{id:release,problem_id:source,title:'Example reference',version:2}]);
-   else assert.equal(stored.verificationPlan.expectedOnboarding,'Next sprint');
+   else if (verification_plan.mode==='deferred') assert.equal(stored.verificationPlan.expectedOnboarding,'Next sprint');
+   else assert.deepEqual(stored.verificationPlan,{mode:'benchmark'});
   }
-  console.log('Actual agent API passed for discovering releases, required verification, global pinned references and explicit deferral.');
+  await docs[1].update({builds_benchmark:true});
+  const inherited=await call('projects',proposal), p=db.doc('projects/'+inherited.id);
+  docs.push(p,db.doc('projectProposalReceipts/'+inherited.id));
+  assert.deepEqual((await p.get()).data().verificationPlan,{mode:'benchmark'});
+  await call('projects',{...proposal,verification_plan:{mode:'linked',releaseIds:[release]}},409);
+  console.log('Actual agent API passed for discovering releases, required verification, global pinned references explicit deferral and benchmark construction.');
  }finally{await Promise.all(docs.map(d=>d.delete())); await admin.app().delete();}
 })().catch(e=>{console.error(e);process.exitCode=1;});

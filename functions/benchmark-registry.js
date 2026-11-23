@@ -171,10 +171,11 @@ module.exports = function({ db, onCall, callerEmail, isFullWrite, access, HttpsE
     return (m.exists && m.data().name) || 'A PI or admin';
   }
 
-  async function activeProblemChoices(){
-    const snap = await db.collection('problemBank').select('title','archived').get();
+  async function activeProblemChoices(includePurpose){
+    const fields = includePurpose ? ['title','archived','builds_benchmark'] : ['title','archived'];
+    const snap = await db.collection('problemBank').select(...fields).get();
     const items = snap.docs.filter(doc => /^ak-[a-f0-9]{24}$/.test(doc.id) && !doc.data().archived && typeof doc.data().title === 'string' && doc.data().title)
-      .map(doc => ({id:doc.id,title:doc.data().title})).sort((a,b)=>a.title.localeCompare(b.title) || a.id.localeCompare(b.id));
+      .map(doc => ({id:doc.id,title:doc.data().title,...(includePurpose ? {builds_benchmark:doc.data().builds_benchmark === true} : {})})).sort((a,b)=>a.title.localeCompare(b.title) || a.id.localeCompare(b.id));
     return {items};
   }
 
@@ -182,7 +183,7 @@ module.exports = function({ db, onCall, callerEmail, isFullWrite, access, HttpsE
     const email = callerEmail(request), d = request.data || {}, action = d.action || 'list';
     if (action === 'register_past_paper' || action === 'past_paper_problem_choices') {
       if (!(await access.can(email,'ml-cycle','edit'))) await access.requireAccess(email,'projects','edit');
-      if (action === 'past_paper_problem_choices') return activeProblemChoices();
+      if (action === 'past_paper_problem_choices') return activeProblemChoices(false);
       return registerPastPaper({db,error,fingerprint:value=>sha(canonical(value))},d,email,request.auth?.token?.name);
     }
     const permission = ['open_choices','benchmark_catalogue'].includes(action) ? 'list' : ['list', 'get', 'projects', 'search', 'family'].includes(action) ? 'view' : 'change';
@@ -195,7 +196,7 @@ module.exports = function({ db, onCall, callerEmail, isFullWrite, access, HttpsE
     }
     function withLinks(doc, directory){
       const p = publicRow(doc,canEdit(doc));
-      return {...p,projects:linkedProjects(p,directory.projects),papers:directory.papers ? (directory.papers.get(p.id) || []) : null};
+      return {...p,builds_benchmark:p.builds_benchmark === true,projects:linkedProjects(p,directory.projects),papers:directory.papers ? (directory.papers.get(p.id) || []) : null};
     }
 
     if (action === 'create_project_proposal') {
@@ -207,7 +208,7 @@ module.exports = function({ db, onCall, callerEmail, isFullWrite, access, HttpsE
     if (action === 'benchmark_catalogue') return require('./benchmark-catalogue').listBenchmarkReleases(db,d,error);
     if (action === 'projects') return { items:(await readDirectory(false)).projects };
 
-    if (action === 'open_choices') return activeProblemChoices();
+    if (action === 'open_choices') return activeProblemChoices(true);
     if (action === 'search') {
       // For search.js and agents' search: problems not archived, and their releases.
       const [problems, releases] = await Promise.all([db.collection('problemBank').get(), db.collection('benchmarks').get()]);
@@ -232,17 +233,22 @@ module.exports = function({ db, onCall, callerEmail, isFullWrite, access, HttpsE
         definition = Object.fromEntries(required.map(k => [k, text(d[k], k === 'title' ? 180 : 8000, k)]));
         collaborators = d.collaborators ? text(d.collaborators,8000,'collaborators') : '';
       } catch (e) { throw error('invalid-argument',e.message); }
-      if (typeof d.reminders !== 'boolean' || typeof d.request_id !== 'string' || !/^[a-f0-9]{8}-(?:[a-f0-9]{4}-){3}[a-f0-9]{12}$/.test(d.request_id))
+      if (d.builds_benchmark !== undefined && typeof d.builds_benchmark !== 'boolean')
+        throw error('invalid-argument','Choose whether this problem builds a benchmark.');
+      const buildsBenchmark = d.builds_benchmark === true;
+      const reminders = buildsBenchmark ? false : d.reminders;
+      if ((typeof d.reminders !== 'boolean' && !(buildsBenchmark && d.reminders === undefined)) || typeof d.request_id !== 'string' || !/^[a-f0-9]{8}-(?:[a-f0-9]{4}-){3}[a-f0-9]{12}$/.test(d.request_id))
         throw error('invalid-argument', 'Confirm the reminder choice and supply a request ID.');
       const list = modern ? (d.projects === undefined ? [] : d.projects) : [{id:d.project_id,board:d.project_board || ''}];
       const refs = projectRefs(list);
       const id = 'ak-' + sha('problem:' + email + ':' + d.request_id).slice(0, 24);
       const ref = db.collection('problemBank').doc(id), at = Date.now();
       const selection = d.family === undefined ? null : family.normalize(d.family,id);
-      const inputs = modern ? [definition,owner.owner_id,collaborators,list,d.reminders] : [definition,d.project_id,d.project_board || '',d.reminders];
+      const inputs = modern ? [definition,owner.owner_id,collaborators,list,reminders] : [definition,d.project_id,d.project_board || '',reminders];
       // Preserve the fingerprint of older creates that had no relationships.
       const hasLinks = selection && (selection.parents.length || selection.related.length);
       if (hasLinks) inputs.push(selection);
+      if (buildsBenchmark) inputs.push({builds_benchmark:true});
       const fingerprint = sha(canonical(inputs));
       return db.runTransaction(async tx => {
         const previous = await tx.get(ref);
@@ -255,8 +261,8 @@ module.exports = function({ db, onCall, callerEmail, isFullWrite, access, HttpsE
         const familyChange = hasLinks ? await family.replace(tx,id,selection,null,email,at) : null;
         const row = { ...definition, origin: 'problem_bank', stage: 'open', archived: false, task_kind: '',
           ...primary(links), projects:links, owner_id:owner ? owner.owner_id : null,
-          details:owner ? {owner:owner.owner,collaborators} : {}, notes: '', createdBy: email, updatedBy: email, createdAt: at, updatedAt: at, reminders: d.reminders };
-        tx.set(ref, { ...row, createFingerprint: fingerprint, verifierNoticeDue: d.reminders ? at : null });
+          details:owner ? {owner:owner.owner,collaborators} : {}, notes: '', createdBy: email, updatedBy: email, createdAt: at, updatedAt: at, builds_benchmark: buildsBenchmark, reminders };
+        tx.set(ref, { ...row, createFingerprint: fingerprint, verifierNoticeDue: reminders ? at : null });
         tx.set(ref.collection('versions').doc('created'), { ...row, changeNote: 'Defined the open problem', ...(familyChange ? {familyChange} : {}) });
         return { problem_id: id };
       });
@@ -283,7 +289,7 @@ module.exports = function({ db, onCall, callerEmail, isFullWrite, access, HttpsE
       ]);
       const problem = withLinks(doc,directory);
       problem.selected_projects = storedProjects(doc.data());
-      return { can_manage_reminders: mayEdit && doc.data().createdBy === email, history: history.docs.map((x) => publicRow(x)), problem, can_approve: full,
+      return { can_manage_reminders: !problem.builds_benchmark && mayEdit && doc.data().createdBy === email, history: history.docs.map((x) => publicRow(x)), problem, can_approve: full,
         versions: releases.docs.map((x) => publicRow(x)).sort((a, b) => b.createdAt - a.createdAt || b.evaluator.version - a.evaluator.version) };
     }
 
@@ -322,6 +328,7 @@ module.exports = function({ db, onCall, callerEmail, isFullWrite, access, HttpsE
           tx.set(receipt, { fingerprint, receipt: out, createdBy: email, createdAt: at });
           return out;
         }
+        if (prior.builds_benchmark === true) throw error('failed-precondition', 'This problem builds a benchmark and skips verifier registration.');
         if (prior.archived) throw error('failed-precondition', 'Restore this problem before registering a new release.');
         const previousVersion = streamDoc.exists ? streamDoc.data().version : (prior.source_id === data.source_id ? prior.latest_version : 0);
         if (previousVersion >= data.evaluator.version) throw error('failed-precondition', 'Version ' + data.evaluator.version + ' or a newer one is already registered.');
@@ -387,6 +394,7 @@ module.exports = function({ db, onCall, callerEmail, isFullWrite, access, HttpsE
         if (!snap.exists) throw error('not-found', 'This problem no longer exists.');
         const p = snap.data();
         if (p.createdBy !== email) throw error('permission-denied', 'Only the submitter can change their reminders.');
+        if (p.builds_benchmark === true && d.reminders) throw error('failed-precondition','Benchmark-building problems skip verifier reminders.');
         if (p.evaluator || p.archived) throw error('failed-precondition', 'Reminders apply to active problems without a verifier.');
         if (!!p.reminders === d.reminders) return;
         tx.update(ref, { reminders: d.reminders, verifierNoticeDue: d.reminders ? Date.now() : null, verifierNoticeCycle: null });
@@ -398,7 +406,7 @@ module.exports = function({ db, onCall, callerEmail, isFullWrite, access, HttpsE
       let id;
       try { id=problemId(d.problem_id); } catch (e){throw error('invalid-argument',e.message);}
       const changes=d.changes, keys=Object.keys(changes);
-      if (!keys.length || keys.some(k=>!['title','significance','difficulties','existing_solutions','owner_id','collaborators','projects','archived'].includes(k)))
+      if (!keys.length || keys.some(k=>!['title','significance','difficulties','existing_solutions','owner_id','collaborators','projects','archived','builds_benchmark'].includes(k)))
         throw error('invalid-argument','Choose a problem field to edit.');
       const owner='owner_id' in changes ? await ownerOf(changes.owner_id) : null;
       if ('owner_id' in changes && !owner) throw error('invalid-argument','Choose the problem definer.');
@@ -439,10 +447,15 @@ module.exports = function({ db, onCall, callerEmail, isFullWrite, access, HttpsE
           }
           Object.assign(patch, primary(links), { projects: links });
         }
+        if ('builds_benchmark' in changes) {
+          if (typeof changes.builds_benchmark !== 'boolean') throw error('invalid-argument','Choose whether this problem builds a benchmark.');
+          patch.builds_benchmark = changes.builds_benchmark;
+          if (patch.builds_benchmark) Object.assign(patch, {reminders:false, verifierNoticeDue:null, verifierNoticeCycle:null});
+        }
         if ('archived' in changes) {
           if (typeof changes.archived !== 'boolean') throw error('invalid-argument', 'Supply the archive choice.');
           patch.archived = changes.archived;
-          if (patch.archived !== !!was.archived && was.reminders && !was.evaluator)
+          if (patch.archived !== !!was.archived && !(patch.builds_benchmark ?? was.builds_benchmark) && was.reminders && !was.evaluator)
             Object.assign(patch, { verifierNoticeDue: patch.archived ? null : at, verifierNoticeCycle: null });
         }
         tx.update(ref,patch);
@@ -474,7 +487,7 @@ module.exports = function({ db, onCall, callerEmail, isFullWrite, access, HttpsE
           update.projects = [project,...was.projects.filter(link=>!sameProject(link,project) && !(link.id===was.project_id && (link.board||'')===(was.project_board||'')))];
         if (was.has_linked_verifiers && (was.project_id !== project.id || (was.project_board || '') !== project.board))
           throw error('failed-precondition', 'A problem with registered verifiers must keep its project.');
-        if (d.archived !== !!was.archived && was.reminders && !was.evaluator)
+        if (d.archived !== !!was.archived && !was.builds_benchmark && was.reminders && !was.evaluator)
           Object.assign(update, { verifierNoticeDue: d.archived ? null : Date.now(), verifierNoticeCycle: null });
         if (d.definition) {
           if (was.stage !== 'open' && was.origin !== 'problem_bank') throw error('failed-precondition', 'Change an evaluator contract through AutoKaggle.');

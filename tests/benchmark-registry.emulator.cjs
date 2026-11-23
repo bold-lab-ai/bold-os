@@ -61,6 +61,34 @@ async function rules(path,method='GET',token,body){return fetch('http://'+proces
   assert.equal((await db.collection('benchmarks').where('problem_id','==',parent).get()).size,2);
   const edit=await api('edit_problem',{problem_id:receipt.problem_id,changes:{projects:[{id:'diverging-runs'}]}});assert.equal(edit.status,200,await edit.clone().text());
   const search=await api('search?query=integration&scope=problems',null,readToken);assert.equal(search.status,200);assert.match(await search.text(),/Registry integration test/);
+  const definition={...create,request_id:crypto.randomUUID(),title:'Emulator benchmark construction',builds_benchmark:true,reminders:true};
+  const made=await api('create_open_problem',definition);
+  assert.equal(made.status,200,await made.clone().text());
+  const benchmarkProblem=(await made.json()).problem_id;
+  const benchmarkDoc=db.doc('problemBank/'+benchmarkProblem);
+  const row=(await benchmarkDoc.get()).data();
+  assert.equal(row.builds_benchmark,true);assert.equal(row.stage,'open');assert.equal(row.evaluator,undefined);
+  assert.equal(row.reminders,false);assert.equal(row.verifierNoticeDue,null);
+  const choices=await api('list_benchmarks?view=problem_choices',null,readToken);
+  assert.equal(choices.status,200,await choices.clone().text());
+  assert.equal((await choices.json()).items.find(p=>p.id===benchmarkProblem).builds_benchmark,true);
+  const fresh={...registration,source_id:'autokaggle:'+crypto.randomUUID(),idempotency_key:crypto.randomBytes(32).toString('hex'),problem_id:benchmarkProblem};
+  assert.equal((await api('register_benchmark',{registration:fresh})).status,409);
+  assert.equal((await db.collection('benchmarks').where('problem_id','==',benchmarkProblem).get()).size,0);
+  const move={...registration,problem_id:benchmarkProblem,idempotency_key:crypto.randomBytes(32).toString('hex')};
+  assert.equal((await api('register_benchmark',{registration:move})).status,409);
+  const mark={problem_id:parent,changes:{builds_benchmark:true}};
+  assert.equal((await api('edit_problem',mark,readToken)).status,403);
+  const marked=await api('edit_problem',mark);assert.equal(marked.status,200,await marked.clone().text());
+  assert.deepEqual(await (await api('register_benchmark',{registration})).json(),receipt);
+  assert.equal((await db.collection('benchmarks').where('problem_id','==',parent).get()).size,2);
+  const card={submittedBy:{email:'internal@example.com'},title:'Build a new benchmark',abstractText:'Publish a new test protocol.',
+    openProblemId:benchmarkProblem,proposal:{status:'proposed',more:true,gpuHours:24},setUpSkipped:['repo','channel']};
+  const projectId='card-'+crypto.randomUUID();
+  const proposal=await fetch(base+'/benchmarkRegistry',{method:'POST',headers:{Authorization:'Bearer '+jwt(),'Content-Type':'application/json'},
+    body:JSON.stringify({data:{action:'create_project_proposal',project_id:projectId,card}})});
+  assert.equal(proposal.status,200,await proposal.clone().text());
+  assert.deepEqual((await db.doc('projects/'+projectId).get()).data().verificationPlan,{mode:'benchmark'});
   console.log('Registry HTTP, transactions, search, permissions, and Firestore rules passed.');
   console.log('Browser fixture: http://localhost:8150/problem.html?problem='+receipt.problem_id);
   await admin.app().delete();

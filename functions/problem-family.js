@@ -66,11 +66,11 @@ module.exports = function problemFamily(db, error){
   });
   async function list(full){
     const [handbook, goals, nodes, links] = await Promise.all([
-      db.collection('handbook').doc('boldiquette').get(), objectives.get(), problems.select('title','stage','archived').get(), relations.select('from','to','kind').get()
+      db.collection('handbook').doc('boldiquette').get(), objectives.get(), problems.select('title','stage','archived','builds_benchmark').get(), relations.select('from','to','kind').get()
     ]);
     return {
       objectives: pillarRows(handbook.data()).concat(goals.docs.map(doc => ({id:doc.id,kind:'moonshot',title:doc.data().title,archived:!!doc.data().archived}))),
-      problems: nodes.docs.map(doc => ({id:doc.id,title:doc.data().title,stage:doc.data().stage || 'open',archived:!!doc.data().archived})),
+      problems: nodes.docs.map(doc => ({id:doc.id,title:doc.data().title,stage:doc.data().stage || 'open',builds_benchmark:doc.data().builds_benchmark === true,archived:!!doc.data().archived})),
       edges: publicEdges(links), can_manage_objectives: full
     };
   }

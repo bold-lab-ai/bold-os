@@ -7,7 +7,11 @@ const SETUP = ['setUpMeeting','setUpChannel','setUpRepo','setUpDocs','setUpSkipp
 
 function verificationPlan(plan, error) {
   function reject(message){ throw error('invalid-argument', message); }
-  if (!plan || typeof plan !== 'object' || Array.isArray(plan)) reject('Select benchmark releases or defer verifier onboarding.');
+  if (!plan || typeof plan !== 'object' || Array.isArray(plan)) reject('Select a verifier, defer onboarding, or specify that this project builds a benchmark.');
+  if (plan.mode === 'benchmark') {
+    if (Object.keys(plan).length !== 1) reject('A benchmark-building project skips verifier selection and deferral.');
+    return {mode:'benchmark'};
+  }
   if (plan.mode === 'deferred') {
     if (Object.keys(plan).some(k => !['mode','reason','expectedOnboarding'].includes(k)) ||
         typeof plan.reason !== 'string' || !plan.reason.trim() || plan.reason.trim().length > 2000 ||
@@ -39,7 +43,8 @@ async function createProposal({db,error,fingerprint}, input, email, name) {
       (proposal.more === false ? 'gpuHours' in proposal :
         !Number.isFinite(proposal.gpuHours) || proposal.gpuHours <= 0 || proposal.gpuHours > 10000000))
     throw error('invalid-argument','Choose the standard compute allowance or specify the extra GPU hours.');
-  const plan = verificationPlan(card.verificationPlan, error);
+  const inherit = card.verificationPlan === undefined;
+  const plan = inherit ? {mode:'benchmark'} : verificationPlan(card.verificationPlan, error);
   const fields = {title:card.title.trim(), abstractText:card.abstractText.trim(), keywords:card.keywords || [], slackChannel:card.slackChannel || '', computeEstimate:card.computeEstimate || ''};
   const setup = Object.fromEntries(SETUP.filter(k => card[k] !== undefined).map(k => [k,card[k]]));
   const budget = proposal.more === false ? {more:false} : {more:true,gpuHours:proposal.gpuHours};
@@ -57,6 +62,11 @@ async function createProposal({db,error,fingerprint}, input, email, name) {
     const problemIds = new Set([card.openProblemId,...selected.map(doc=>doc.data().problem_id)]);
     const problems = await Promise.all([...problemIds].map(key => tx.get(bank.doc(key))));
     if (problems.some(doc => !doc.exists || doc.data().archived)) throw error('failed-precondition','The selected problem or a benchmark source problem is no longer active. Refresh the choices.');
+    if (problems[0].data().builds_benchmark === true) {
+      if (plan.mode !== 'benchmark') throw error('failed-precondition','This problem builds a benchmark. Refresh your verifier selection.');
+    } else if (inherit) {
+      throw error('invalid-argument','Select a verifier, defer onboarding, or specify that this project builds a benchmark.');
+    }
     const confirmed = plan.mode === 'linked' ? {...plan, releases:selected.map(doc => {
       const release = doc.data();
       return {id:doc.id,title:release.title,version:release.evaluator.version,problem_id:release.problem_id};

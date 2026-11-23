@@ -452,3 +452,77 @@ test('a standalone review paper cannot stand in for the project sponsoring a ben
   const registration={...record(),project_id:card_id,project_board:board};
   await assert.rejects(h.call({action:'register',registration}),{code:'failed-precondition'});
 });
+
+test('benchmark-building problems skip verifier registration and notices without acquiring validation evidence', async () => {
+  const h = harness();
+  const create = {...openProblem, builds_benchmark:true};
+  const saved = await h.call(create), id = saved.problem_id;
+  assert.deepEqual(await h.call({...create,reminders:false}),saved);
+  const automatic={...create}; delete automatic.reminders;
+  assert.deepEqual(await h.call(automatic),saved);
+  await assert.rejects(h.call({...create,builds_benchmark:false}),{code:'already-exists'});
+  await assert.rejects(h.call({...create,builds_benchmark:'true'}),{code:'invalid-argument'});
+  const detail = await h.call({action:'get',problem_id:id});
+  assert.equal(detail.problem.builds_benchmark,true);
+  assert.equal(detail.problem.stage,'open');
+  assert.deepEqual(detail.versions,[]);
+  assert.equal(detail.problem.evaluator,undefined);
+  assert.equal(detail.problem.reminders,false);
+  assert.equal(detail.can_manage_reminders,false);
+  for (const data of [(await h.call({action:'open_choices'})).items,(await h.call({action:'list'})).items,(await h.call({action:'family'})).problems])
+    assert.equal(data.find(p=>p.id===id).builds_benchmark,true);
+  assert.deepEqual((await h.call({action:'past_paper_problem_choices'})).items,[{id,title:create.title}]);
+  const path = 'problemBank/'+id, ref = h.db.collection('problemBank').doc(id);
+  assert.equal(h.data.get(path).verifierNoticeDue,null);
+  await assert.rejects(h.call({action:'reminders',problem_id:id,reminders:true}),{code:'failed-precondition'});
+  // An old queued notice must also respect the current purpose of the problem.
+  Object.assign(h.data.get(path),{reminders:true,verifierNoticeDue:1});
+  const {sendDue} = require('../functions/problem-reminders');
+  assert.equal(await sendDue(h.db,ref,()=>assert.fail('unexpected reminder'),2),false);
+  const registration={...record(),problem_id:id};
+  await assert.rejects(h.call({action:'register',registration}),{code:'failed-precondition'});
+  assert.ok([...h.data.keys()].every(path=>!path.startsWith('benchmark')));
+});
+
+test('changing the purpose keeps existing releases and receipts and cancels pending reminders', async () => {
+  const h = harness(), {problem_id} = await h.call(openProblem);
+  const registration = {...record(),problem_id};
+  const first = await h.call({action:'register',registration});
+  const edit = changes=>({action:'update',problem_id,changes});
+  await assert.rejects(h.call(edit({builds_benchmark:true}),'other@example.invalid'),{code:'permission-denied'});
+  await assert.rejects(h.call(edit({builds_benchmark:'false'})),{code:'invalid-argument'});
+  await h.call(edit({builds_benchmark:true}));
+  assert.deepEqual(await h.call({action:'register',registration}),first);
+  const prior = await h.call({action:'get',problem_id});
+  assert.equal(prior.problem.stage,'validated'); assert.equal(prior.versions[0].id,first.benchmark_id);
+  const next = {...registration,source_id:'autokaggle:88888888-1111-2222-3333-444444444444',idempotency_key:'7'.repeat(64)};
+  await assert.rejects(h.call({action:'register',registration:next}),{code:'failed-precondition'});
+  await h.call(edit({builds_benchmark:false}));
+  assert.equal((await h.call({action:'get',problem_id})).problem.reminders,false);
+  assert.equal((await h.call({action:'register',registration:next})).problem_id,problem_id);
+  const another = await h.call({...openProblem,request_id:'99999999-7777-6666-5555-444444444444'});
+  const path = 'problemBank/'+another.problem_id;
+  assert.ok(h.data.get(path).verifierNoticeDue);
+  await h.call({action:'update',problem_id:another.problem_id,changes:{builds_benchmark:true,archived:true}});
+  await h.call({action:'update',problem_id:another.problem_id,changes:{archived:false}});
+  assert.equal(h.data.get(path).verifierNoticeDue,null); assert.equal(h.data.get(path).verifierNoticeCycle,null);
+});
+
+test('a project can explicitly build a benchmark or inherit that purpose from its problem', async () => {
+  const h = harness(), ids = proposalFixtures(h), problem = h.data.get('problemBank/'+researchQuestion);
+  const req = proposalRequest({mode:'benchmark'});
+  for (const invalid of [{mode:'benchmark',releaseIds:ids},{mode:'benchmark',reason:'pending'}])
+    await assert.rejects(h.call(proposalRequest(invalid)),{code:'invalid-argument'});
+  await h.call(req);
+  assert.deepEqual(h.data.get('projects/'+req.project_id).verificationPlan,{mode:'benchmark'});
+  assert.equal(problem.builds_benchmark,undefined);
+  problem.builds_benchmark = true;
+  for (const stale of [{mode:'linked',releaseIds:ids},{mode:'deferred',reason:'pending',expectedOnboarding:'next week'}])
+    await assert.rejects(h.call({...proposalRequest(stale),project_id:'card-benchmark-child'}),{code:'failed-precondition'});
+  const inherited = {...proposalRequest(undefined),project_id:'card-benchmark-child'};
+  const saved = await h.call(inherited);
+  assert.deepEqual(h.data.get('projects/'+inherited.project_id).verificationPlan,{mode:'benchmark'});
+  assert.deepEqual(await h.call(inherited),saved);
+  problem.archived = true;
+  await assert.rejects(h.call({...inherited,project_id:'card-closed'}),{code:'failed-precondition'});
+});
