@@ -1869,7 +1869,8 @@ exports.onBranchWritten = onDocumentWritten({ document: 'branches/{id}', secrets
     // Made from a proposed change of before branches (the migration): its people heard of it then. A draft: nobody yet.
     if (after.status !== 'open' || after.migrated) return;
     await sendEvent(token, { key: 'proposals', emails: await staff(), excludeEmail: author,
-      headline: '🔔 ' + tag + who + ' proposed ' + link + pagesText((after.pages || []).length) + '. It needs a PI or admin to accept or decline it.' });
+      headline: '🔔 ' + tag + who + ' proposed ' + link + pagesText((after.pages || []).length) + '. A PI or admin accepts or declines it; with no decision it’s accepted by itself on ' +
+        new Date(branchLib.dueAt(after)).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', timeZone: 'Europe/London' }) + '.' });
     return;
   }
   if (before.status === 'open' && after.status !== 'open') {
@@ -2604,37 +2605,60 @@ exports.branchRebase = onCall(async (request) => {
 exports.decideBranch = onCall(async (request) => {
   const email = signedInEmail(request).toLowerCase(), data = request.data || {}, id = String(data.id || '');
   if (!branchLib.ID.test(id)) throw new HttpsError('invalid-argument', 'No such branch.');
-  const full = await isFullWrite(email), name = String(request.auth.token.name || ''), bref = db.collection('branches').doc(id);
+  const full = await isFullWrite(email), name = String(request.auth.token.name || '');
+  return decideBranchAs(id, { email, name, full, accept: !!data.accept, editedAt: data.editedAt });
+});
+// Deciding branch `id`: by a PI or admin (decideBranch), or, `auto`, accepted by itself once it's due
+// (branchLib.dueAt: nobody decided it for AUTO_DAYS; acceptDueBranches). Accepted by itself, its pages are changed
+// as its author's (updatedBy), and it's decided by BOLD.OS.
+async function decideBranchAs(id, o){
+  const bref = db.collection('branches').doc(id);
   return db.runTransaction(async (tx) => {
     const bs = await tx.get(bref), b = bs.exists ? bs.data() : null;
     if (!b) throw new HttpsError('not-found', 'No such branch.');
-    const why = branchLib.cannotDecide(b, email, full);
-    if (why) throw new HttpsError(b.status !== 'open' ? 'failed-precondition' : 'permission-denied', why);
-    if (typeof data.editedAt === 'number' && (b.editedAt || b.at || 0) !== data.editedAt) throw new HttpsError('failed-precondition', 'It has just changed. Have a look at it again.');
-    const pages = b.pages || [];
+    const by = String((b.by && b.by.email) || '').toLowerCase();
+    if (o.auto) {
+      if (!branchLib.isDue(b, Date.now())) throw new HttpsError('failed-precondition', 'It isn’t due yet.');
+    } else {
+      const why = branchLib.cannotDecide(b, o.email, o.full);
+      if (why) throw new HttpsError(b.status !== 'open' ? 'failed-precondition' : 'permission-denied', why);
+      if (typeof o.editedAt === 'number' && (b.editedAt || b.at || 0) !== o.editedAt) throw new HttpsError('failed-precondition', 'It has just changed. Have a look at it again.');
+    }
+    const pages = b.pages || [], email = o.auto ? by : o.email;
     const [props, docs, acc] = await Promise.all([Promise.all(branchProps(b, id).map((r) => tx.get(r))), Promise.all(pages.map((p) => tx.get(db.doc(p)))), tx.get(db.collection('settings').doc('access'))]);
     const now = Date.now(), all = [];
-    if (data.accept) {
-      const by = String((b.by && b.by.email) || '').toLowerCase();
+    if (o.accept) {
       for (let i = 0; i < pages.length; i++){
         const q = props[i].exists ? props[i].data() : null;
         if (!q || q.status !== 'open') continue;
         const [collection, slug] = pages[i].split('/'), creating = q.kind === 'new';
         if (creating ? docs[i].exists : !docs[i].exists) throw new HttpsError('failed-precondition', creating ? '“' + slug + '” exists already: this branch can’t make it.' : '“' + slug + '” has been deleted since.');
         try {
-          (await acceptedOps(collection, slug, docs[i], q, { pages: (acc.data() || {}).pages, email, by, note: b.title, now, creating })).forEach((o) => all.push(o));
+          (await acceptedOps(collection, slug, docs[i], q, { pages: (acc.data() || {}).pages, email, by, note: b.title, now, creating })).forEach((x) => all.push(x));
         } catch (err) {
           const page = (docs[i].exists && docs[i].data().title) || slug;
           throw new HttpsError(err.code || 'failed-precondition', page + ': ' + (err.message || 'it can’t be accepted.'));
         }
       }
     }
-    all.forEach((o) => { if (o.op === 'delete') tx.delete(o.ref); else tx[o.op](o.ref, o.data); });
-    const status = data.accept ? 'accepted' : 'declined', closed = { status, decidedBy: email, decidedByName: name, decidedAt: now };
+    all.forEach((x) => { if (x.op === 'delete') tx.delete(x.ref); else tx[x.op](x.ref, x.data); });
+    const status = o.accept ? 'accepted' : 'declined';
+    const closed = o.auto ? { status, decidedBy: 'bold-os', decidedByName: 'BOLD.OS, after ' + branchLib.AUTO_DAYS + ' days without a decision', decidedAt: now, autoAccepted: true }
+      : { status, decidedBy: o.email, decidedByName: o.name, decidedAt: now };
     props.forEach((p) => { if (p.exists && p.data().status === 'open') tx.update(p.ref, closed); });
     tx.update(bref, closed);
     return { status };
   }).then((r) => { access.forget(); return r; });
+}
+// Every hour: each open branch nobody has decided for AUTO_DAYS is accepted by itself (decideBranchAs auto). One that
+// can't be (a page deleted since, a tool that doesn't compile) stays open, for a PI or admin, and is logged.
+exports.acceptDueBranches = onSchedule({ schedule: 'every 60 minutes', timeoutSeconds: 300 }, async () => {
+  const now = Date.now(), open = (await db.collection('branches').where('status', '==', 'open').get()).docs;
+  for (const d of open) {
+    if (!branchLib.isDue(d.data(), now)) continue;
+    try { await decideBranchAs(d.id, { auto: true, accept: true }); logger.info('A proposed change was accepted by itself', { id: d.id }); }
+    catch (err) { logger.warn('A proposed change due to be accepted by itself couldn’t be', { id: d.id, error: String((err && err.message) || err) }); }
+  }
 });
 
 // ---------- 2, 3, 4: card events ----------

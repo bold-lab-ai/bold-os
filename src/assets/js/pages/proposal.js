@@ -104,7 +104,9 @@
       '<p class="pr-meta">' + chip + ' <span><strong>' + who(b.by) + '</strong> ' + (st === 'open' ? 'wants to change' : st === 'draft' ? 'is drafting changes to' : 'proposed changing') + ' ' +
         (b.pages || []).map(function(p){ return '<a href="#changes" data-tab="changes">' + esc(pageName(p)) + '</a>'; }).join(', ') +
         ' · ' + (people > 1 ? people + ' people committed' : '1 person committed') + ' · opened ' + esc(dayOf(b.at || 0)) +
-        (b.decidedAt && st !== 'open' ? ' · ' + esc(st) + ' by ' + esc(b.decidedByName || b.decidedBy || '') + ' on ' + esc(dayOf(b.decidedAt)) : '') + '</span></p>' +
+        (b.decidedAt && st !== 'open' ? ' · ' + esc(st) + ' by ' + esc(b.decidedByName || b.decidedBy || '') + ' on ' + esc(dayOf(b.decidedAt)) : '') +
+        // With no decision, accepted by itself (functions/branches.js dueAt: 7 days from its opening or its last commit).
+        (st === 'open' ? ' · <strong class="pr-due">accepted by itself on ' + esc(dayOf(Math.max(b.readyAt || b.at || 0, b.editedAt || 0) + 7 * 86400000)) + '</strong> unless a PI or admin decides first' : '') + '</span></p>' +
       (editing ? '' : '<div class="pr-actions">' +
         // On it, the site shows its changes and your edits are committed to it.
         (live() ? (BOLD.branchId() === id ? '<button type="button" class="btn-box pr-main">Back to main</button>'
