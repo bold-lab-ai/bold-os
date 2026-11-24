@@ -1,5 +1,5 @@
-// Adding a problem by talking to BOLD (problem-new.html): the home page's conversation (bold.css .ha-*), and beside
-// it what the Problem Bank needs, each ticked once BOLD-LLM has it from what they said (problemInterview,
+// Adding a problem by talking to Sofya (problem-new.html): the home page's conversation (bold.css .ha-*), and beside
+// it what the Problem Bank needs, each ticked once Sofya has it from what they said (problemInterview,
 // functions/problem-interview.js). Once it has all it needs, Check and edit shows what it gathered as fields, to
 // change and save through benchmarkRegistry's create, with the person as its definer.
 (function(){
@@ -7,7 +7,7 @@
   var el = function(id){ return document.getElementById(id); };
   var esc = BOLD.escapeHtml;
   var OPENING = 'Describe the problem you’d like to add: what you want to solve, and why it matters to you.';
-  // What the Problem Bank needs, in the order BOLD asks for it.
+  // What the Problem Bank needs, in the order Sofya asks for it.
   var NEEDS = [
     ['title', 'A title'],
     ['significance', 'Why it matters'],
@@ -22,8 +22,8 @@
   var review = el('pbReview'), save = el('pbReviewSave'), familyGraph = null, familySelection = null;
   var still = window.matchMedia && matchMedia('(prefers-reduced-motion: reduce)').matches;
   var userId = null, epoch = 0, canWrite = false, ready = false, talking = false, saving = false;
-  // Two ways compared (functions/problem-trial.js): talking with BOLD ('chat') or the form ('form'), one per person,
-  // either can switch. Each attempt sends only signals: started, switched, a turn, BOLD failing, saved.
+  // Two ways compared (functions/problem-trial.js): talking with Sofya ('chat') or the form ('form'), one per person,
+  // either can switch. Each attempt sends only signals: started, switched, a turn, Sofya failing, saved.
   var mode = 'chat', attempt = null, lastBold = null, SOFYA_WAIT = 45000;
   function trial(data){
     if (!attempt) return Promise.resolve(null);
@@ -38,9 +38,9 @@
   function call(name, data){ return firebase.app().functions('europe-west2').httpsCallable(name, { timeout: 130000 })(data).then(function(r){ return r.data; }); }
   function md(t){ return window.BoldMarkdown ? BoldMarkdown.render(t, { breaks: true }) : '<p>' + esc(t) + '</p>'; }
   function item(who, text, fresh){
-    return '<li class="ha-msg ha-' + who + (fresh ? ' is-new' : '') + '"><p class="ha-who">' + (who === 'you' ? 'You' : 'BOLD') + '</p><div class="ha-text md-desc">' + md(text) + '</div></li>';
+    return '<li class="ha-msg ha-' + who + (fresh ? ' is-new' : '') + '"><p class="ha-who">' + (who === 'you' ? 'You' : 'Sofya') + '</p><div class="ha-text md-desc">' + md(text) + '</div></li>';
   }
-  // BOLD's answer writes itself out, word by word, as on the home page.
+  // Sofya's answer writes itself out, word by word, as on the home page.
   function stream(full){
     log.insertAdjacentHTML('beforeend', item('bold', '', true));
     var t = log.lastElementChild.querySelector('.ha-text'), parts = full.split(/(\s+)/), n = 0;
@@ -52,7 +52,7 @@
     }, 35);
   }
 
-  // What it has so far, ticked; Save problem once BOLD says it's complete.
+  // What it has so far, ticked; Save problem once Sofya says it's complete.
   function has(k){
     if (k === 'benchmark') return draft.benchmark_known;
     if (k === 'links') return !!(draft.parent_ids.length || draft.related_ids.length || draft.project_ids.length);
@@ -69,7 +69,7 @@
     el('pbToReview').hidden = review.hidden;
   }
 
-  /* ---------- Check and edit: what BOLD gathered, as fields ---------- */
+  /* ---------- Check and edit: what Sofya gathered, as fields ---------- */
   // Projects to link: stepping stones (northstars and moonshots are in the family tree).
   function stones(){
     var objectives = familyGraph ? familyGraph.objectives.map(function(o){ return o.id; }) : [];
@@ -105,8 +105,8 @@
     el('pbChatPart').hidden = form; el('pbNeedsPart').hidden = form;
     document.querySelector('.pb-talk').classList.toggle('is-form', form);
     el('pbReviewHead').textContent = form ? 'Describe the problem' : 'Check and edit';
-    el('pbReviewHint').textContent = form ? 'Fill in each field; the optional ones can wait.' : 'What BOLD gathered from the conversation. Change anything, or keep talking to BOLD above.';
-    el('pbSwitch').textContent = form ? 'Talk it through with BOLD instead' : 'Fill in the form instead';
+    el('pbReviewHint').textContent = form ? 'Fill in each field; the optional ones can wait.' : 'What Sofya gathered from the conversation. Change anything, or keep talking to Sofya above.';
+    el('pbSwitch').textContent = form ? 'Talk it through with Sofya instead' : 'Fill in the form instead';
     el('pbSwitch').hidden = !userId;
     if (form && review.hidden) showReview(false);
     if (!form && !done) review.hidden = true;
@@ -193,7 +193,7 @@
       drawDrafts();
     }).catch(function(err){ console.error('[BOLD Lab] loading problem drafts failed', err); });
   }
-  // Picking one up: the conversation as it was, what BOLD had gathered, and Check and edit if it was done.
+  // Picking one up: the conversation as it was, what Sofya had gathered, and Check and edit if it was done.
   function open(d){
     if (!d || talking || saving) return;
     start();
@@ -227,7 +227,7 @@
     turns.push({ role: 'user', content: q });
     log.insertAdjacentHTML('beforeend', item('you', q, true));
     input.value = ''; input.dispatchEvent(new Event('input'));
-    log.insertAdjacentHTML('beforeend', '<li class="ha-msg ha-bold ha-pending"><p class="ha-who">BOLD</p><div class="ha-text"><p>Thinking…</p></div></li>');
+    log.insertAdjacentHTML('beforeend', '<li class="ha-msg ha-bold ha-pending"><p class="ha-who">Sofya</p><div class="ha-text"><p>Thinking…</p></div></li>');
     talking = true; controls();
     el('pbBusy').hidden = true;
     firebase.app().functions('europe-west2').httpsCallable('problemInterview', { timeout: SOFYA_WAIT })({ turns: turns, draft: draft }).then(function(x){ return x.data; }).then(function(r){
@@ -245,7 +245,7 @@
       if (generation !== epoch) return;
       turns.pop();
       var p = log.querySelector('.ha-pending'); if (p) p.remove();
-      // BOLD failing or slow: the form, with what it has gathered so far, is one click away.
+      // Sofya failing or slow: the form, with what it has gathered so far, is one click away.
       var mine = err && (err.code === 'functions/invalid-argument');
       if (mine) log.insertAdjacentHTML('beforeend', item('bold', err.message, true));
       else { el('pbBusy').hidden = false; trial({ event: 'sofya_error' }); }
@@ -259,7 +259,7 @@
   input.addEventListener('keydown', function(e){ if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) { e.preventDefault(); form.requestSubmit(); } });
   el('pbRestart').addEventListener('click', function(){ if (!talking && !saving) { start(); input.focus(); } });
 
-  // Saving: what BOLD gathered, as the form saved it, the person as its definer.
+  // Saving: what Sofya gathered, as the form saved it, the person as its definer.
   review.addEventListener('submit', async function(e){
     e.preventDefault();
     if ((mode === 'chat' && !done) || saving || !me) return;

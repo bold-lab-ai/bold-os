@@ -9708,7 +9708,7 @@ exports.problemInterview = onCall({ secrets: [BOLD_LLM_KEY], timeoutSeconds: 120
   } catch (err) {
     if (/^(Start again|Keep each|Say something)/.test(err.message)) throw new HttpsError('invalid-argument', err.message);
     logger.warn('Problem interview failed', { error: String(err.message).slice(0, 300) });
-    throw new HttpsError('unavailable', 'BOLD-LLM didn’t answer. Try again, or fill in the form yourself.');
+    throw new HttpsError('unavailable', 'Sofya didn’t answer. Try again, or fill in the form yourself.');
   }
 });
 

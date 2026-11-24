@@ -15,20 +15,20 @@ nav: "problems.html"
     <li aria-current="step">Define the problem</li><li id="pbVerifierStep">Add a verifier</li><li id="pbBaselineStep">Autoresearch baseline <small>Coming soon</small></li>
   </ol>
   <div class="pb-talk">
-    <section class="ha-box is-open pb-talk-box" aria-label="Describe the problem to BOLD">
+    <section class="ha-box is-open pb-talk-box" aria-label="Describe the problem to Sofya">
       <div id="pbChatPart">
       <ol class="ha-log" id="pbLog" aria-live="polite"></ol>
-      <p class="pb-busy" id="pbBusy" role="alert" hidden>BOLD is busy right now. <button type="button" class="btn-text" id="pbBusyForm">Continue in the form</button>: what it has gathered comes with you.</p>
+      <p class="pb-busy" id="pbBusy" role="alert" hidden>Sofya is busy right now. <button type="button" class="btn-text" id="pbBusyForm">Continue in the form</button>: what it has gathered comes with you.</p>
       <div class="ha-fold"><form class="ha-form" id="pbChatForm" novalidate>
-        <textarea class="md-field no-tags" data-md-breaks="true" rows="2" maxlength="4000" id="pbChatInput" aria-label="Reply to BOLD" placeholder="Reply to BOLD…" disabled></textarea>
+        <textarea class="md-field no-tags" data-md-breaks="true" rows="2" maxlength="4000" id="pbChatInput" aria-label="Reply to Sofya" placeholder="Reply to Sofya…" disabled></textarea>
         <div class="ha-actions"><button type="button" class="btn-text" id="pbRestart" hidden>Start again</button><button type="submit" class="btn-box is-primary" id="pbSend" disabled>Send</button></div>
       </form></div>
-      <p class="ha-saved"><span id="pbSavedNote" hidden>Saved as a draft: only you see it. </span>BOLD-LLM logs conversations to improve it.</p>
+      <p class="ha-saved"><span id="pbSavedNote" hidden>Saved as a draft: only you see it. </span>Sofya logs conversations to improve it.</p>
       </div>
-      <!-- Once BOLD has what's needed: what it gathered, to check, edit and save. -->
+      <!-- Once Sofya has what's needed: what it gathered, to check, edit and save. -->
       <form class="pb-form pb-review" id="pbReview" hidden novalidate>
         <h2 class="pb-review-head" id="pbReviewHead">Check and edit</h2>
-        <p class="field-hint" id="pbReviewHint">What BOLD gathered from the conversation. Change anything, or keep talking to BOLD above.</p>
+        <p class="field-hint" id="pbReviewHint">What Sofya gathered from the conversation. Change anything, or keep talking to Sofya above.</p>
         <div class="field"><label for="pbTitle">Problem title</label><input id="pbTitle" required maxlength="180"></div>
         <div class="field"><label class="pb-purpose"><input id="pbBuildsBenchmark" type="checkbox"> This problem is building a benchmark</label></div>
         <div class="field"><label for="pbWhy">Why it matters</label><textarea class="no-tags" id="pbWhy" required maxlength="8000" rows="3"></textarea></div>

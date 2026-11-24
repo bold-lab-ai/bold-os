@@ -131,7 +131,7 @@ test('the form way: the fields at once, no conversation, saved with the person a
   assert.equal(f.$('pbChatPart').hidden, true);
   assert.equal(f.$('pbReview').hidden, false);
   assert.equal(f.$('pbReviewHead').textContent, 'Describe the problem');
-  assert.equal(f.$('pbSwitch').textContent, 'Talk it through with BOLD instead');
+  assert.equal(f.$('pbSwitch').textContent, 'Talk it through with Sofya instead');
   f.$('pbTitle').value = 'T'; f.$('pbWhy').value = 'W'; f.$('pbDifficulties').value = 'D'; f.$('pbExisting').value = 'E';
   f.$('pbReview').dispatchEvent(new f.window.Event('submit', {cancelable: true}));
   for (let i = 0; i < 6; i++) await new Promise((r) => setTimeout(r, 0));
