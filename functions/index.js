@@ -2650,9 +2650,9 @@ async function decideBranchAs(id, o){
     return { status };
   }).then((r) => { access.forget(); return r; });
 }
-// Every hour: each open branch nobody has decided for AUTO_DAYS is accepted by itself (decideBranchAs auto). One that
-// can't be (a page deleted since, a tool that doesn't compile) stays open, for a PI or admin, and is logged.
-exports.acceptDueBranches = onSchedule({ schedule: 'every 60 minutes', timeoutSeconds: 300 }, async () => {
+// Every day at 09:00 London: each open branch nobody has decided for AUTO_DAYS is accepted by itself (decideBranchAs
+// auto). One that can't be (a page deleted since, a tool that doesn't compile) stays open, for a PI or admin, and is logged.
+exports.acceptDueBranches = onSchedule({ schedule: '0 9 * * *', timeZone: 'Europe/London', timeoutSeconds: 300 }, async () => {
   const now = Date.now(), open = (await db.collection('branches').where('status', '==', 'open').get()).docs;
   for (const d of open) {
     if (!branchLib.isDue(d.data(), now)) continue;
