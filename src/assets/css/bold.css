@@ -409,6 +409,7 @@ footer{
 .mast-menu-btn:hover .mast-avatar, .mast-menu-btn[aria-expanded="true"] .mast-avatar{border-color:var(--ink-soft);}
 .mast-menu-who{padding:7px 10px 9px; margin-bottom:4px; border-bottom:1px solid var(--line); color:var(--muted); overflow:hidden; text-overflow:ellipsis; white-space:nowrap;}
 .mast-menu-who strong{color:var(--ink); font-weight:600;}
+.mast-menu-email{display:block; margin-top:2px; font-size:12px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;}
 /* A quieter part of a menu item: the group you're in, beside Change your group. */
 .mast-menu-note{color:var(--muted);}
 .mast-menu{position:absolute; right:0; top:calc(100% + 6px); z-index:300; width:220px; margin:0; padding:4px 0; list-style:none;

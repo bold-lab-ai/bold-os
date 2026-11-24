@@ -6398,12 +6398,19 @@ exports.linkGoogle = onCall(
     await access.requireAccess(email, 'profile', 'edit');   // Who can see what
     const user = await admin.auth().getUser(request.auth.uid);
     const g = (user.providerData || []).filter(function(p){ return p.providerId === 'google.com'; })[0];
-    const google = g && g.email ? g.email.toLowerCase() : '';
+    let google = g && g.email ? g.email.toLowerCase() : '';
     const ref = db.collection('googleLinks').doc(email);
-    const prev = (await ref.get()).data();
+    let prev = (await ref.get()).data();
+    // A Google address a PI or admin linked for them (setBy, 2026-11-24: someone who signed up twice, once with it), with
+    // no Google account linked on their sign-in: kept, as if linked, until they unlink it ({ unlink: true }) or link
+    // their own Google account, which takes its place.
+    const setBy = !google && prev && prev.setBy && prev.google ? String(prev.setBy) : '';
+    const unlinked = !!(setBy && request.data && request.data.unlink === true);
+    if (unlinked) { await ref.delete(); prev = null; }
+    else if (setBy) google = String(prev.google).toLowerCase();
     const person = (await db.collection('people').where('email', '==', email).limit(1).get()).docs[0];
     const choices = google ? inviteChoices(email, person && person.data().slackEmail, google) : [];
-    let moved = false, inviteTo = prev && prev.google === google ? validInviteTo(prev.inviteTo, choices) : [];
+    let moved = unlinked, inviteTo = prev && prev.google === google ? validInviteTo(prev.inviteTo, choices) : [];
     if ((prev && prev.google || '') !== google){
       if (google) await ref.set({ email, google, linkedAt: Date.now() });
       else await ref.delete();
@@ -6426,9 +6433,45 @@ exports.linkGoogle = onCall(
       const studies = await db.collection('studies').where('everyone', 'array-contains', email).get();
       for (const d of studies.docs) await syncStudyMeeting(d.id);
     }
-    return { link: google ? { google, inviteTo: inviteTo.length ? inviteTo : [google], choices } : null };
+    return { link: google ? Object.assign({ google, inviteTo: inviteTo.length ? inviteTo : [google], choices }, setBy && prev ? { setBy: true } : {}) : null };
   }
 );
+// A Google address linked for someone by a PI or admin (googleLinks/{email} with setBy, written by hand): their projects'
+// and study meetings' invitations and files move to it, as linkGoogle does when they link one themselves.
+exports.onGoogleLinkSet = onDocumentWritten({ document: 'googleLinks/{email}', secrets: [GOOGLE_OAUTH, GITHUB_APP], timeoutSeconds: 120 }, async (event) => {
+  const before = event.data.before.exists ? event.data.before.data() : null, after = event.data.after.exists ? event.data.after.data() : null;
+  if (!after || !after.setBy || (before && before.google === after.google)) return;
+  const email = event.params.email;
+  for (const d of (await db.collection('projectWorkspaces').where('members', 'array-contains', email).get()).docs) await syncWorkspace(d.id);
+  for (const d of (await db.collection('studies').where('everyone', 'array-contains', email).get()).docs) await syncStudyMeeting(d.id);
+});
+
+// deleteMyProfile {} (2026-11-24): someone deletes their own BOLD.OS profile. Their details and group (members), their
+// links and feeds, their settings, agents' tokens and devices go; they leave the projects they're on (each synced, so
+// their invitations and files go too); then their sign-in. What they wrote with others (comments, cards, conversations,
+// proposals) stays, as on Slack. PIs and admins are taken off the role lists first. To come back, they join again.
+// Pure: the documents of theirs that go, by email and by uid.
+function ownDocs(email, uid){
+  return ['members', 'googleLinks', 'githubLinks', 'calendarFeeds', 'busyFeeds', 'onboarding', 'visits', 'homeLetters', 'letterJobs', 'chatCounts']
+    .map(function(c){ return c + '/' + email; }).concat(uid ? ['prefs/' + uid] : []);
+}
+exports.deleteMyProfile = onCall({ secrets: [GOOGLE_OAUTH, GITHUB_APP], timeoutSeconds: 300 }, async (request) => {
+  const email = signedInEmail(request).toLowerCase(), uid = request.auth.uid;
+  const roles = (await rolesEmails('pis')).concat(await rolesEmails('admins')).map((e) => String(e).toLowerCase());
+  if (roles.indexOf(email) >= 0) throw new HttpsError('failed-precondition', 'You’re a PI or admin: another one takes you off the role lists first.');
+  // Their projects: off each, and its invitations, files and team with it.
+  for (const d of (await db.collection('projectWorkspaces').where('members', 'array-contains', email).get()).docs) {
+    await d.ref.update({ members: FieldValue.arrayRemove(email) });
+    await syncWorkspace(d.id).catch((err) => logger.warn('deleteMyProfile: a project couldn’t be synced', { id: d.id, error: String(err && err.message || err) }));
+  }
+  const batch = db.batch();
+  ownDocs(email, uid).forEach((p) => batch.delete(db.doc(p)));
+  for (const c of ['apiTokens', 'pushTokens']) (await db.collection(c).where('email', '==', email).get()).docs.forEach((d) => batch.delete(d.ref));
+  await batch.commit();
+  await admin.auth().deleteUser(uid);
+  logger.info('A profile was deleted by its person');
+  return { deleted: true };
+});
 
 // ---------- Studies: a PhD or Master student's details and supervision meeting ----------
 // studies/{email}: the student's working title, the people involved in their studies
@@ -9736,7 +9779,7 @@ exports.problemInterview = onCall({ secrets: [BOLD_LLM_KEY], timeoutSeconds: 120
   }
 });
 
-exports._internal = { proposalRoute, proposalHours, asksForMore, replaceEmail, accountEmailsBySlackId, calendarUpdates, isCalendarLimit,
+exports._internal = { ownDocs, proposalRoute, proposalHours, asksForMore, replaceEmail, accountEmailsBySlackId, calendarUpdates, isCalendarLimit,
   slackImagesOf, slackToPlain, pingText, bugReportOf, bugNotes, bugTitle,
   channelsToJoin, setupMissing, setupMissingText, workspaceStarted, normalizeRepo, setupNudgeText, projectHealth,
   trialAction, trialTexts, stepsLeft, addedTo, eligibleSteps, eligibleText, onOthers,

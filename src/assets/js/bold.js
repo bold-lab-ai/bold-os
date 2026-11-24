@@ -589,8 +589,8 @@
   // settings have their own button (mountSettings). Signed out: Sign in with Slack.
   function renderAuthRegion(region, user){
     if (user) {
-      // The shared profile photo (initials without one); your name heads its menu
-      // (your email is on your profile; without a name, the email).
+      // The shared profile photo (initials without one); your name heads its menu, with the email
+      // you're signed in with under it (without a name, the email alone).
       var name = user.displayName || user.email || 'Signed in', who = esc(name);
       var initials = esc(name.split(/[\s@.]+/).filter(Boolean).slice(0, 2).map(function(w){ return w[0].toUpperCase(); }).join(''));
       var face = '<span class="mast-avatar mast-initials">' + initials + '</span>';
@@ -598,7 +598,8 @@
         '<div class="mast-auth mast-menu-wrap">' +
           '<button class="mast-menu-btn" type="button" aria-haspopup="true" aria-expanded="false" aria-controls="mastMenu" aria-label="' + who + '’s menu" title="' + who + '">' + face + '</button>' +
           '<ul class="mast-menu" id="mastMenu" role="menu" hidden>' +
-            '<li role="none" class="mast-menu-who">Signed in as <strong>' + who + '</strong></li>' +
+            '<li role="none" class="mast-menu-who">Signed in as <strong>' + who + '</strong>' +
+              (user.displayName && user.email ? '<span class="mast-menu-email" title="' + esc(user.email) + '">' + esc(user.email) + '</span>' : '') + '</li>' +
             '<li role="none"><a role="menuitem" href="profile.html">Profile</a></li>' +
             // Your group, and changing it (#278): findable from every page.
             '<li role="none"><a role="menuitem" href="group-request.html" id="mastGroupItem">' + groupItemText() + '</a></li>' +
