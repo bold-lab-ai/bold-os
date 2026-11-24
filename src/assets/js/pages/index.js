@@ -12,9 +12,9 @@
 // - New: their next first step (onboarding-common.js).
 // - The lab: the papers going to the next deadline (getAllProjects); the week's events; what the lab is
 //   talking about most lately (Conversations' posts), and whether it's waiting for an answer.
-// BOLD-LLM writes it when it arrives. Under it, Conversations: the same forum as Conversations' page (conversations-forum.js), between the lab (left:
-// papers in submission with their deadlines, work completed, events coming up) and them (right: their week, with
-// Join; their projects; unread notifications; their first steps until done), as quiet margin notes: each part
+// BOLD-LLM writes it when it arrives. Beside it, one column of quiet
+// margin notes: the lab (papers in submission with their deadlines, work completed, events coming up) and them (their week, with
+// Join; their projects; unread notifications; their first steps until done): each part
 // shows three items, and "N more" opens the rest in place.
 (function(){
   var esc = BOLD.escapeHtml;
@@ -22,8 +22,6 @@
   var sidebar = document.getElementById('sidebar');
   var navToggle = document.getElementById('navToggle');
   var signInBtn = document.getElementById('homeSignInBtn');
-  var mount = document.getElementById('bsMount');
-  var forum = null;
   if (signInBtn) signInBtn.addEventListener('click', BOLD.signIn);
 
   function feed(on){
@@ -31,10 +29,6 @@
     if (masthead) masthead.hidden = !on;
     if (sidebar) sidebar.hidden = !on;
     if (navToggle) navToggle.hidden = !on;
-    if (on && !forum && mount && window.BoldConversations) {
-      forum = BoldConversations.create({ note: false, peek: true });   // a peek: no search box or filters
-      mount.appendChild(forum.el);
-    }
   }
 
   var MONTHS_FULL = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
@@ -281,25 +275,15 @@
     return '<p class="hl-by hl-writing" role="status"><span class="hl-wave" aria-label="' + esc(writingWords()) + '">' + waveHtml(writingWords()) + '</span> ' +
       '<span class="hl-secs">' + Math.round((Date.now() - writing.since) / 1000) + 's</span></p>';
   }
-  // BOLD LLM's letter, short or long (kept in this browser), as Markdown, with when it was written; or ''.
-  var LEN_KEY = 'boldLetterLength';
-  function letterLength(){ try { return localStorage.getItem(LEN_KEY) === 'long' ? 'long' : 'short'; } catch (e){ return 'short'; } }
+  // BOLD LLM's letter as Markdown, with who wrote it; or ''. One letter (`long`; a short one from before isn't shown).
   function llmLetter(){
     var l = state.llmLetter;
-    if (state.letterChoice !== 'bold' || !BoldLetterDue.isFresh(l, state.letterRefresh) || !window.BoldMarkdown) return '';
-    var len = letterLength();
-    return '<div class="hl-agent-text">' + BoldMarkdown.render(String(l[len] || l.short || '')) + '</div>' +
-      '<p class="hl-by">Written by ' + ({ sofya: 'Sofya', claude: 'Claude' }[l.writer] || 'BOLD LLM') + ' · ' +
-      '<button type="button" class="btn-text hl-len" data-len="' + (len === 'short' ? 'long' : 'short') + '">' + (len === 'short' ? 'Long' : 'Short') + '</button></p>';
+    if (state.letterChoice !== 'bold' || !BoldLetterDue.isFresh(l, state.letterRefresh) || !window.BoldMarkdown || !l.long) return '';
+    return '<div class="hl-agent-text">' + BoldMarkdown.render(String(l.long)) + '</div>' +
+      '<p class="hl-by">Written by ' + ({ sofya: 'Sofya', claude: 'Claude' }[l.writer] || 'BOLD LLM') + '</p>';
   }
-  document.addEventListener('click', function(e){
-    var b = e.target.closest && e.target.closest('.hl-len');
-    if (!b) return;
-    try { localStorage.setItem(LEN_KEY, b.getAttribute('data-len')); } catch (err){}
-    write();
-  });
 
-  // ---- Beside Conversations: the lab on the left, them on the right (each part only when it has something) ----
+  // ---- Beside the letter: the lab and them (each part only when it has something) ----
   var MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'], DAY_SHORT = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
   function ago(t){
     var s = Math.max(0, (Date.now() - (t || 0)) / 1000);
@@ -407,167 +391,47 @@
       (!s.tour ? '<p class="home-more"><a href="onboarding.html#tour">Take the tour</a></p>' : '');
     box.hidden = false;
   }
-  function drawSides(){ drawSubmitting(); drawDone(); drawEvents(); drawWeek(); drawProjects(); drawInbox(); drawSteps(); }
+  function drawSides(){ drawSubmitting(); drawDone(); drawEvents(); drawWeek(); drawProjects(); drawInbox(); drawSteps(); drawStarters(); }
 
-  // ---- Talking to BOLD ----
-  // Under the letter, a dialog with BOLD LLM: they write (Markdown, md-field.js), it answers, as Markdown. Open to
-  // everyone while BOLD LLM writes the letters (state.chatOn: the lab's choice), answered by homeLetter
-  // 'ask' (functions/bold-llm.js) with the conversation so far. Otherwise hidden; #ask in the address shows it
-  // in this browser as a preview (localStorage boldHomeAsk; #ask-off hides it), whose answer says BOLD LLM isn't
-  // on for them and offers a search. Kept for the visit only (sessionStorage).
-  var mountAsk = function(){};
+  // ---- Talking to Sofya ----
+  // Under the letter, open: a dialog with Sofya (BOLD LLM): they write (Markdown, md-field.js), it answers, as Markdown.
+  // On for everyone while BOLD LLM writes the letters (state.chatOn: the lab's choice), answered by homeLetter 'ask'
+  // (functions/bold-llm.js) with the conversation so far. Otherwise hidden; #ask in the address shows it in this
+  // browser as a preview (localStorage boldHomeAsk; #ask-off hides it), whose answer says BOLD LLM isn't on for them
+  // and offers a search. Kept for the visit only (sessionStorage).
+  // Starters under it, while nothing's been said: something wrong with BOLD.OS, something new for it (both a talk that
+  // ends in a card for BOLD OS's board, functions/os-report.js, which they check and add), then a few from their day.
+  var mountAsk = function(){}, drawStarters = function(){};
   (function(){
     var box = document.getElementById('homeAskBox');
     if (!box) return;
-    var KEY = 'boldHomeAsk', LOG = 'boldHomeAskLog', on = false, log = [];
+    var KEY = 'boldHomeAsk', LOG = 'boldHomeAskLog', INTENT = 'boldHomeAskIntent', on = false, log = [], intent = '';
     try {
       if (/[#&]ask-off\b/.test(location.hash)) localStorage.removeItem(KEY);
       else if (/[#&]ask\b/.test(location.hash)) localStorage.setItem(KEY, '1');
       on = localStorage.getItem(KEY) === '1';
       log = JSON.parse(sessionStorage.getItem(LOG) || '[]') || [];
+      intent = sessionStorage.getItem(INTENT) || '';
     } catch (e){}
     var mounted = false;
-    mountAsk = function(){ if (!mounted) { mounted = true; mount(); } };
+    // A fault in the box never takes the letter with it (mountAsk runs in the letter's own setup).
+    mountAsk = function(){ if (!mounted) { mounted = true; try { mount(); } catch (e){ console.error('[BOLD Lab] Talking to Sofya failed', e); box.hidden = true; } } };
     if (on) mountAsk();
     function mount(){
     box.hidden = false;
     var list = box.querySelector('.ha-log'), form = box.querySelector('.ha-form'), text = form.querySelector('textarea');
-    var line = box.querySelector('.ha-line'), still = window.matchMedia && matchMedia('(prefers-reduced-motion: reduce)').matches;
+    var send = form.querySelector('button[type="submit"]'), fresh = box.querySelector('.ha-new');
+    var starters = box.querySelector('.ha-starters'), report = box.querySelector('.ha-report'), reportGo = box.querySelector('.ha-report-go');
+    // How much Sofya thinks first (homeLetter 'ask' effort): their choice, kept in this browser; off by default.
+    var EFFORT = 'boldHomeAskEffort', effortPick = box.querySelector('.ha-effort-pick');
+    try { var kept = localStorage.getItem(EFFORT); if (kept && effortPick.querySelector('option[value="' + kept + '"]')) effortPick.value = kept; } catch (e){}
+    effortPick.addEventListener('change', function(){ try { localStorage.setItem(EFFORT, effortPick.value); } catch (e){} });
+    var card = box.querySelector('.ha-card'), still = window.matchMedia && matchMedia('(prefers-reduced-motion: reduce)').matches;
     function md(t){ return window.BoldMarkdown ? BoldMarkdown.render(t, { breaks: true }) : '<p>' + esc(t) + '</p>'; }
-    // Talking: once BOLD answers, Conversations folds away (its height and opacity, eased) and then the side column
-    // comes up beside the letter, glided from where it was (measured before and after: FLIP); closing the box
-    // brings Conversations back the same way. At once with reduced motion (CSS: .is-talking, index.css).
-    var feedEl = document.getElementById('homeFeed'), talkEl = document.querySelector('.home-talk'), sideEl = document.querySelector('.home-side');
-    var topEl = document.querySelector('.home-top'), letterEl = document.getElementById('homeLetter'), busyMove = false;
-    // The motion's timing, shared by the glide and the scroll so they end together.
-    var MOVE_MS = 520, MOVE_EASE = 'cubic-bezier(.2,.8,.2,1)';
-    function glide(el, before){
-      var after = el.getBoundingClientRect(), dx = before.left - after.left, dy = before.top - after.top;
-      if (still || !el.animate || (!dx && !dy)) return;
-      el.animate([{ transform: 'translate(' + dx + 'px,' + dy + 'px)' }, { transform: 'none' }], { duration: MOVE_MS, easing: MOVE_EASE });
+    function item(m, isNew){
+      return '<li class="ha-msg ha-' + m.who + (isNew ? ' is-new' : '') + '"><p class="ha-who">' + (m.who === 'you' ? 'You' : 'Sofya') + '</p><div class="ha-text md-desc">' + md(m.text) + '</div></li>';
     }
-    // cubic-bezier(.2,.8,.2,1) as a function of time (0–1), for the scroll to follow the glide's curve.
-    function ease(t){
-      var x1 = .2, y1 = .8, x2 = .2, y2 = 1, u = t;
-      var bx = function(u){ return 3 * x1 * u * (1 - u) * (1 - u) + 3 * x2 * u * u * (1 - u) + u * u * u; };
-      for (var i = 0; i < 8; i++) {
-        var dx = 3 * x1 * (1 - u) * (1 - u) + 6 * (x2 - x1) * u * (1 - u) + 3 * (1 - x2) * u * u;
-        if (Math.abs(dx) < 1e-6) break;
-        u = Math.min(1, Math.max(0, u - (bx(u) - t) / dx));
-      }
-      return 3 * y1 * u * (1 - u) * (1 - u) + 3 * y2 * u * u * (1 - u) + u * u * u;
-    }
-    // Scrolls by `by` pixels over the motion's time and curve; stops if they scroll themselves meanwhile.
-    function scrollWith(by){
-      if (still) { window.scrollBy(0, by); return; }
-      var y0 = window.pageYOffset, t0 = null, stop = false;
-      var quit = function(){ stop = true; };
-      ['wheel', 'touchstart', 'keydown'].forEach(function(e){ window.addEventListener(e, quit, { once: true, passive: true }); });
-      (function step(t){
-        if (stop) return;
-        if (t0 === null) t0 = t;
-        var p = Math.min(1, (t - t0) / MOVE_MS);
-        window.scrollTo(0, y0 + by * ease(p));
-        if (p < 1) requestAnimationFrame(step);
-        else ['wheel', 'touchstart', 'keydown'].forEach(function(e){ window.removeEventListener(e, quit); });
-      })(performance.now());
-    }
-    // Under the conversation: a way back to every conversation, while they're folded away. Choosing it keeps
-    // them open for the rest of the visit (BOLD's next answers don't fold them again).
-    var keepTalk = false, showTalk = document.createElement('p');
-    showTalk.className = 'ha-show-talk'; showTalk.hidden = true;
-    showTalk.innerHTML = '<button type="button" class="btn-text">Show all conversations</button>';
-    box.appendChild(showTalk);
-    showTalk.querySelector('button').addEventListener('click', function(){ keepTalk = true; talking(false); });
-    function setTalking(on){
-      feedEl.classList.toggle('is-talking', on);
-      showTalk.hidden = !on;
-      // The side column's top level with the letter's first line (under the kicker).
-      if (on && letterEl && topEl) feedEl.style.setProperty('--talk-top', Math.max(0, letterEl.getBoundingClientRect().top - topEl.getBoundingClientRect().top) + 'px');
-    }
-    // together: one motion, for coming back to a talk (reopening the box): Conversations fades where it was (a copy
-    // of it, while the page's own goes at once), as the side column glides up and the talk fades in, all at the same time.
-    function talking(on, together){
-      if (!feedEl || !talkEl || !sideEl || busyMove || feedEl.classList.contains('is-talking') === on) return;
-      if (still || !talkEl.animate) { setTalking(on); return; }
-      busyMove = true;
-      if (on && together) {
-        var r = talkEl.getBoundingClientRect(), from = sideEl.getBoundingClientRect(), ghost = talkEl.cloneNode(true);
-        ghost.removeAttribute('id');
-        Array.prototype.forEach.call(ghost.querySelectorAll('[id]'), function(x){ x.removeAttribute('id'); });
-        ghost.setAttribute('aria-hidden', 'true');
-        // In the feed, so its styles hold, and placed in it (not on the screen), so it scrolls with the page; shown,
-        // though .is-talking hides the real one.
-        if (getComputedStyle(feedEl).position === 'static') feedEl.style.position = 'relative';
-        var fr = feedEl.getBoundingClientRect();
-        ghost.style.cssText = 'display:block; position:absolute; margin:0; pointer-events:none; z-index:1; left:' + (r.left - fr.left) + 'px; top:' + (r.top - fr.top) + 'px; width:' + r.width + 'px;';
-        feedEl.appendChild(ghost);
-        setTalking(true); glide(sideEl, from);
-        ghost.animate([{ opacity: 1, transform: 'none' }, { opacity: 0, transform: 'translateY(10px)' }], { duration: 360, easing: 'ease-out' }).onfinish = function(){ ghost.remove(); busyMove = false; };
-        if (!list.hidden) list.animate([{ opacity: 0, transform: 'translateY(6px)' }, { opacity: 1, transform: 'none' }], { duration: 420, easing: 'ease-out' });
-        return;
-      }
-      if (on) {
-        var h = talkEl.offsetHeight;
-        talkEl.style.overflow = 'hidden';
-        talkEl.animate([{ height: h + 'px', opacity: 1 }, { height: '0px', opacity: 0 }], { duration: 340, easing: 'ease-in' }).onfinish = function(){
-          talkEl.style.overflow = '';
-          var before = sideEl.getBoundingClientRect();
-          setTalking(true); glide(sideEl, before); busyMove = false;
-        };
-      } else {
-        var was = sideEl.getBoundingClientRect();
-        setTalking(false); glide(sideEl, was);
-        var h2 = talkEl.offsetHeight;
-        talkEl.style.overflow = 'hidden';
-        talkEl.animate([{ height: '0px', opacity: 0 }, { height: h2 + 'px', opacity: 1 }], { duration: 420, easing: 'ease-out', delay: 120, fill: 'backwards' }).onfinish = function(){ talkEl.style.overflow = ''; busyMove = false; };
-      }
-    }
-    function item(m, fresh){
-      return '<li class="ha-msg ha-' + m.who + (fresh ? ' is-new' : '') + '"><p class="ha-who">' + (m.who === 'you' ? 'You' : 'BOLD') + '</p><div class="ha-text md-desc">' + md(m.text) + '</div></li>';
-    }
-    function save(){ try { sessionStorage.setItem(LOG, JSON.stringify(log.slice(-40))); } catch (e){} }
-    // The conversation shows only while the box is open: closed (and on coming back to the page), the home page as it was.
-    function draw(){ list.innerHTML = log.map(function(m){ return item(m); }).join(''); list.hidden = !log.length || !box.classList.contains('is-open'); }
-    // A line that opens into the box: drawn out, then unfolded (CSS); closed again when empty.
-    function open(yes){
-      box.classList.toggle('is-open', yes);
-      line.setAttribute('aria-expanded', String(yes));
-      list.hidden = !yes || !log.length;
-      if (typeof drawSaved === 'function') drawSaved();
-
-      // Opening on a conversation BOLD has answered in: Conversations folds away again; closing, it comes back.
-      if (yes && !keepTalk && log.some(function(m){ return m.who === 'bold'; })) talking(true, true);
-      if (!yes) talking(false);
-      // With the motion, not after it: the page is laid out as it ends at once (only its look moves), so the scroll
-      // to the box starts on the same frame, and the box takes focus without the browser's own jump to it.
-      if (yes) {
-        try { text.focus({ preventScroll: true }); } catch (e){ text.focus(); }
-        // Where the box's bottom will be once its form has unfolded (measured now, while it's still opening: the form's
-        // full height less what's shown so far), brought into view, never so far that its top goes off the screen.
-        requestAnimationFrame(function(){
-          var r = box.getBoundingClientRect(), vh = window.innerHeight || document.documentElement.clientHeight;
-          var fold = box.querySelector('.ha-fold'), grow = fold ? Math.max(0, form.scrollHeight - fold.getBoundingClientRect().height) : 0;
-          var by = Math.min(r.bottom + grow + 24 - vh, r.top - 16);
-          if (by > 0) scrollWith(by);
-        });
-      }
-    }
-    line.addEventListener('click', function(){ open(true); });
-    box.querySelector('.ha-close').addEventListener('click', function(){ open(false); line.focus(); });
-    document.addEventListener('keydown', function(e){
-      var t = e.target, tag = t && t.tagName;
-      if (e.key === 'Escape' && box.contains(t) && !text.value.trim()) { open(false); line.focus(); return; }
-      if (e.key !== 'r' || e.metaKey || e.ctrlKey || e.altKey || tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || (t && t.isContentEditable)) return;
-      e.preventDefault(); open(true);
-    });
-    document.addEventListener('click', function(e){ if (box.classList.contains('is-open') && !box.contains(e.target) && !text.value.trim() && !log.length) open(false); });
-    // Without BOLD LLM on for them (the #ask preview): that it isn't, and a way to what they asked meanwhile.
-    function placeholder(q){
-      var words = q.replace(/[#*_`>\[\]()?!.,;:]/g, ' ').replace(/\s+/g, ' ').trim().split(' ').slice(0, 8).join(' ');
-      return 'BOLD LLM isn’t on: PIs and admins turn it on in Settings › BOLD Agent.' +
-        (words ? '\n\nMeanwhile, [search BOLD.OS for “' + words + '”](search.html?q=' + encodeURIComponent(words) + ').' : '');
-    }
+    function save(){ try { sessionStorage.setItem(LOG, JSON.stringify(log.slice(-40))); sessionStorage.setItem(INTENT, intent); } catch (e){} }
     // BOLD LLM's answer (homeLetter 'ask'), or what went wrong. The talk is kept as a private conversation of theirs
     // (functions/bold-llm.js), its id for the visit (sessionStorage), so the next message goes on in it.
     var CONV = 'boldHomeAskConv', conv = '';
@@ -575,28 +439,55 @@
     var saved = document.createElement('p');
     saved.className = 'ha-saved';
     function drawSaved(){
-      saved.hidden = !conv || !box.classList.contains('is-open');
+      saved.hidden = !conv;
       saved.innerHTML = conv ? '<a href="conversations.html#post=' + encodeURIComponent(conv) + '">In your Conversations</a>, only you see it' : '';
     }
-    box.appendChild(saved); drawSaved();
+    box.insertBefore(saved, form.parentNode.nextSibling);
+    // What shows around the talk: the starters before it, New conversation during it, and while they're reporting,
+    // the way to the card once Sofya has answered.
+    function drawAround(){
+      list.hidden = !log.length;
+      starters.hidden = !!log.length;
+      fresh.hidden = !log.length;
+      report.hidden = !intent || !conv || !log.some(function(m){ return m.who === 'bold'; }) || !card.hidden;
+      var may = !window.BOLD || !BOLD.can || BOLD.can('projects', 'edit');
+      reportGo.disabled = !may;
+      reportGo.title = may ? '' : BOLD.cannotReason('projects', 'edit');
+      drawSaved();
+    }
+    function draw(){ list.innerHTML = log.map(function(m){ return item(m); }).join(''); drawAround(); }
+    function reset(){
+      log = []; intent = ''; conv = '';
+      try { sessionStorage.removeItem(CONV); } catch (e){}
+      card.hidden = true; save(); draw();
+    }
+    fresh.addEventListener('click', function(){ reset(); try { text.focus({ preventScroll: true }); } catch (e){ text.focus(); } });
+    // Without BOLD LLM on for them (the #ask preview): that it isn't, and a way to what they asked meanwhile.
+    function placeholder(q){
+      var words = q.replace(/[#*_`>\[\]()?!.,;:]/g, ' ').replace(/\s+/g, ' ').trim().split(' ').slice(0, 8).join(' ');
+      return 'Sofya isn’t on: PIs and admins turn it on in Settings › BOLD Agent.' +
+        (words ? '\n\nMeanwhile, [search BOLD.OS for “' + words + '”](search.html?q=' + encodeURIComponent(words) + ').' : '');
+    }
+    function fn(){ return firebase.app().functions('europe-west2').httpsCallable('homeLetter', { timeout: 300000 }); }
     function answer(q){
       if (!state.chatOn) return Promise.resolve(placeholder(q));
-      // Up to 5 minutes: the model thinks first, and may read several things.
-      return firebase.app().functions('europe-west2').httpsCallable('homeLetter', { timeout: 300000 })({ action: 'ask', text: q, conversation: conv || null })
+      // Up to 5 minutes: it may read several things first.
+      return fn()({ action: 'ask', text: q, conversation: conv || null, intent: intent || null, effort: effortPick.value || 'off' })
         .then(function(r){
           var d = r.data || {};
-          if (d.conversation && d.conversation !== conv) { conv = d.conversation; try { sessionStorage.setItem(CONV, conv); } catch (e){} drawSaved(); }
+          if (d.conversation && d.conversation !== conv) { conv = d.conversation; try { sessionStorage.setItem(CONV, conv); } catch (e){} }
           return String(d.text || '');
         })
-        .catch(function(err){ console.error('[BOLD Lab] BOLD LLM’s answer failed', err); return (err && err.message && err.code !== 'functions/internal') ? err.message : 'BOLD LLM couldn’t answer just now — try again.'; });
+        .catch(function(err){ console.error('[BOLD Lab] Sofya’s answer failed', err); return (err && err.message && err.code !== 'functions/internal') ? err.message : 'Sofya couldn’t answer just now — try again.'; });
     }
-    // BOLD's answer writes itself out, word by word, as a model streams.
+    // Sofya's answer writes itself out, word by word, as a model streams.
     function stream(full){
       var m = { who: 'bold', text: full };
       log.push(m); save();
       list.hidden = false;
       list.insertAdjacentHTML('beforeend', item({ who: 'bold', text: '' }, true));
       var el = list.lastElementChild.querySelector('.ha-text'), parts = full.split(/(\s+)/), n = 0;
+      drawAround();
       if (still) { el.innerHTML = md(full); return; }
       el.classList.add('is-streaming');
       var tick = setInterval(function(){
@@ -605,28 +496,105 @@
         if (n >= parts.length) { clearInterval(tick); el.classList.remove('is-streaming'); el.innerHTML = md(full); }
       }, 35);
     }
-    form.addEventListener('submit', function(e){
-      e.preventDefault();
-      var q = text.value.trim();
-      if (!q) return;
+    function say(q){
       log.push({ who: 'you', text: q }); save();
-      list.hidden = false;
       list.insertAdjacentHTML('beforeend', item({ who: 'you', text: q }, true));
-      text.value = ''; text.dispatchEvent(new Event('input'));
+      drawAround();
       // While it thinks: a quiet line, replaced by the answer as it writes itself out.
-      list.insertAdjacentHTML('beforeend', '<li class="ha-msg ha-bold ha-pending"><p class="ha-who">BOLD</p><div class="ha-text"><p>Thinking…</p></div></li>');
-      form.querySelector('button[type="submit"], button:not([type])') && (form.querySelector('button[type="submit"], button:not([type])').disabled = true);
+      list.insertAdjacentHTML('beforeend', '<li class="ha-msg ha-bold ha-pending"><p class="ha-who">Sofya</p><div class="ha-text"><p>Thinking…</p></div></li>');
+      send.disabled = true;
       answer(q).then(function(a){
         var p = list.querySelector('.ha-pending');
         if (p) p.remove();
-        var b = form.querySelector('button[type="submit"], button:not([type])');
-        if (b) b.disabled = false;
+        send.disabled = false;
         stream(a || 'Nothing to say to that.');
-        if (!keepTalk) talking(true);
       });
+    }
+    form.addEventListener('submit', function(e){
+      e.preventDefault();
+      var q = text.value.trim();
+      if (!q || send.disabled) return;
+      text.value = ''; text.dispatchEvent(new Event('input'));
+      say(q);
     });
     // Enter sends; Shift+Enter is a new line.
     text.addEventListener('keydown', function(e){ if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) { e.preventDefault(); form.requestSubmit(); } });
+    // r: to the box, from anywhere but a field.
+    document.addEventListener('keydown', function(e){
+      var t = e.target, tag = t && t.tagName;
+      if (e.key !== 'r' || e.metaKey || e.ctrlKey || e.altKey || tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || (t && t.isContentEditable)) return;
+      e.preventDefault(); text.focus();
+    });
+
+    // The starters: one click says it. The first two start a report (a new conversation, with its intent).
+    var STARTERS = [
+      { label: 'Something’s wrong with BOLD.OS', say: 'Something’s wrong with BOLD.OS.', intent: 'bug' },
+      { label: 'I’d like BOLD.OS to do something new', say: 'I’d like BOLD.OS to do something it doesn’t yet.', intent: 'feature' }
+    ];
+    function day(){
+      var xs = [{ label: 'What’s on my plate this week?', say: 'What’s on my plate this week?' }];
+      var mine = state.mine ? [].concat(state.mine.owner || [], state.mine.author || [], state.mine.member || []).filter(function(p){ return p && p.title; }) : [];
+      if (mine.length) xs.push({ label: 'What’s new on ' + mine[0].title + '?', say: 'What’s new on ' + mine[0].title + '?' });
+      else xs.push({ label: 'Which projects could use my help?', say: 'Which projects could use my help?' });
+      xs.push({ label: 'What is the lab talking about?', say: 'What is the lab talking about lately?' });
+      return xs;
+    }
+    var shown = [];
+    drawStarters = function(){
+      shown = STARTERS.concat(day());
+      starters.innerHTML = shown.map(function(x, i){
+        return '<li><button type="button" class="ha-starter' + (x.intent ? ' is-os' : '') + '" data-i="' + i + '">' + esc(x.label) + '</button></li>';
+      }).join('');
+    };
+    starters.addEventListener('click', function(e){
+      var b = e.target.closest('.ha-starter'), x = b && shown[Number(b.getAttribute('data-i'))];
+      if (!x || send.disabled) return;
+      if (x.intent) { reset(); intent = x.intent; save(); }
+      say(x.say);
+    });
+    drawStarters();
+
+    // The card: drafted by Sofya from the talk, edited here, added to BOLD OS's board as them (firestore.rules
+    // projectWorkspaces/{id}/work), after asking: the board posts each new card in its project's channel.
+    var draft = null;
+    reportGo.addEventListener('click', function(){
+      if (!conv || !intent) return;
+      reportGo.disabled = true; reportGo.textContent = 'Drafting…';
+      fn()({ action: 'card', conversation: conv, intent: intent }).then(function(r){
+        draft = r.data || {};
+        card.querySelector('.ha-card-title').value = draft.title || '';
+        card.querySelector('.ha-card-notes').value = draft.notes || '';
+        card.hidden = false; drawAround();
+        card.querySelector('.ha-card-title').focus();
+      }).catch(function(err){
+        console.error('[BOLD Lab] drafting the card failed', err);
+        stream((err && err.message) || 'Sofya couldn’t draft the card just now — try again.');
+      }).then(function(){ reportGo.textContent = 'Add it to the board'; drawAround(); });
+    });
+    card.querySelector('.ha-card-cancel').addEventListener('click', function(){ card.hidden = true; drawAround(); });
+    card.addEventListener('submit', function(e){
+      e.preventDefault();
+      var title = card.querySelector('.ha-card-title').value.trim().slice(0, 200), notes = card.querySelector('.ha-card-notes').value.trim().slice(0, 20000);
+      if (!title || !draft || !user) return;
+      var go = card.querySelector('button[type="submit"]');
+      BOLD.confirmAlways({ title: 'Add “' + title + '” to BOLD OS’s board?', go: 'Add it',
+        effects: [{ key: 'announce', text: 'Post it in #proj-bold-os on Slack, for everyone in the channel' }] }).then(function(ok){
+        if (!ok) return;
+        go.disabled = true;
+        var now = Date.now(), email = String(user.email || '').toLowerCase();
+        return firebase.firestore(BOLD.getApp()).collection('projectWorkspaces').doc(draft.board).collection('work').add({
+          title: title, notes: notes, kind: draft.kind === 'request' ? 'request' : 'code', column: 'todo',
+          assignees: [], assigneeEmails: [], links: [], announce: !(ok.skip && ok.skip.announce),
+          by: { email: email, name: user.displayName || email }, at: now, updatedAt: now, updatedBy: email, movedAt: now
+        }).then(function(){
+          card.hidden = true; intent = ''; save();
+          stream('Added to [BOLD OS’s board](project.html#id=' + encodeURIComponent(draft.board) + '&tab=board): thank you. The people who build BOLD.OS pick it up from there.');
+        });
+      }).catch(function(err){
+        console.error('[BOLD Lab] adding the card failed', err);
+        stream('That card couldn’t be added — try again.');
+      }).then(function(){ go.disabled = false; });
+    });
     draw();
     }
   })();

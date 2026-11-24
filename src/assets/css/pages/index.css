@@ -20,7 +20,7 @@ a:focus-visible, button:focus-visible{outline:2px solid var(--accent); outline-o
 /* ---------- site nav ---------- */
 .shell{display:flex; align-items:stretch; flex:1 1 auto;}
 /* Signed out (index.js): the hero alone, pinned to the viewport's centre, no masthead or sidebar.
-   Signed in (body.is-home-feed): Conversations and the column of what's for you; the hero hidden. */
+   Signed in (body.is-home-feed): the letter and the column of what's for you; the hero hidden. */
 body:not(.is-home-feed) .shell-main{position:fixed; inset:0; z-index:0; display:flex; align-items:center; justify-content:center;}
 body:not(.is-home-feed) #homeFeed{display:none;}
 body.is-home-feed #homeGuest{display:none;}
@@ -102,11 +102,11 @@ body.is-home-feed{font-family:var(--sans); font-size:16px; line-height:1.55;}
 .home-box-title a:hover{color:var(--link);}
 .home-section-title{margin-bottom:14px;}
 
-/* Under the letter: Conversations, and beside it one column of margin notes (theirs, then the lab's).
-   Conversations and the letter keep every page's left edge. */
+/* The letter, and beside it one column of margin notes (theirs, then the lab's), its top level with the letter's.
+   The letter keeps every page's left edge. */
 #homeFeed{max-width:calc(var(--content-max) + 278px); margin-left:var(--page-left); margin-right:0;}
 .home-cols{display:grid; grid-template-columns:minmax(0, 1fr) 230px; gap:48px; align-items:start;}
-.home-talk{min-width:0;}
+.home-cols > .home-top{margin-bottom:0; min-width:0;}
 .home-side{position:sticky; top:16px; display:flex; flex-direction:column; gap:26px; font-family:var(--sans);}
 .home-box[hidden]{display:none;}
 .home-box-sub{margin:6px 0 0; color:var(--muted); font-size:13px;}
@@ -127,15 +127,15 @@ body.is-home-feed{font-family:var(--sans); font-size:16px; line-height:1.55;}
 .home-steps .ob-steps{font-size:12.5px; line-height:1.4;}
 .home-steps .ob-steps li{padding:6px 0;}
 .home-steps-text > :first-child{margin-top:0;} .home-steps-text > :last-child{margin-bottom:0;}
-/* Narrower: one column: you, then the lab, above Conversations, each part folded to three. */
+/* Narrower: one column: the letter, then you and the lab, each part folded to three. */
 @media (max-width:1100px){
-  .home-cols{grid-template-columns:minmax(0, 1fr); gap:24px;}
-  .home-side{position:static; order:-1;}
+  .home-cols{grid-template-columns:minmax(0, 1fr); gap:32px;}
+  .home-side{position:static;}
 }
 @media (max-width:700px){
 }
 
-/* The columns beside Conversations are margin notes: small, quiet, no rules or boxes, three items at most. */
+/* The column beside the letter is margin notes: small, quiet, no rules or boxes, three items at most. */
 .home-side{gap:14px; font-size:12.5px; line-height:1.45;}
 /* A hairline between its parts, halfway between them: on every shown part after the first shown one. */
 .home-side > .home-box:not([hidden]) ~ .home-box:not([hidden]){border-top:1px solid var(--line); padding-top:14px;}
@@ -158,25 +158,33 @@ body.is-home-feed{font-family:var(--sans); font-size:16px; line-height:1.55;}
 .home-side .home-steps .home-box-sub{font-size:11px;}
 
 /* Talking to BOLD (a preview, hidden): a line under the letter that opens into the box. */
-/* Talking to BOLD (index.js talking()): once BOLD answers, Conversations folds away and the side column (their
-   week, projects…) comes up beside the letter, its top level with the letter's (--talk-top, set from the page). */
-.home-feed.is-talking .home-talk{display:none;}
 /* Under the conversation: where it's kept (a private conversation of theirs). */
-.home-ask .ha-saved{margin:12px 0 0; font-size:12px; color:var(--muted);}
+.home-ask .ha-saved{margin:8px 0 0; font-size:12px; color:var(--muted);}
 .home-ask .ha-saved[hidden]{display:none;}
 .home-ask .ha-saved a{color:var(--muted);}
 .home-ask .ha-saved a:hover{color:var(--link);}
-/* Under the conversation, while Conversations is folded away: the way back to them. */
-.home-ask .ha-show-talk{margin:14px 0 0; font-size:12px;}
-.home-ask .ha-show-talk[hidden]{display:none;}
-.home-ask .ha-show-talk .btn-text{font-size:12px; color:var(--muted);}
-.home-ask .ha-show-talk .btn-text:hover{color:var(--link);}
-@media (min-width:1101px){
-  .home-feed.is-talking{display:grid; grid-template-columns:minmax(0, 1fr) 230px; column-gap:48px; align-items:start;}
-  .home-feed.is-talking .home-cols{display:contents;}
-  .home-feed.is-talking .home-top{grid-column:1; grid-row:1; margin-bottom:0; min-width:0;}
-  .home-feed.is-talking .home-side{grid-column:2; grid-row:1; margin-top:var(--talk-top, 0);}
-}
 .home-ask{max-width:var(--article-max, 40em); margin:18px 0 0; font-family:var(--sans);}
 .home-ask[hidden]{display:none;}
 /* The exchange's messages (.ha-log, .ha-msg): bold.css, shared with problem-new.html. */
+
+/* Talking to Sofya: starters under the box (the first two, about BOLD.OS itself, a touch apart), and while
+   reporting, the way to the card and the card itself. */
+.ha-starters{list-style:none; margin:0 0 14px; padding:0; display:flex; flex-wrap:wrap; gap:8px;}
+.ha-starters[hidden]{display:none;}
+.ha-starter{font:inherit; font-size:12.5px; line-height:1.3; color:var(--ink-soft); background:var(--surface); border:1px solid var(--line); border-radius:999px; padding:5px 12px; cursor:pointer; text-align:left;}
+.ha-starter:hover, .ha-starter:focus-visible{border-color:var(--accent); color:var(--link); outline:none;}
+.ha-starter.is-os{border-style:dashed;}
+.ha-starters li:nth-child(2){margin-right:8px;}
+.home-ask .ha-new{font-size:13px; color:var(--muted);}
+/* Thinking: how much Sofya thinks first, quiet, at the left of the actions. */
+.ha-effort{margin-right:auto; display:flex; align-items:center; gap:6px; font-size:12px; color:var(--muted);}
+.ha-effort select{font:inherit; font-size:12px; color:var(--ink-soft); background:transparent; border:1px solid var(--line); border-radius:4px; padding:2px 4px;}
+.ha-report{margin:12px 0 0; font-size:12.5px; color:var(--muted); display:flex; flex-wrap:wrap; align-items:center; gap:6px 12px;}
+.ha-report[hidden]{display:none;}
+.ha-card{margin:14px 0 0; padding:14px 16px; border:1px solid var(--line); border-radius:6px; background:var(--surface); display:flex; flex-direction:column; gap:10px;}
+.ha-card[hidden]{display:none;}
+.ha-card-head{margin:0; font-size:11px; font-weight:600; letter-spacing:.12em; text-transform:uppercase; color:var(--muted);}
+.ha-card label{display:flex; flex-direction:column; gap:4px; font-size:12.5px; color:var(--muted);}
+.ha-card input, .ha-card textarea{font:inherit; font-size:14px; color:var(--ink); background:var(--paper); border:1px solid var(--line); border-radius:4px; padding:6px 8px; box-sizing:border-box; width:100%;}
+.ha-card textarea{font-family:var(--serif); font-size:15px; line-height:1.5; resize:vertical;}
+.ha-card .ha-actions{margin-top:0;}

@@ -85,12 +85,14 @@ module.exports = function({ key, post }){
     return { value: jsonOf(said(r.message)), model: r.model, steps, full: { think: String(r.message.reasoning_content || r.message.reasoning || ''), answer: String(r.message.content || '') } };
   }
   // An answer: the prompt, the conversation ([{ role, content }]), the reading tools, run as them by `run(name, args)`,
-  // at most `rounds` rounds. → its text.
-  async function chat(system, turns, tools, run, rounds){
+  // at most `rounds` rounds. → its text. `think`: false, no thinking first; 'low', 'medium' or 'high', that much of it
+  // (reasoning_effort); left out, the server's default (it thinks).
+  async function chat(system, turns, tools, run, rounds, think){
+    const how = think === false ? { chat_template_kwargs: { enable_thinking: false } } : typeof think === 'string' ? { reasoning_effort: think } : {};
     const messages = [{ role: 'system', content: system }].concat(turns);
     const fns = openAITools(tools);
     for (let i = 0; i < rounds; i++) {
-      const r = await complete({ max_tokens: 8000, messages, tools: fns.length ? fns : undefined });
+      const r = await complete(Object.assign({ max_tokens: 8000, messages, tools: fns.length ? fns : undefined }, how));
       const calls = (r.message.tool_calls || []).filter((c) => c && c.function && c.function.name);
       if (!calls.length) return said(r.message) || 'Nothing to say to that.';
       messages.push({ role: 'assistant', content: r.message.content || '', tool_calls: calls });
