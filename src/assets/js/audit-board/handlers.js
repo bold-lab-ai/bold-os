@@ -181,41 +181,6 @@
     });
   }
 
-  function onAddCard(e){
-    if (e && e.preventDefault) e.preventDefault();
-    if (!requireSignedIn()) return;
-    var title = document.getElementById('pTitle').value.trim();
-    var errorEl = document.getElementById('paperFormError');
-
-    if (!title){
-      errorEl.textContent = 'Please fill in the required fields above.';
-      errorEl.hidden = false;
-      return;
-    }
-    errorEl.hidden = true;
-
-    var now = Date.now();
-    var noteText = document.getElementById('pNote').value.trim();
-
-    var card = makeRegisteredCard(state.currentUser, {
-      title: title,
-      computeEstimate: document.getElementById('pCompute').value.trim(),
-      note: noteText
-    }, now);
-    var prev = state.cards;
-    var next = prev.concat([card]);
-    var boardId = state.currentBoardId;
-    saveBoard(boardId, { cards: next }, prev).then(function(ok){
-      if (!ok){ showToast(saveErrorMessage('Could not save the paper \u2014 try again.'), 'error'); return; }
-      if (state.currentBoardId !== boardId) return;
-      state.cards = next;
-      clearRegisterDraft(boardId);
-      closeModal();
-      renderBoard();
-      showToast('Registered for review.', 'ok');
-    });
-  }
-
   function onChangeStatus(cardId, newStatus){
     var boardId = state.currentBoardId;
     var board = getCurrentBoard();
@@ -428,6 +393,7 @@
         state.cards = cards;
         state.loadingCards = false;
         renderBoard();
+        openRegisteredPaper();
         resolve();
       }, function(err){
         logError('loadCurrentBoardCards', err);
@@ -498,9 +464,14 @@
       } catch (e){}
     }
 
+    BOLD.onAccess(function(){
+      if (state.view === 'venue') renderBoard();
+      if (document.getElementById('paperForm') && paperRegistrationReason()) closeModal();
+    });
     if (auth){
       BOLD.onUser(function(user){
         bootMark('auth resolved (' + (user ? 'signed in' : 'signed out') + ')');
+        if (document.getElementById('paperForm') && (!user || !state.currentUser || state.currentUser.email !== user.email)) closeModal();
         state.currentUser = user ? { email: user.email, name: user.displayName } : null;
         updateNewVenueButtonState();
         loadInitialData();

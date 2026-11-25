@@ -3,7 +3,7 @@
 // The Calendar as an iCalendar feed (RFC 5545), for subscribing to it from Google
 // Calendar, Apple Calendar or Outlook (calendarFeed and boldApi's /calendar/… in
 // functions/api.js). Pure: data in, text out.
-//   events:   [{ id, title, start, end (YYYY-MM-DD, inclusive), place, description, url }]
+//   events:   [{ id, title, start, end (YYYY-MM-DD, inclusive), time (HH:MM London, a one-day event's start), minutes, place, description, url }]
 //   meetings: [{ id, title, meeting { day, time, minutes, every, until }, start (YYYY-MM-DD:
 //              the series' first day), pausedAt (ms), moved (its dates moved: meeting-moves.js), description, url }]
 // Meetings repeat weekly in London time, as BOLD.OS makes them in Google Calendar; a
@@ -58,9 +58,12 @@ function local(iso, hm, addMinutes){
 function eventLines(e, stamp){
   if (!isoDay.test(e.start || '')) return [];
   const end = isoDay.test(e.end || '') && e.end >= e.start ? e.end : e.start;
-  return ['BEGIN:VEVENT', 'UID:event-' + e.id + '@bold-os', 'DTSTAMP:' + stamp,
-    'DTSTART;VALUE=DATE:' + day(e.start), 'DTEND;VALUE=DATE:' + day(nextDay(end)),
-    'SUMMARY:' + text(e.title)]
+  // A one-day event with a start time (a group meeting) is timed, in London time; the others last all day.
+  const timed = end === e.start && /^\d\d:\d\d$/.test(e.time || '');
+  return ['BEGIN:VEVENT', 'UID:event-' + e.id + '@bold-os', 'DTSTAMP:' + stamp]
+    .concat(timed ? ['DTSTART;TZID=' + TZ + ':' + local(e.start, e.time), 'DTEND;TZID=' + TZ + ':' + local(e.start, e.time, Number(e.minutes) || 60)]
+      : ['DTSTART;VALUE=DATE:' + day(e.start), 'DTEND;VALUE=DATE:' + day(nextDay(end))])
+    .concat(['SUMMARY:' + text(e.title)])
     .concat(e.place ? ['LOCATION:' + text(e.place)] : [])
     .concat(['DESCRIPTION:' + text([e.description, e.url].filter(Boolean).join('\n\n'))])
     .concat(e.url ? ['URL:' + e.url] : [])

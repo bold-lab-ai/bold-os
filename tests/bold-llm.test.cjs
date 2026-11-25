@@ -9,11 +9,11 @@ test('BOLD LLM is Claude Sonnet 5.5 until Sofya runs', () => {
 });
 
 test('a letter needs both lengths, within their limits', () => {
-  assert.deepStrictEqual(HL.checkLetter({ short: ' Hi. ', long: 'Hello.' }), { letter: { short: 'Hi.', long: 'Hello.' } });
-  assert.match(HL.checkLetter({ short: '', long: 'x' }).error, /short/);
+  assert.deepStrictEqual(HL.checkLetter({ long: ' Hello. ' }), { letter: { long: 'Hello.' } });
+  assert.deepStrictEqual(HL.checkLetter({ short: 'Hi.', long: 'Hello.' }), { letter: { long: 'Hello.' } }, 'a short one from an old prompt is left out');
   assert.match(HL.checkLetter({ short: 'x' }).error, /long/);
-  assert.match(HL.checkLetter({ short: 'x'.repeat(HL.SHORT_MAX + 1), long: 'x' }).error, /too long/);
-  assert.match(HL.checkLetter(null).error, /short/);
+  assert.match(HL.checkLetter({ long: 'x'.repeat(HL.LONG_MAX + 1) }).error, /too long/);
+  assert.match(HL.checkLetter(null).error, /long/);
 });
 
 test('a letter is current once written since the letters were last due (04:00 London), not just in the last day', () => {

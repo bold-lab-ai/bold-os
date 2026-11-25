@@ -286,3 +286,16 @@ a.btn-box{text-decoration:none; display:inline-block;}
 .st-rung.is-unused{color:var(--muted);}
 .st-rung.is-unused strong{color:var(--muted);}
 .st-rung.is-unused .st-rung-n{opacity:.5;}
+
+/* Delete my profile: at the foot of the details, quiet until hovered. */
+.profile-delete{margin:28px 0 0; padding-top:14px; border-top:1px solid var(--line);}
+.profile-delete[hidden]{display:none;}
+.profile-delete-btn{font-size:13px; color:var(--muted);}
+.profile-delete-btn:not(:disabled):hover{color:var(--danger-text);}
+
+/* Agents: how to connect, before a token is made. */
+.api-steps{margin:10px 0 6px; padding-left:20px; font-size:14px; line-height:1.5; color:var(--ink-soft);}
+.api-steps li{margin:3px 0;}
+/* Code in the Agents tab's notes: as large as the text around it, not the browser's small monospace. */
+.api-addr{margin:12px 0 6px; font-size:14px; color:var(--ink-soft);}
+.api-addr code, .api-fresh .acct-note code, .api-steps code{font-size:13.5px; padding:1px 4px; border-radius:3px; background:color-mix(in srgb, var(--ink) 6%, transparent);}

@@ -31,8 +31,7 @@ async function page(seriesHidden, admin) {
     firestore: () => ({ collection: () => ({ get: async () => ({ docs: [] }) }) }),
     app: () => ({ functions: () => ({ httpsCallable: name => async data => {
       calls.push({ name, data });
-      if (name === 'groupRotaAccess') return { data: access };
-      if (name === 'groupRotaSnapshot') return { data: { meetings: [], slots: [], members: [], seasons: [] } };
+      if (name === 'groupRotaPage') return { data: { access, snapshot: { meetings: [], slots: [], members: [], seasons: [] } } };
       if (name === 'eventSeries') return { data: { series: { hidden: false } } };
       throw Error('Unexpected callable: ' + name);
     } }) }),
@@ -74,8 +73,7 @@ test('an organiser can hide a released series with the same confirmation', async
   } : null } });
   await new Promise(resolve => setImmediate(resolve));
   assert.equal(p.confirms[0].always, true);
-  assert.ok(p.confirms[0].warn, 'hiding warns before going ahead');
-  assert.ok(p.confirms[0].effects.some(e => /won’t release its meetings/.test(e)), 'says re-releasing leaves the meetings hidden');
+  assert.ok(p.confirms[0].effects.some(e => /every meeting/.test(e)), 'says every meeting follows the series');
   assert.deepEqual(JSON.parse(JSON.stringify(p.calls.find(c => c.name === 'eventSeries').data)),
     { action: 'hide', id: 'group-meetings-afb58e' });
 });

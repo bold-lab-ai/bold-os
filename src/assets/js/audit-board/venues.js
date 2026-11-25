@@ -158,6 +158,7 @@
   }
 
   window.addEventListener('popstate', function(ev){
+    if (document.getElementById('paperForm')) closeModal();
     var s = ev.state;
     state.view = s ? s.view : 'list';
     state.currentBoardId = s ? s.boardId : null;

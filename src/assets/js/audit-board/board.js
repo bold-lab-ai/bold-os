@@ -767,6 +767,7 @@
       html += '<div class="author-cap-alert">You’re an author on ' + capWarning.count +
         ' papers for this venue — over its ' + capWarning.max + '-per-author limit.</div>';
     }
+    var registrationReason = paperRegistrationReason();
     var venueAdminOnly = state.canApproveVenues ? '' : ' disabled title="Only PIs and admins can edit or delete a venue"';
     html += '<div class="board-meta" style="display:block;">' +
       '<a href="#" id="backToList" style="font-size:13.5px;color:var(--muted);text-decoration:none;">&larr; All venues</a>' +
@@ -778,7 +779,7 @@
         '<div style="display:flex;align-items:center;gap:16px;">' +
           (!current || current.status !== 'pending'
             ? '<button class="btn btn-primary" id="submitPaperBtn" type="button"' +
-                (!state.currentUser ? ' disabled title="Sign in with Slack to register a paper"' : '') +
+                (registrationReason ? ' disabled title="' + escapeHtml(registrationReason) + '"' : '') +
                 '>+ Register paper</button>'
             : '') +
           (current && current.status === 'pending' && state.canApproveVenues

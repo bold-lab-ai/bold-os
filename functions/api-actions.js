@@ -8,26 +8,12 @@
 // So every check, Slack message and version-history entry is the page's own.
 // Not here: the Internal Review Board (it saves whole boards at once), files
 // (uploading slides) and the site's settings.
-const fs = require('fs');
-const path = require('path');
-const vm = require('vm');
+const makeRegisteredCard = require('./make-registered-card');
+const research = require('./research-map');
 
 // The web app's public key (src/_data/site.js): it names the project, grants nothing.
 const WEB_API_KEY = 'AIzaSyDNKEMYuV0gehbKoM2acafzVbBQL489yDY';
 const FIRESTORE = 'https://firestore.googleapis.com/v1/projects/bold-d7ff2/databases/(default)/documents';
-
-// card-model.js, the page's card, copied next to this file on deploy (firebase.json
-// predeploy) or read from the site's source when run locally.
-let cardModel = null;
-function makeRegisteredCard(user, fields){
-  if (!cardModel) {
-    const here = path.join(__dirname, 'card-model.js'), src = path.join(__dirname, '..', 'src', 'assets', 'js', 'card-model.js');
-    const ctx = {};
-    vm.runInNewContext(fs.readFileSync(fs.existsSync(here) ? here : src, 'utf8'), ctx);
-    cardModel = ctx;
-  }
-  return cardModel.makeRegisteredCard(user, fields);
-}
 
 // JSON → Firestore REST values, and back.
 function toValue(v){
@@ -181,7 +167,7 @@ module.exports = function(ctx){
     if (a.branch !== undefined && !/^[A-Za-z0-9]{1,40}$/.test(String(a.branch))) throw httpError(400, 'branch is a proposed change’s id (from read_page or the branch’s address, proposal.html?b=<id>).');
     const r = await act(who, 'branchCommit', Object.assign({ target, change }, a.branch ? { on: String(a.branch) } : {}));
     return { branch: r.id, number: r.num ? '#' + r.num : '', url: url('proposal.html?b=' + encodeURIComponent(r.id)),
-      note: a.branch ? 'Committed to it.' : 'Opened a proposed change with it, on its own page: commit more to it with branch "' + r.id + '"; a PI or admin who hasn’t committed to it accepts or declines it.' };
+      note: a.branch ? 'Committed to it.' : 'Opened a proposed change with it, on its own page: commit more to it with branch "' + r.id + '"; a PI or admin who hasn’t committed to it accepts or declines it; with no decision it’s accepted by itself 7 days after its last commit.' };
   }
   // Withdraw, accept or decline a proposed change (a branch), by its id (proposal_id).
   async function decideBranchAs(who, a){
@@ -414,14 +400,27 @@ module.exports = function(ctx){
       const more = a.gpu_hours !== undefined && a.gpu_hours !== null && a.gpu_hours !== '';
       const hours = more ? Number(String(a.gpu_hours).replace(/[,\s]/g, '')) : 0;
       if (more && (!isFinite(hours) || hours <= 0)) throw httpError(400, 'Give the GPU hours it needs (gpu_hours), or leave it out for the standard allowance.');
-      const ch = await act(who, 'projectChannel', { name: need(a.slack_channel, 'its Slack channel (proj-…)'), mode: 'check' });
+      // Its level and what it's part of (#248): required, as on the form. A stepping stone explores its
+      // open problem (#41) and has a verifier plan; a northstar or moonshot has neither.
+      const links = research.normalizeLinks({ level: a.level, parents: a.parents, problems: a.problems, connection: a.connection });
+      const stone = links.level === 'project';
+      const problem = stone ? need(a.problem_id, 'an open Problem Bank ID') : '';
+      if (stone && links.problems.indexOf(problem) < 0) links.problems.unshift(problem);
+      const issue = research.linkIssue(links);
+      if (issue) throw httpError(400, issue + ' (parents: their project ids, from list_projects)');
+      if (more && !stone) throw httpError(400, 'Only a stepping stone asks for more compute.');
+      // A stepping stone needs its channel; a northstar or moonshot may have one.
+      const ch = stone || a.slack_channel ? await act(who, 'projectChannel', { name: need(a.slack_channel, 'its Slack channel (proj-…)'), mode: 'check' }) : null;
       const card = makeRegisteredCard(user, { title, abstractText: abstract, keywords: (a.keywords || []).map(String), slackChannel: '' });
-      card.setUpChannel = '#' + ch.name;
+      if (stone) { card.openProblemId = problem; if (a.verification_plan !== undefined) card.verificationPlan = a.verification_plan; }
+      Object.assign(card, stone ? {} : { level: links.level }, { parents: links.parents, problems: links.problems, connection: links.connection });
+      card.setUpChannel = ch ? '#' + ch.name : '';
+      if (!stone) { card.setUpDocs = false; card.setUpSkipped = ['docs', 'repo', 'meeting'].concat(ch ? [] : ['channel']); }
       card.proposal = Object.assign({ status: 'proposed', more, at: Date.now(), by: who.email }, more ? { gpuHours: Math.round(hours) } : {});
       if (a.meeting) card.setUpMeeting = a.meeting;
       const id = card.id; delete card.id;
-      await asUser(who, 'create', 'projects', card, id);
-      return { id, url: url('project.html#id=' + encodeURIComponent(id)), slack_channel: '#' + ch.name, note: 'Proposed. BOLD-internal and above: within the standard allowance it\u2019s approved at once; asking for more, PIs and admins have 7 days, then it\u2019s approved by itself. Below BOLD-internal: a PI or admin approves it. Then its channel, meeting, slides and notes are set up.' };
+      await act(who, 'benchmarkRegistry', {action:'create_project_proposal', project_id:id, card});
+      return { id, url: url('project.html#id=' + encodeURIComponent(id)), slack_channel: ch ? '#' + ch.name : '', note: 'Proposed. BOLD-internal and above: within the standard allowance it\u2019s approved at once; asking for more, PIs and admins have 7 days, then it\u2019s approved by itself. Below BOLD-internal: a PI or admin approves it. Then its channel, meeting, slides and notes are set up.' };
     }
     const c = await cardOf(a.id);
     const ws = { id: c.id, board: c.boardId };
@@ -433,6 +432,15 @@ module.exports = function(ctx){
         Object.keys(LINKS).forEach((k) => { if (a[k] !== undefined) patch[LINKS[k]] = http(String(a[k]).trim()); });
         if (patch.title === '') throw httpError(400, 'The title can’t be blank.');
         if (a.keywords !== undefined) patch.keywords = (a.keywords || []).map(String);
+        // Its level and what it's part of (#248): the whole set, checked as on the page.
+        if (a.level !== undefined || a.parents !== undefined || a.problems !== undefined || a.connection !== undefined) {
+          const d = c.data, links = research.normalizeLinks({ level: a.level !== undefined ? a.level : research.levelOf(d), parents: a.parents !== undefined ? a.parents : d.parents,
+            problems: a.problems !== undefined ? a.problems : d.problems, connection: a.connection !== undefined ? a.connection : d.connection });
+          const issue = research.linkIssue(links);
+          if (issue) throw httpError(400, issue);
+          if (links.parents.indexOf(c.data.projectId || c.id) >= 0) throw httpError(400, 'It can’t be part of itself.');
+          Object.assign(patch, { level: links.level, parents: links.parents, problems: links.problems, connection: links.connection });
+        }
         if (a.slack_channel !== undefined) {
           // As on the page: a new name renames the old channel in Slack (or links one that exists).
           const r = await act(who, 'projectChannel', { name: a.slack_channel, mode: 'rename', from: c.data.slackChannel || '', project: ws });
@@ -457,7 +465,7 @@ module.exports = function(ctx){
         if (!b) throw httpError(404, 'No venue “' + v + '”. Venues: ' + boards.filter((x) => (x.status || 'approved') !== 'pending').map((x) => x.label).join(', '));
         const d = c.data;
         const next = makeRegisteredCard(user, { title: d.title, abstractText: d.abstractText, keywords: d.keywords, slackChannel: d.slackChannel, computeEstimate: d.computeEstimate });
-        ['authors', 'authorEmails', 'overleafLink', 'arxivLink', 'pitchLink'].forEach((k) => { if (d[k]) next[k] = d[k]; });
+        ['authors', 'authorEmails', 'overleafLink', 'arxivLink', 'pitchLink', 'level', 'parents', 'problems', 'connection'].forEach((k) => { if (d[k]) next[k] = d[k]; });
         const r = await act(who, 'projectWorkspace', Object.assign({ action: 'submit', venue: b._id, card: next }, ws));
         return { ok: true, url: url('project.html#id=' + encodeURIComponent(r.cardId) + '&board=' + encodeURIComponent(r.boardId)) };
       }
@@ -722,8 +730,7 @@ module.exports = function(ctx){
       outcome: ['Outcome', ['slotId', 'revision', 'outcome']],
       offer_short: ['OfferShort', ['slotId', 'recipientSlackId']], cancel_offer: ['CancelOffer', ['id']],
       save_season: ['SaveSeason', ['id', 'label', 'regularTime', 'location', 'rotationDescription', 'publicationState']],
-      save_meeting: ['SaveMeeting', ['date', 'seasonId', 'format', 'startTime', 'durationMinutes', 'location']],
-      set_meeting_visibility: ['SetMeetingVisibility', ['date', 'hidden']],
+      save_meeting: ['SaveMeeting', ['date', 'seasonId', 'format', 'location']],
       create_slot: ['CreateSlot', ['date', 'slotNumber']],
       delete_slot: ['DeleteSlot', ['slotId']], delete_meeting: ['DeleteMeeting', ['date']],
     };
@@ -752,11 +759,14 @@ module.exports = function(ctx){
     if (!series || (!manager && (series.hidden || !(await seesEvent(who.email, series))))) return { url: url('group-meetings.html'), seasons: [], meetings: [], slots: [] };
     const published = new Set(seasons.filter((s) => manager || s.publicationState === 'published').map((s) => s._id));
     const visible = [];
-    for (const m of meetings) if (published.has(m.seasonId) && (!a.date || m.date === a.date) && (manager || !m.hidden && await seesEvent(who.email, m))) visible.push(m);
+    // Seeing the series is seeing its meetings.
+    for (const m of meetings) if (published.has(m.seasonId) && (!a.date || m.date === a.date)) visible.push(m);
     const dates = new Set(visible.map((m) => m.date));
     const names = Object.fromEntries(people.map((p) => [p.slackId || p._id, p.name || '']));
     return { url: url('group-meetings.html'), seasons: seasons.filter((s) => published.has(s._id)).map((s) => ({ id: s._id, label: s.label, regular_time: s.regularTime, location: s.location })),
-      meetings: visible.map((m) => ({ date: m.date, format: m.format, start_time: m.startTime, location: m.location, status: m.status, skip_reason: m.skipReason || '', url: url('group-meetings.html?date=' + m.date) })),
+      meetings: visible.map((m) => { const mv = (series.meetingMoved || {})[m.date], mt = series.meeting || {}, moved = mv && !mv.cancelled ? mv : null;
+        return { date: moved ? moved.date : m.date, ...(moved ? { moved_from: m.date } : {}), format: m.format, start_time: moved ? moved.time : mt.time || '', location: m.location || '',
+          status: (mv && mv.cancelled) || m.status === 'skipped' ? 'skipped' : m.status || 'scheduled', skip_reason: m.skipReason || '', url: url('group-meetings.html?date=' + m.date) }; }),
       slots: slots.filter((s) => s.seriesId === series._id && dates.has(s.meetingId)).map((s) => ({ id: s._id, date: s.date, slot: s.slotNumber, format: s.format,
         presenter: names[s.presenterSlackId] || s.legacyName || 'Open slot', unresolved: !!(s.presenterSlackId && !names[s.presenterSlackId]) || !!(s.legacyName && !s.presenterSlackId),
         topic: s.topic || '', project_id: s.projectId || '', slides: s.slidesUrl || '', outcome: s.outcome || 'unconfirmed', revision: s.revision || 0, pending_action_id: s.pendingActionId || '',
@@ -768,9 +778,18 @@ module.exports = function(ctx){
   const READ = [
     { name: 'list_group_rota', description: 'Published group meeting dates and slots, including presenter, topic, slides, outcome, project link and stable slot revision. A date narrows the result.',
       inputSchema: S({ date: str('Optional YYYY-MM-DD meeting date.') }, []), run: listGroupRota },
-    { name: 'list_benchmarks', description: 'Read the Problem Bank: its problems, with their stage and latest evaluator release. These use Projects access. Returns no private account identifiers.',
-      inputSchema: S({cursor: str('Next page cursor, if returned.')}, []),
-      run: (who,a) => act(who,'benchmarkRegistry',{action:'list',cursor:a.cursor}) },
+    { name: 'list_benchmarks', description: 'Read the Problem Bank. The default lists problems and latest verifiers. For a project proposal, problem_choices lists active research questions and releases lists reusable pinned verifiers.',
+      inputSchema: S({view:ACTIONS(['problems','releases','problem_choices']),cursor:{description:'Pass back the cursor returned for this view. For GET requests, encode the release cursor as JSON.'}}, []),
+      run: (who,a) => {
+        const views = {problems:'list', releases:'benchmark_catalogue', problem_choices:'open_choices'};
+        const view = a.view || 'problems';
+        if (!Object.hasOwn(views,view)) throw httpError(400,'Choose problems, releases, or problem_choices.');
+        let cursor = a.cursor;
+        if (view === 'releases' && typeof cursor === 'string') {
+          try { cursor = JSON.parse(cursor); } catch { throw httpError(400,'Invalid release page cursor.'); }
+        }
+        return act(who,'benchmarkRegistry',{action:views[view],cursor});
+      } },
 
     { name: 'read_page', description: 'The BOLDiquette or a how-to guide in full, with each part’s id (for commenting and proposing changes) and the open proposed changes.',
       inputSchema: S({ page: str('"boldiquette", or a guide’s slug (in its url: guide.html?guide=<slug>).') }, ['page']), run: readPage },
@@ -780,29 +799,35 @@ module.exports = function(ctx){
   const WRITE = [
     { name: 'group_rota', run: groupRota,
       description: 'The group meeting rota: BOLD-internal members and above are included automatically; register resumes participation after leaving. Presenters can edit their assigned talk, claim an open short or long slot, decline a slot with a private reason, or request a confirmed short-slot swap. Series organisers, PIs and admins can set outcomes, offer short slots (and withdraw an offer), and manage seasons and meetings. Swap and offer actions send a Slack message. All actions use the same callable and permissions as the rota page.',
-      inputSchema: S({ action: ACTIONS(['register', 'leave', 'edit', 'claim', 'recuse', 'request_swap', 'cancel_swap', 'retry_swap', 'outcome', 'offer_short', 'cancel_offer', 'save_season', 'save_meeting', 'set_meeting_visibility', 'create_slot', 'delete_slot', 'delete_meeting']),
+      inputSchema: S({ action: ACTIONS(['register', 'leave', 'edit', 'claim', 'recuse', 'request_swap', 'cancel_swap', 'retry_swap', 'outcome', 'offer_short', 'cancel_offer', 'save_season', 'save_meeting', 'create_slot', 'delete_slot', 'delete_meeting']),
         slotId: str('Stable slot id, from the rota.'), otherSlotId: str('Swap target slot id.'), id: str('Swap id, offer id (the slot’s pending action) or season id, depending on action.'),
         revision: { type: 'integer', description: 'The slot revision shown by the rota; stale edits fail.' },
         topic: str('Talk topic, up to 140 characters.'), projectId: str('Optional linked project id.'), slidesUrl: str('Optional HTTPS slides link.'), auditNote: str('Administrator correction note.'),
         reason: str('Private recusal reason.'),
         outcome: ACTIONS(['unconfirmed', 'presented', 'did-not-present']), recipientSlackId: str('Verified recipient Slack id.'),
-        date: str('Meeting date, YYYY-MM-DD.'), hidden: { type: 'boolean', description: 'Hide or release a meeting edition.' }, slotNumber: { type: 'integer' }, seasonId: str('Season id.'),
-        format: ACTIONS(['short', 'long']), startTime: str('HH:MM London time.'), durationMinutes: { type: 'integer' },
+        date: str('Meeting date, YYYY-MM-DD.'), slotNumber: { type: 'integer' }, seasonId: str('Season id.'),
+        format: ACTIONS(['short', 'long']),
         location: str('Meeting location.'), label: str('Season label.'), regularTime: str('Season regular time.'),
         rotationDescription: str('Season rotation description.'), publicationState: ACTIONS(['draft', 'published']) }) },
-    { name: 'register_benchmark', description: 'Register an implemented evaluator from AutoKaggle Lite in the Problem Bank, linked to an existing project and its Lite session. The server derives its stage from the evidence, shown as reported by AutoKaggle. Approval is a PI’s or admin’s, on the page; a release is written once. Retries reuse the same registration key. This saves lab records; it sends no messages or invitations.',
+    { name:'create_open_problem', description:'Save a scientific problem. Select its definer from the lab roster. Projects and collaborators are optional. Ask about verifier reminders unless the problem builds a benchmark.',
+      inputSchema:S({title:str('Problem title'),owner_id:str('Slack ID of the problem definer'),significance:str('Why it matters'),
+        difficulties:str('What makes it difficult'),existing_solutions:str('Current frontier'),collaborators:str('Collaborator names'),
+        projects:{type:'array',items:{type:'object',properties:{id:str('Project ID'),board:str('Board ID if applicable')},required:['id']}},
+        builds_benchmark:{type:'boolean',description:'This problem builds a benchmark and skips the verifier step.'},
+        reminders:{type:'boolean',description:'Required unless this problem builds a benchmark. Choose whether to receive verifier reminders.'},request_id:str('Stable request UUID')},['title','owner_id','significance','difficulties','existing_solutions','request_id']),
+      run:(who,a)=>act(who,'benchmarkRegistry',{...a,action:'create'}) },
+    { name: 'register_benchmark', description: 'Register an implemented evaluator from AutoKaggle Lite in the Problem Bank, linked to its Lite session. A project is optional. The server derives its stage from the evidence, shown as reported by AutoKaggle. Approval is a PI’s or admin’s, on the page; a release is written once. Retries reuse the same registration key. This saves lab records; it sends no messages or invitations.',
       inputSchema: S({registration:{type:'object',description:'The bold.autokaggle.registration.v1 record from the validated release.'}},['registration']),
       run: (who,a) => act(who,'benchmarkRegistry',{action:'register',registration:a.registration}) },
-    { name: 'edit_problem', description: 'Update a Problem Bank note or archive/restore its record, as on its page. Scientific definitions and benchmark evidence are immutable here; change them through AutoKaggle and register a new tested release.',
-      inputSchema: S({project_id:str('Required BOLD OS project ID'),project_board:str('Optional board ID'),details:{type:'object'},definition:{type:'object',description:'Title, objective and task_kind, for an open problem only.'},problem_id:str('Problem Bank ID'),notes:str('Notes, at most 8000 characters.'),archived:{type:'boolean'}},['problem_id','project_id','notes','archived']),
-      run: (who,a) => act(who,'benchmarkRegistry',{action:'update',problem_id:a.problem_id,project_id:a.project_id,project_board:a.project_board,details:a.details,definition:a.definition,notes:a.notes,archived:a.archived}) },
-
+    { name:'edit_problem',description:'Edit a field of a problem or archive it. A verifier contract belongs to its released version.',
+      inputSchema:S({problem_id:str('Problem Bank ID'),changes:{type:'object',description:'Only fields to change: title, owner_id, significance, difficulties, existing_solutions, projects, collaborators, archived, builds_benchmark.'}},['problem_id','changes']),
+      run:(who,a)=>act(who,'benchmarkRegistry',{...a,action:'update'}) },
     { name: 'comments', run: comments,
       description: 'Comment on the BOLDiquette or a guide, as on the page: add (on words quoted from a part), reply, on_proposal (discuss a proposed change: its conversation, started or added to), edit or delete your own, resolve, or to_conversation: make a thread a conversation (copied to Conversations with its replies, each by whoever wrote it; it goes on there and takes no more replies here: everyone who sees Conversations is told, so ask your person first). People tagged or replied to get Slack messages.',
       inputSchema: S({ action: ACTIONS(['add', 'reply', 'on_proposal', 'edit', 'resolve', 'delete', 'to_conversation']), page: str('"boldiquette" or a guide’s slug.'), part_id: str('add: the part (read_page).'),
         quote: str('add: words from the part, exactly as written.'), text: str('The comment (Markdown, @Name to tag).'), comment_id: str('reply, edit, resolve, delete, to_conversation.'), proposal_id: str('on_proposal.') }, ['action', 'page']) },
     { name: 'proposals', run: proposals,
-      description: 'Propose a change to the BOLDiquette, a guide, a skill or a tool: this is how BOLD.OS, and the MCP with it, improves itself. Every change is a commit on a proposed change (a branch of the site, with its own page, as a pull request): propose opens one with it, or, given branch, adds it to that open one (anyone may commit to any), so one proposed change can change several pages together. A PI or admin who hasn’t committed to it accepts it, all its pages at once. Actions: propose (with a note on why), withdraw (whoever opened it, or a PI or admin), or, for PIs and admins, accept or decline (proposal_id: its id). ' +
+      description: 'Propose a change to the BOLDiquette, a guide, a skill or a tool: this is how BOLD.OS, and the MCP with it, improves itself. Every change is a commit on a proposed change (a branch of the site, with its own page, as a pull request): propose opens one with it, or, given branch, adds it to that open one (anyone may commit to any), so one proposed change can change several pages together. A PI or admin who hasn’t committed to it accepts it, all its pages at once; with no decision for 7 days after its last commit, it’s accepted by itself. Actions: propose (with a note on why), withdraw (whoever opened it, or a PI or admin), or, for PIs and admins, accept or decline (proposal_id: its id). ' +
         'For the BOLDiquette or a guide: kind add, edit or remove a part (read_page). For a skill (page "skill:<name>", get_skill): its new title, description or body (SKILL.md’s instructions), and its files (set_files, remove_files, or all of them in files); a new name proposes a new skill. ' +
         'For a tool (page "tool:<name>", list_tools): its title, description, acting, input and code; a new name proposes a new tool; remove: true proposes removing it.',
       inputSchema: S({ action: ACTIONS(['propose', 'withdraw', 'accept', 'decline']), page: str('"boldiquette", a guide’s slug, "skill:<name>" or "tool:<name>".'), kind: ACTIONS(['add', 'edit', 'remove']),
@@ -817,12 +842,16 @@ module.exports = function(ctx){
         remove: { type: 'boolean', description: 'A tool: propose removing it.' },
         note: str('propose: what you changed and why.'), proposal_id: str('withdraw, accept, decline: the proposed change’s id.') }, ['action', 'page']) },
     { name: 'projects', run: projects,
-      description: 'Projects, as on the Projects page and a project’s page: propose a new one (register: with its Slack channel, and gpu_hours only if it needs more than the standard compute allowance; once approved (at once for BOLD-internal and above within the allowance), the channel, created if new, its meeting, slides and notes are made), update its fields (a new Slack channel name renames the old channel), remove it, join or leave it, mark it ongoing (start: being worked on) or back to approved, not started (plan), mark it complete or reopen it, set, remove, pause or resume its weekly meeting, or submit it to a venue on the board.',
-      inputSchema: S({ action: ACTIONS(['register', 'update', 'remove', 'join', 'leave', 'start', 'plan', 'complete', 'reopen', 'set_meeting', 'remove_meeting', 'pause_meeting', 'resume_meeting', 'submit_to_venue']),
+      description: 'Projects, as on the Projects page and a project’s page; each is a northstar, a moonshot or a stepping stone (level: project), part of what’s above it (parents, required: a moonshot of northstars, a stepping stone of moonshots or of problems it explores). Propose a new one (register: with its Slack channel, and gpu_hours only if it needs more than the standard compute allowance; once approved (at once for BOLD-internal and above within the allowance), the channel, created if new, its meeting, slides and notes are made), update its fields (a new Slack channel name renames the old channel), remove it, join or leave it, mark it ongoing (start: being worked on) or back to approved, not started (plan), mark it complete or reopen it, set, remove, pause or resume its weekly meeting, or submit it to a venue on the board.',
+      inputSchema: S({ problem_id:str('Required to register a stepping stone. Choose an active problem from list_benchmarks(view=problem_choices).'),
+        verification_plan:{type:'object',description:'A stepping stone\u2019s. Link releases from list_benchmarks(view=releases), explain why and when you will add a verifier, or choose benchmark if the project builds one. Benchmark-building problems automatically use benchmark mode.',properties:{mode:ACTIONS(['linked','deferred','benchmark']),releaseIds:{type:'array',items:{type:'string'}},reason:str('Required for deferral.'),expectedOnboarding:str('Required for deferral: expected date or time frame.')},required:['mode']}, action: ACTIONS(['register', 'update', 'remove', 'join', 'leave', 'start', 'plan', 'complete', 'reopen', 'set_meeting', 'remove_meeting', 'pause_meeting', 'resume_meeting', 'submit_to_venue']),
         id: str('The project id (list_projects), for all but register.'), title: str(''), abstract: str(''), keywords: { type: 'array', items: { type: 'string' } },
         slack_channel: str('register, update: "proj-…".'), gpu_hours: { type: 'number', description: 'register: only if it needs more than the standard compute allowance, the GPU hours it needs' }, overleaf: str('update'), arxiv: str('update'), pitch: str('update: the pitch deck link'), compute: str('update: the compute estimate'),
         meeting: { type: 'object', description: 'register, set_meeting: London time.', properties: { day: ACTIONS(['MO', 'TU', 'WE', 'TH', 'FR', 'SA', 'SU']), time: str('HH:MM'), minutes: { type: 'integer', enum: [30, 45, 60, 90, 120] }, every: { type: 'integer', enum: [1, 2, 3, 4] }, until: str('YYYY-MM-DD (optional)') } },
-        venue: str('submit_to_venue: the venue’s name, e.g. "ICLR 2027".') }) },
+        venue: str('submit_to_venue: the venue’s name, e.g. "ICLR 2027".'),
+        level: ACTIONS(['northstar', 'moonshot', 'project']), parents: { type: 'array', items: { type: 'string' }, description: 'register, update: what it’s part of, by project id: a moonshot’s northstars, a stepping stone’s moonshots (list_projects gives each one’s level).' },
+        problems: { type: 'array', items: { type: 'string' }, description: 'register, update: a stepping stone’s problems in the Problem Bank, by id, if it explores them (instead of, or as well as, moonshots).' },
+        connection: str('register, update: how it connects to what it’s part of.') }) },
     { name: 'work', run: work,
       description: 'A project’s board (its Board tab): list everything on it (its cards, its repositories’ issues and pull requests, and on BOLD OS’s everything on BOLD.OS waiting on someone that you can see: proposed changes and requests), each with its type (code, content, request), who it’s from and who’s on it, or add, update, move or remove a card, or read (comments) and add to (comment) a card’s conversation: a thread in Conversations, about the project (the first message starts it; whoever made the card, its assignees and whoever’s in it hear of a reply: tell your person first). A card can be in one of the board’s milestones (set in Board settings), whose progress the board shows, and have labels, several (e.g. Good first issue: something someone new can take on by themselves). Anyone who can edit projects adds a card; whoever made it and whom it’s assigned to change and move it, as do the project’s people, PIs and admins. Link the card to its pull request, issue or proposal so it moves along with it. Adding one posts it in the project’s Slack channel: tell your person that first, or pass post_in_channel: false. A comment sends whoever made the card, its assignees and whoever has commented a Slack message, and moving a card to done tells whoever raised it: tell your person first. Move the cards you work on as you go: doing when you start, review while it waits on someone, done once it’s live.',
       inputSchema: S({ post_in_channel: { type: 'boolean', description: 'add: post it in the project’s Slack channel (default true)' }, action: ACTIONS(['list', 'add', 'update', 'move', 'remove', 'comments', 'comment', 'to_conversation']), project_id: str('The project id (list_projects).'), card_id: str('update, move, remove, comments, comment, to_conversation (list gives it).'), text: str('comment: what you say (Markdown).'),

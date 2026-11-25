@@ -93,17 +93,15 @@ function directoryOf(projects, people, max, you){
   }
   return out;
 }
-const SHORT_MAX = 4000, LONG_MAX = 40000;
+const LONG_MAX = 40000;
 
-// A letter as the model writes it → { letter } or { error }.
+// A letter as the model writes it → { letter } or { error }. One letter, `long` (2026-11-24: the short one is gone;
+// one still written beside it, by a prompt from before, is left out).
 function checkLetter(a){
-  const short = typeof (a || {}).short === 'string' ? a.short.trim() : '';
   const long = typeof (a || {}).long === 'string' ? a.long.trim() : '';
-  if (!short) return { error: 'Give short: the short letter, as Markdown.' };
-  if (!long) return { error: 'Give long: the long letter, as Markdown.' };
-  if (short.length > SHORT_MAX) return { error: 'short is too long: at most ' + SHORT_MAX + ' characters.' };
+  if (!long) return { error: 'Give long: the letter, as Markdown.' };
   if (long.length > LONG_MAX) return { error: 'long is too long: at most ' + LONG_MAX + ' characters.' };
-  return { letter: { short, long } };
+  return { letter: { long } };
 }
 
 
@@ -203,4 +201,4 @@ function ladderOf(x){
 // Pure: the models above 'rules', in order (none: the rule-based letter for everyone).
 function modelsOf(ladder){ return ladder.slice(0, ladder.indexOf('rules') < 0 ? ladder.length : ladder.indexOf('rules')); }
 
-module.exports = { WRITERS, ladderOf, modelsOf, REFRESH, refreshHours, writesAt, lastDue, londonDate, letterOrder, sinceFor, agoText, directoryOf, ON_NOW, SHORT_MAX, LONG_MAX, checkLetter, isFresh, londonNow, inputsOf, factsOf, meetingOf };
+module.exports = { WRITERS, ladderOf, modelsOf, REFRESH, refreshHours, writesAt, lastDue, londonDate, letterOrder, sinceFor, agoText, directoryOf, ON_NOW, LONG_MAX, checkLetter, isFresh, londonNow, inputsOf, factsOf, meetingOf };

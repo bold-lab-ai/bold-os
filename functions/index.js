@@ -39,12 +39,15 @@ const { defineSecret } = require('firebase-functions/params');
 const accessLib = require('./access');
 // Three-way merges for proposals (#177): shared with the pages (assets/js/merge.js).
 const merge = require('./merge');
+const guideAnchors = require('./guide-anchors');
+const research = require('./research-map');
 const { setGlobalOptions } = require('firebase-functions/v2');
 const logger = require('firebase-functions/logger');
 const admin = require('firebase-admin');
 const crypto = require('crypto');
 const { createPhotoService } = require('./profile-photos');
 const { createServiceDesk } = require('./service-desk');
+const { isPastPaper, papersByProblem } = require('./past-paper');
 
 admin.initializeApp();
 const db = admin.firestore();
@@ -810,7 +813,10 @@ async function noteFor(emails, n){
     const base = { source: n.source || 'slack', feature: n.feature || '', text: p.text, href: n.href || p.href || '', about: n.about || '', at: Date.now(), read: false };
     // A meeting about to start (meetingReminders): its link, offered as Join until it ends.
     if (n.join) { base.join = n.join; base.endsAt = n.endsAt || 0; }
-    for (let i = 0; i < list.length; i += 400) {
+    if (n.noticeId && list.length === 1) {
+      try { await db.collection('notifications').doc(n.noticeId).create({ ...base, to: list[0] }); }
+      catch (err) { if (err.code === 6) return; throw err; }
+    } else for (let i = 0; i < list.length; i += 400) {
       const b = db.batch();
       list.slice(i, i + 400).forEach((to) => b.set(db.collection('notifications').doc(), Object.assign({ to }, base)));
       await b.commit();
@@ -1099,7 +1105,7 @@ async function slashBoard(channelName){
 // Whether they may add a board to the project (as on its page, and its people too).
 async function mayAddBoard(email, board){
   if ((board.ws.members || []).map((e) => String(e).toLowerCase()).indexOf(email) >= 0) return true;
-  const card = await cardRefFor(board.ws.cardId || board.id, board.ws.boardId || null).get();
+  const card = await readProjectCard(board.ws.cardId || board.id, board.ws.boardId || null);
   return card.exists ? !!(await canEditCard(email, card.data())) : !!(await isFullWrite(email));
 }
 // A board's milestones ([{ id, name, start, end }]).
@@ -1351,7 +1357,7 @@ async function handleMeetingCommand(token, body){
   const u = await (await fetch('https://slack.com/api/users.info?' + new URLSearchParams({ user: body.user_id }), { headers: { Authorization: 'Bearer ' + token } })).json().catch(() => null);
   const typed = slackMeeting.parseText(body.text, Date.now(), (u && u.ok && u.user && u.user.tz) || slackMeeting.TZ);
   const tz = (u && u.ok && u.user && u.user.tz) || slackMeeting.TZ;
-  const opened = await slackFetch(token, 'views.open', slackMeeting.formView({ triggerId: body.trigger_id, title: typed.title, start: typed.start, minutes: typed.minutes, tz,
+  const opened = await slackFetch(token, 'views.open', slackMeeting.formView({ triggerId: body.trigger_id, title: slackMeeting.defaultTitle(typed.title, name), start: typed.start, minutes: typed.minutes, tz,
     channelId: body.channel_id, channelName: shown, names: who.names, others: who.others, now: Date.now() }));
   if (!opened.ok) { logger.warn('Opening the meeting form failed', { error: opened.error, details: opened.response_metadata }); return say('Couldn’t open the form — try again.'); }
   return {};
@@ -1471,6 +1477,8 @@ const PILOTS = {
   'group-trial': 'A new group’s first week: the reminder, and its end',
   'group-eligible': 'Telling PIs someone meets the next group’s requirements',
   'project-setup': 'An ongoing project’s setup still missing (once)',
+  'problem-verifier': 'Remind problem submitters to add a verifier',
+  'verifier-session': 'Telling a member AutoKaggle Lite linked a session to their problem',
   'channel-join': 'BOLD OS joins new public channels',
   'conversation-sent': 'A thread sent to Conversations: a reply in it saying so',
   'conversation-moved': 'A reply in Slack to a thread moved to Conversations: a note, to them alone, to reply there',
@@ -1601,11 +1609,11 @@ async function pilotSlack(token, key, label, m){
   // Whoever turned the feature off gets neither; with requireDelivery, that's a refusal.
   const emails = [];
   for (const e of Array.from(new Set((m.emails || []).map((x) => String(x).toLowerCase())))) {
-    if (st.live || !m.suppressPilotInbox) await noteFor([e], { text: m.text, feature: key, source: 'slack' });
-    const way = await slackWayFor(e, key);
+    if (st.live || !m.suppressPilotInbox) await noteFor([e], { text: m.text, feature: key, source: 'slack', noticeId: m.noticeId });
+    const way = !st.live && m.suppressPilotInbox && m.respectOptOut ? 'all' : await slackWayFor(e, key);
     if (way === 'all' || (m.actionsRequired && way === 'pings')) emails.push(e);
     else if (way === 'pings') await queuePing(e);
-    else if (st.live && m.requireDelivery) throw refused('They have these Slack messages turned off');
+    else if (st.live && m.requireDelivery && !m.respectOptOut) throw refused('They have these Slack messages turned off');
   }
   m = Object.assign({}, m, { emails });
   if (!emails.length && !m.channel) return { pilot: !st.live, pinged: true };
@@ -1861,7 +1869,8 @@ exports.onBranchWritten = onDocumentWritten({ document: 'branches/{id}', secrets
     // Made from a proposed change of before branches (the migration): its people heard of it then. A draft: nobody yet.
     if (after.status !== 'open' || after.migrated) return;
     await sendEvent(token, { key: 'proposals', emails: await staff(), excludeEmail: author,
-      headline: '🔔 ' + tag + who + ' proposed ' + link + pagesText((after.pages || []).length) + '. It needs a PI or admin to accept or decline it.' });
+      headline: '🔔 ' + tag + who + ' proposed ' + link + pagesText((after.pages || []).length) + '. A PI or admin accepts or declines it; with no decision it’s accepted by itself on ' +
+        new Date(branchLib.dueAt(after)).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', timeZone: 'Europe/London' }) + '.' });
     return;
   }
   if (before.status === 'open' && after.status !== 'open') {
@@ -1934,7 +1943,7 @@ function newTags(before, after){
 // Where a tag is: { title, url } for a document's path, or null where tags tell
 // nobody here: bookkeeping and private collections, and guides and the
 // BOLDiquette (their comments and proposed changes tell, above). Pure.
-const TAG_SILENT = ['problemBank', 'benchmarks', 'benchmarkReceipts', 'roles', 'people', 'meta', 'settings', 'readPoints', 'changelog', 'commentQueue', 'venueCalls', 'githubLinks', 'googleLinks',
+const TAG_SILENT = ['problemBank', 'benchmarks', 'benchmarkReceipts', 'benchmarkSources', 'roles', 'people', 'meta', 'settings', 'readPoints', 'changelog', 'commentQueue', 'venueCalls', 'githubLinks', 'googleLinks',
   'letterRequests', 'introRequests', 'joinRequests', 'members', 'hackathonJoins', 'projectWorkspaces', 'guides', 'handbook', 'interactions', 'privateInteractions',
   // Conversations (Experimental, 2026-11-04): no Slack messages from it while it's an experiment.
   'conversations', 'conversationImports', 'cardImageImports', 'notifications'];
@@ -2280,6 +2289,11 @@ function mergedEdit(p, before, after){
 
 // The document with proposal q applied: pure, so it's testable on its own. → { title, description, parts } changed.
 function appliedProposal(doc, q, ctx){
+  const fields = appliedProposalFields(doc, q, ctx);
+  if (fields.parts && q.kind !== 'batch') fields.headingAnchors = guideAnchors.update(doc.parts || [], fields.parts, doc.headingAnchors);
+  return fields;
+}
+function appliedProposalFields(doc, q, ctx){
   // Several changes proposed together (a draft): each in turn, on the result of the last.
   if (q.kind === 'batch') {
     const changes = Array.isArray(q.changes) ? q.changes : [];
@@ -2400,6 +2414,9 @@ async function acceptedOps(collection, slug, snap, q, ctx){
     return [{ op: 'update', ref, data: stamp }, { op: 'delete', ref }];
   }
   let fields = appliedProposal(snap.exists ? snap.data() : {}, q, { pages: ctx.pages });
+  if (fields.headingAnchors && Buffer.byteLength(JSON.stringify(Object.assign({}, snap.exists ? snap.data() : {}, fields)), 'utf8') > 900000) {
+    throw new HttpsError('failed-precondition', 'This guide and its saved links are too large to save. Split it into smaller guides.');
+  }
   // A tool is checked as agents get it (name, inputs, code that compiles: functions/api-tools.js).
   if (collection === 'agentTools') {
     try { fields = agentApi.checkTool(slug, Object.assign({}, snap.exists ? snap.data() : {}, fields)); }
@@ -2588,37 +2605,60 @@ exports.branchRebase = onCall(async (request) => {
 exports.decideBranch = onCall(async (request) => {
   const email = signedInEmail(request).toLowerCase(), data = request.data || {}, id = String(data.id || '');
   if (!branchLib.ID.test(id)) throw new HttpsError('invalid-argument', 'No such branch.');
-  const full = await isFullWrite(email), name = String(request.auth.token.name || ''), bref = db.collection('branches').doc(id);
+  const full = await isFullWrite(email), name = String(request.auth.token.name || '');
+  return decideBranchAs(id, { email, name, full, accept: !!data.accept, editedAt: data.editedAt });
+});
+// Deciding branch `id`: by a PI or admin (decideBranch), or, `auto`, accepted by itself once it's due
+// (branchLib.dueAt: nobody decided it for AUTO_DAYS; acceptDueBranches). Accepted by itself, its pages are changed
+// as its author's (updatedBy), and it's decided by BOLD.OS.
+async function decideBranchAs(id, o){
+  const bref = db.collection('branches').doc(id);
   return db.runTransaction(async (tx) => {
     const bs = await tx.get(bref), b = bs.exists ? bs.data() : null;
     if (!b) throw new HttpsError('not-found', 'No such branch.');
-    const why = branchLib.cannotDecide(b, email, full);
-    if (why) throw new HttpsError(b.status !== 'open' ? 'failed-precondition' : 'permission-denied', why);
-    if (typeof data.editedAt === 'number' && (b.editedAt || b.at || 0) !== data.editedAt) throw new HttpsError('failed-precondition', 'It has just changed. Have a look at it again.');
-    const pages = b.pages || [];
+    const by = String((b.by && b.by.email) || '').toLowerCase();
+    if (o.auto) {
+      if (!branchLib.isDue(b, Date.now())) throw new HttpsError('failed-precondition', 'It isn’t due yet.');
+    } else {
+      const why = branchLib.cannotDecide(b, o.email, o.full);
+      if (why) throw new HttpsError(b.status !== 'open' ? 'failed-precondition' : 'permission-denied', why);
+      if (typeof o.editedAt === 'number' && (b.editedAt || b.at || 0) !== o.editedAt) throw new HttpsError('failed-precondition', 'It has just changed. Have a look at it again.');
+    }
+    const pages = b.pages || [], email = o.auto ? by : o.email;
     const [props, docs, acc] = await Promise.all([Promise.all(branchProps(b, id).map((r) => tx.get(r))), Promise.all(pages.map((p) => tx.get(db.doc(p)))), tx.get(db.collection('settings').doc('access'))]);
     const now = Date.now(), all = [];
-    if (data.accept) {
-      const by = String((b.by && b.by.email) || '').toLowerCase();
+    if (o.accept) {
       for (let i = 0; i < pages.length; i++){
         const q = props[i].exists ? props[i].data() : null;
         if (!q || q.status !== 'open') continue;
         const [collection, slug] = pages[i].split('/'), creating = q.kind === 'new';
         if (creating ? docs[i].exists : !docs[i].exists) throw new HttpsError('failed-precondition', creating ? '“' + slug + '” exists already: this branch can’t make it.' : '“' + slug + '” has been deleted since.');
         try {
-          (await acceptedOps(collection, slug, docs[i], q, { pages: (acc.data() || {}).pages, email, by, note: b.title, now, creating })).forEach((o) => all.push(o));
+          (await acceptedOps(collection, slug, docs[i], q, { pages: (acc.data() || {}).pages, email, by, note: b.title, now, creating })).forEach((x) => all.push(x));
         } catch (err) {
           const page = (docs[i].exists && docs[i].data().title) || slug;
           throw new HttpsError(err.code || 'failed-precondition', page + ': ' + (err.message || 'it can’t be accepted.'));
         }
       }
     }
-    all.forEach((o) => { if (o.op === 'delete') tx.delete(o.ref); else tx[o.op](o.ref, o.data); });
-    const status = data.accept ? 'accepted' : 'declined', closed = { status, decidedBy: email, decidedByName: name, decidedAt: now };
+    all.forEach((x) => { if (x.op === 'delete') tx.delete(x.ref); else tx[x.op](x.ref, x.data); });
+    const status = o.accept ? 'accepted' : 'declined';
+    const closed = o.auto ? { status, decidedBy: 'bold-os', decidedByName: 'BOLD.OS, after ' + branchLib.AUTO_DAYS + ' days without a decision', decidedAt: now, autoAccepted: true }
+      : { status, decidedBy: o.email, decidedByName: o.name, decidedAt: now };
     props.forEach((p) => { if (p.exists && p.data().status === 'open') tx.update(p.ref, closed); });
     tx.update(bref, closed);
     return { status };
   }).then((r) => { access.forget(); return r; });
+}
+// Every day at 09:00 London: each open branch nobody has decided for AUTO_DAYS is accepted by itself (decideBranchAs
+// auto). One that can't be (a page deleted since, a tool that doesn't compile) stays open, for a PI or admin, and is logged.
+exports.acceptDueBranches = onSchedule({ schedule: '0 9 * * *', timeZone: 'Europe/London', timeoutSeconds: 300 }, async () => {
+  const now = Date.now(), open = (await db.collection('branches').where('status', '==', 'open').get()).docs;
+  for (const d of open) {
+    if (!branchLib.isDue(d.data(), now)) continue;
+    try { await decideBranchAs(d.id, { auto: true, accept: true }); logger.info('A proposed change was accepted by itself', { id: d.id }); }
+    catch (err) { logger.warn('A proposed change due to be accepted by itself couldn’t be', { id: d.id, error: String((err && err.message) || err) }); }
+  }
 });
 
 // ---------- 2, 3, 4: card events ----------
@@ -3479,14 +3519,15 @@ function projectsFromDashboard(sections){
   };
   const reviewer = [];
   const seen = {};
-  sections.reviewingJunior.forEach(function(i){ seen[i.cardId] = reviewer.push(item(i, 'Junior')) - 1; });
-  sections.reviewingSenior.forEach(function(i){
+  const project = i => !isPastPaper(i.card);
+  sections.reviewingJunior.filter(project).forEach(function(i){ seen[i.cardId] = reviewer.push(item(i, 'Junior')) - 1; });
+  sections.reviewingSenior.filter(project).forEach(function(i){
     if (i.cardId in seen) reviewer[seen[i.cardId]].role = 'Junior & Senior';
     else reviewer.push(item(i, 'Senior'));
   });
   return {
-    owner: sections.registered.map(function(i){ return item(i); }),
-    author: sections.authoring.map(function(i){ return item(i); }),
+    owner: sections.registered.filter(project).map(function(i){ return item(i); }),
+    author: sections.authoring.filter(project).map(function(i){ return item(i); }),
     reviewer: reviewer
   };
 }
@@ -3550,17 +3591,21 @@ function allProjectsFromCards(boards, cards, unassigned, completedIds, startedId
     return {
       title: d.title || 'Untitled',
       abstract: d.abstractText || '',
+      openProblemId: d.openProblemId || '',
       slackChannel: d.slackChannel || '',
       keywords: Array.isArray(d.keywords) ? d.keywords : [],
       owner: (d.submittedBy && d.submittedBy.name) || '',
       ownerEmail: (d.submittedBy && d.submittedBy.email) || '',
       authors: (Array.isArray(d.authors) ? d.authors : []).map(function(a){ return { name: (a && a.name) || '', email: (a && a.email) || '' }; }),
       badges: badgesForCard(d),
-      proposal: d.proposal ? { status: d.proposal.status || 'proposed', more: asksForMore(d.proposal), gpuHours: Number(d.proposal.gpuHours) || 0, dueAt: d.proposal.dueAt || 0 } : null
+      proposal: d.proposal ? { status: d.proposal.status || 'proposed', more: asksForMore(d.proposal), gpuHours: Number(d.proposal.gpuHours) || 0, dueAt: d.proposal.dueAt || 0 } : null,
+      // Its level and what it's part of (#248): research-map.js.
+      level: research.levelOf(d), parents: research.normalizeLinks(d).parents, problems: research.normalizeLinks(d).problems,
+      connection: research.normalizeLinks(d).connection
     };
   };
   cards.forEach(function(c){
-    if (!(c.boardId in labels)) return;
+    if (!(c.boardId in labels) || isPastPaper(c.data)) return;
     entries.push({ pid: projectIdOf(c.data, c.id), d: c.data, boardId: c.boardId, item: Object.assign(base(c.id, c.data), { boardId: c.boardId, boardLabel: labels[c.boardId], cardId: c.id }) });
   });
   (unassigned || []).forEach(function(u){
@@ -3610,7 +3655,7 @@ function projectTitlesOnly(groups, mine, ask){
   const out = {};
   Object.keys(groups).forEach(function(g){
     out[g] = groups[g].map(function(i){
-      return mine[i.pid] ? i : Object.assign({ pid: i.pid, title: i.title, projectId: i.projectId, cardId: i.cardId, boardId: i.boardId, slackChannel: i.slackChannel, titleOnly: true }, ask ? { ask: true } : {});
+      return mine[i.pid] ? i : Object.assign({ pid: i.pid, title: i.title, projectId: i.projectId, cardId: i.cardId, boardId: i.boardId, slackChannel: i.slackChannel, level: i.level, parents: i.parents, problems: i.problems, titleOnly: true }, ask ? { ask: true } : {});
     });
   });
   return out;
@@ -3623,7 +3668,7 @@ function markJoined(shown, mine){
   ['proposed', 'ongoing', 'submission', 'completed', 'planned'].forEach(function(g){
     (shown[g] || []).forEach(function(i){ if (mine[i.pid]) i.joined = true; });
   });
-  shown.v = 3;   // 3: with `proposed` (#226)
+  shown.v = 4;   // 3: with `proposed` (#226); 4: with `level` and `parents` (#248)
   return shown;
 }
 
@@ -3700,6 +3745,45 @@ exports.getAllProjects = onCall(
     const links = await slackLinksFor(Array.from(new Set(items.map(function(i){ return i.slackChannel; }).filter(Boolean))));
     items.forEach(function(i){ if (links[i.slackChannel]) i.slackUrl = links[i.slackChannel]; });
     return shown;
+  }
+);
+
+// ---------- The Map: northstars, moonshots and stepping stones (#248) ----------
+// Every project with its level, what it's part of and its people's names, and the Problem Bank's problems,
+// for the register form's and a project's page's "Part of" pickers.
+// Whoever sees Projects' titles sees the map's; its people only for what they see in full (as getAllProjects).
+// → { items: [{ pid, title, level, parents, problems, connection, group, projectId, cardId, boardId, people, titleOnly }],
+//     problems: [{ id, title, project, stage }] }
+exports.researchMap = onCall(
+  async (request) => {
+    const email = signedInEmail(request).toLowerCase();
+    await access.requireAccess(email, 'projects', 'list');   // Who can see what
+    const full = await access.can(email, 'projects', 'view');
+    const [boardsSnap, cardsSnap, unassignedSnap, wsSnap, peopleSnap, problemSnap] = await Promise.all([
+      db.collection('boards').get(), db.collectionGroup('cards').get(), db.collection('projects').get(),
+      db.collection('projectWorkspaces').get(), db.collection('people').get(), db.collection('problemBank').get()
+    ]);
+    const groups = allProjectsFromCards(
+      boardsSnap.docs.map((d) => ({ id: d.id, label: d.data().label, status: d.data().status || 'approved' })),
+      cardsSnap.docs.map((d) => ({ boardId: d.ref.parent.parent.id, id: d.id, data: d.data() })),
+      unassignedSnap.docs.map((d) => ({ id: d.id, data: d.data() })),
+      wsSnap.docs.filter((d) => d.data().completedAt > 0).map((d) => d.id),
+      wsSnap.docs.filter((d) => workspaceStarted(d.data())).map((d) => d.id));
+    const names = {};
+    peopleSnap.docs.forEach((d) => { const p = d.data(); if (p.email && p.name) names[String(p.email).toLowerCase()] = p.name; });
+    const members = {}, mine = {};
+    wsSnap.docs.forEach((d) => { const m = d.data().members || []; members[d.id] = m; if (m.indexOf(email) >= 0) mine[d.id] = true; });
+    const items = [];
+    Object.keys(groups).forEach((g) => (groups[g] || []).forEach((i) => {
+      if (g === 'proposed' && (!i.proposal || i.proposal.status === 'declined')) return;   // only what's proposed or decided
+      const sees = full || mine[i.pid];
+      items.push({ pid: i.pid, title: i.title, level: i.level, parents: i.parents, problems: i.problems, connection: sees ? i.connection : '', group: g,
+        projectId: i.projectId || null, cardId: i.cardId || null, boardId: i.boardId || null, titleOnly: !sees,
+        people: sees ? (members[i.pid] || []).map((e) => names[e] || '').filter(Boolean).sort() : [] });
+    }));
+    const problems = problemSnap.docs.map((d) => ({ id: d.id, title: d.data().title || d.id, project: d.data().project_id || '', stage: d.data().stage || 'open', archived: !!d.data().archived }))
+      .filter((p) => !p.archived).map((p) => ({ id: p.id, title: p.title, project: p.project, stage: p.stage }));
+    return { items, problems };
   }
 );
 
@@ -3873,7 +3957,7 @@ exports.projectChannel = onCall(
     if (data.mode === 'rename' && !out.exists){
       const p = data.project || {};
       if (!/^[A-Za-z0-9_-]{1,80}$/.test(String(p.id || '')) || (p.board && !/^[A-Za-z0-9_-]{1,80}$/.test(String(p.board)))) throw new HttpsError('invalid-argument', 'No such project.');
-      const cardSnap = await cardRefFor(String(p.id), p.board ? String(p.board) : null).get();
+      const cardSnap = await readProjectCard(String(p.id), p.board ? String(p.board) : null);
       if (!cardSnap.exists) throw new HttpsError('not-found', 'No such project.');
       const card = cardSnap.data();
       if (!(await canEditCard(email, card))) throw new HttpsError('permission-denied', 'Only whoever registered the project, its authors, or a PI or admin can change its channel.');
@@ -3927,8 +4011,8 @@ async function isRegisteredProjectChannel(name){
   const tag = '#' + name;
   const [cardsSnap, projectsSnap] = await Promise.all([db.collectionGroup('cards').get(), db.collection('projects').get()]);
   return cardsSnap.docs.concat(projectsSnap.docs).some(function(d){
-    const c = d.data().slackChannel;
-    return typeof c === 'string' && c.toLowerCase() === tag;
+    const card = d.data(), c = card.slackChannel;
+    return !isPastPaper(card) && typeof c === 'string' && c.toLowerCase() === tag;
   });
 }
 
@@ -4308,6 +4392,13 @@ function cardRefFor(id, boardId){
   return boardId ? db.collection('boards').doc(boardId).collection('cards').doc(id) : db.collection('projects').doc(id);
 }
 
+async function readProjectCard(id, boardId){
+  const snap = await cardRefFor(id, boardId).get();
+  if (snap.exists && isPastPaper(snap.data()))
+    throw new HttpsError('failed-precondition', 'This paper belongs to Internal Review and has no project workspace.');
+  return snap;
+}
+
 // A project is one or more cards, one per venue it went to (`projects/{id}` until
 // it has a venue). A card submitted from a project's page to another venue carries
 // that project's id (`projectId`); every other card is its own project, with its
@@ -4320,7 +4411,7 @@ async function projectCards(pid){
   const [venueCards, own] = await Promise.all([db.collectionGroup('cards').get(), db.collection('projects').get()]);
   const out = [];
   venueCards.docs.concat(own.docs).forEach(function(d){
-    if (projectIdOf(d.data(), d.id) !== pid) return;
+    if (isPastPaper(d.data()) || projectIdOf(d.data(), d.id) !== pid) return;
     const parent = d.ref.parent.parent;
     out.push({ id: d.id, boardId: parent ? parent.id : null, ref: d.ref, data: d.data() });
   });
@@ -4375,6 +4466,8 @@ function projectGroupForCards(cards, completed, started){
   if (cards.length && proposalPending(cards[0].data)) return 'proposed';
   if (completed || cards.some(function(c){ return projectGroupForCard(c.data) === 'completed'; })) return 'completed';
   const last = cards[cards.length - 1];
+  // A northstar or moonshot (#248) is never planned or in submission: approved, it's under way.
+  if (research.levelOf(last.data) !== 'project') return 'ongoing';
   return projectGroupForCard(last.data, false, !!last.boardId, started);
 }
 
@@ -4815,6 +4908,7 @@ function onProjectCard(document){
     const before = event.data.before.exists ? event.data.before.data() : null;
     const after = event.data.after.exists ? event.data.after.data() : null;
     const id = event.params.cardId;
+    if (isPastPaper(after || before)) return;
     const pid = projectIdOf(after || before, id);
     const wsRef = db.collection('projectWorkspaces').doc(pid);
     if (!after){
@@ -4884,14 +4978,16 @@ const ACTIVE_PROJECTS_CHANNEL = 'all-active-projects';
 function projectAnnouncement(card, url){
   const who = slackText((card.submittedBy && (card.submittedBy.name || card.submittedBy.email)) || 'Someone');
   const abstract = String(card.abstractText || '').trim().replace(/\s+/g, ' ');
-  const lines = ['🆕 ' + linkedTitle(slackText(card.title || 'Untitled project'), url) + ' — registered by ' + who];
+  const level = research.levelOf(card), kind = level === 'project' ? '' : ' (a new ' + research.NAMES[level].toLowerCase() + ')';
+  const lines = ['🆕 ' + linkedTitle(slackText(card.title || 'Untitled project'), url) + kind + ' — registered by ' + who];
   if (abstract) lines.push('> ' + slackText(abstract.length > 400 ? abstract.slice(0, 400).replace(/\s+\S*$/, '') + '…' : abstract));
   const keywords = (card.keywords || []).filter(Boolean);
   if (keywords.length) lines.push('Keywords: ' + keywords.map(slackText).join(', '));
   if (card.slackChannel) lines.push('Channel: ' + slackText(card.slackChannel));
   // Opens the project's page, which joins whoever clicked (pages/project.js, &join=1):
   // its channel, meeting, notes, slides and repository.
-  lines.push('<' + url + '&join=1|Join the project>');
+  // A northstar or moonshot isn't joined (#248): its stepping stones are.
+  if (research.levelOf(card) === 'project') lines.push('<' + url + '&join=1|Join the project>');
   return lines.join('\n');
 }
 
@@ -4983,6 +5079,35 @@ exports.onApproveProposalsRun = onDocumentCreated({ document: 'runs/{id}', secre
     done.push({ id, approved: await approveProposal(id, c, null, String(run.why || '')).catch((err) => { logger.warn('Approving a proposal failed', { id, error: String(err.message) }); return false; }) });
   }
   await event.data.ref.set({ doneAt: Date.now(), done }, { merge: true });
+});
+// One-off (runs/{id} { action: 'group-meetings-to-meeting', dryRun }, 2026-11-19): the group meetings
+// become one weekly meeting like Hamming Sessions. Each of its dated events becomes a rota record
+// (groupRotaMeetings, the same id); the series becomes kind 'meeting' (Mondays 11:00, an hour, inviting
+// BOLD-internal and above), paused, so no Google Calendar invite goes out until it's resumed; its future
+// skipped dates are cancelled there. The old events are deleted, a copy of each kept on the run.
+exports.onGroupMeetingsRun = onDocumentCreated({ document: 'runs/{id}', timeoutSeconds: 300 }, async (event) => {
+  const run = event.data && event.data.data();
+  if (!run || run.action !== 'group-meetings-to-meeting' || run.doneAt) return;
+  const found = await db.collection('eventSeries').where('page', '==', 'group-meetings.html').get();
+  if (found.size !== 1) { await event.data.ref.set({ doneAt: Date.now(), error: 'Found ' + found.size + ' group meeting series.' }, { merge: true }); return; }
+  const sref = found.docs[0].ref, s = found.docs[0].data(), id = sref.id;
+  const eds = (await db.collection('events').where('series', '==', id).get()).docs;
+  const today = new Intl.DateTimeFormat('en-CA', { timeZone: 'Europe/London' }).format(new Date());
+  const keep = ['date', 'seasonId', 'format', 'location', 'status', 'skipReason', 'origin', 'createdAt', 'createdBy', 'updatedAt', 'updatedBy', 'changeNote'];
+  const records = eds.map((d) => { const e = d.data(), r = { series: id }; keep.forEach((k) => { if (e[k] !== undefined) r[k] = e[k]; }); return { id: d.id, r }; });
+  const cancelled = {};
+  eds.forEach((d) => { const e = d.data(); if (e.status === 'skipped' && e.date > today) cancelled[e.date] = { cancelled: true }; });
+  const patch = { kind: 'meeting', meeting: { day: 'MO', time: '11:00', minutes: 60, every: 1 }, invite: { mode: 'group', group: 'internal' },
+    meetingMoved: cancelled, pausedAt: Date.now(), pausedBy: 'migration', cadence: FieldValue.delete(), inviteGroup: FieldValue.delete(), updatedAt: Date.now(), updatedBy: 'migration' };
+  const summary = { series: id, kindBefore: s.kind || '', events: eds.length, cancelled: Object.keys(cancelled).sort(), first: records.map((x) => x.r.date).sort()[0] || '', last: records.map((x) => x.r.date).sort().pop() || '' };
+  if (run.dryRun === true) { await event.data.ref.set({ doneAt: Date.now(), dryRun: true, summary }, { merge: true }); return; }
+  if (s.kind !== 'editions') { await event.data.ref.set({ doneAt: Date.now(), error: 'Already converted: ' + s.kind, summary }, { merge: true }); return; }
+  // The copy first (on the run, as it was), then the records, then the series, then the old events.
+  await event.data.ref.set({ backup: eds.map((d) => Object.assign({ _id: d.id }, d.data())), summary }, { merge: true });
+  for (let i = 0; i < records.length; i += 400) { const b = db.batch(); records.slice(i, i + 400).forEach((x) => b.set(db.collection('groupRotaMeetings').doc(x.id), x.r)); await b.commit(); }
+  await sref.set(patch, { merge: true });
+  for (let i = 0; i < eds.length; i += 400) { const b = db.batch(); eds.slice(i, i + 400).forEach((d) => b.delete(d.ref)); await b.commit(); }
+  await event.data.ref.set({ doneAt: Date.now() }, { merge: true });
 });
 // Pure: a proposal's compute budget, in GPU hours → the number, or { error }.
 function normalizeGpuHours(v){
@@ -5291,7 +5416,7 @@ exports.projectWorkspace = onCall(
     }
     const id = String(data.id || ''), boardId = data.board ? String(data.board) : null;
     if (!validSlug(id) || (boardId && !validSlug(boardId))) throw new HttpsError('invalid-argument', 'No project given.');
-    const cardSnap = await cardRefFor(id, boardId).get();
+    const cardSnap = await readProjectCard(id, boardId);
     if (!cardSnap.exists) throw new HttpsError('not-found', 'That project isn’t there any more.');
     const card = cardSnap.data();
     // Proposed (#226): nothing is set up, joined or changed until a PI or admin approves it (projectProposal).
@@ -5380,10 +5505,11 @@ exports.projectWorkspace = onCall(
       const c = data.card && typeof data.card === 'object' ? Object.assign({}, data.card) : null;
       if (!c || typeof c.title !== 'string' || !c.title.trim()) throw new HttpsError('invalid-argument', 'The new card has no title.');
       const cardId = /^card-[a-z0-9-]{1,60}$/.test(String(c.id || '')) ? c.id : 'card-' + Date.now() + '-' + crypto.randomBytes(3).toString('hex');
-      ['id', 'setUpMeeting', 'setUpRepo', 'setUpDocs', 'setUpSkipped', 'announce'].forEach(function(k){ delete c[k]; });
+      ['id', 'registrationKind', 'openProblemTitle', 'openProblemId', 'verificationPlan', 'proposal', 'setUpChannel', 'setUpMeeting', 'setUpRepo', 'setUpDocs', 'setUpSkipped', 'announce'].forEach(function(k){ delete c[k]; });
       const now = Date.now();
       await db.collection('boards').doc(venue).collection('cards').doc(cardId).set(Object.assign(c, {
-        projectId: pid, status: 'register', outcome: '', createdAt: now, updatedAt: now,
+        ...(card.openProblemId ? {openProblemId:card.openProblemId} : {}),
+        ...(card.verificationPlan ? {verificationPlan:card.verificationPlan} : {}), projectId: pid, status: 'register', outcome: '', createdAt: now, updatedAt: now,
         submittedBy: { name: request.auth.token.name || request.auth.token.email, email: request.auth.token.email, slackId: null }
       }));
       // A project without a venue moves onto the board: its venue-less card goes.
@@ -5393,6 +5519,8 @@ exports.projectWorkspace = onCall(
 
     if (data.action === 'join' || data.action === 'leave'){
       const joining = data.action === 'join';
+      // Northstars and moonshots aren't joined (#248): their stepping stones are. Leaving one is fine.
+      if (joining && research.levelOf(card) !== 'project') throw new HttpsError('failed-precondition', 'Only a stepping stone is joined: join one of its stepping stones.');
       if (!joining && projectMembers(card, []).indexOf(email) >= 0) {
         throw new HttpsError('failed-precondition', 'Its submitter and authors stay on the project — remove yourself from the authors first.');
       }
@@ -6270,12 +6398,19 @@ exports.linkGoogle = onCall(
     await access.requireAccess(email, 'profile', 'edit');   // Who can see what
     const user = await admin.auth().getUser(request.auth.uid);
     const g = (user.providerData || []).filter(function(p){ return p.providerId === 'google.com'; })[0];
-    const google = g && g.email ? g.email.toLowerCase() : '';
+    let google = g && g.email ? g.email.toLowerCase() : '';
     const ref = db.collection('googleLinks').doc(email);
-    const prev = (await ref.get()).data();
+    let prev = (await ref.get()).data();
+    // A Google address a PI or admin linked for them (setBy, 2026-11-24: someone who signed up twice, once with it), with
+    // no Google account linked on their sign-in: kept, as if linked, until they unlink it ({ unlink: true }) or link
+    // their own Google account, which takes its place.
+    const setBy = !google && prev && prev.setBy && prev.google ? String(prev.setBy) : '';
+    const unlinked = !!(setBy && request.data && request.data.unlink === true);
+    if (unlinked) { await ref.delete(); prev = null; }
+    else if (setBy) google = String(prev.google).toLowerCase();
     const person = (await db.collection('people').where('email', '==', email).limit(1).get()).docs[0];
     const choices = google ? inviteChoices(email, person && person.data().slackEmail, google) : [];
-    let moved = false, inviteTo = prev && prev.google === google ? validInviteTo(prev.inviteTo, choices) : [];
+    let moved = unlinked, inviteTo = prev && prev.google === google ? validInviteTo(prev.inviteTo, choices) : [];
     if ((prev && prev.google || '') !== google){
       if (google) await ref.set({ email, google, linkedAt: Date.now() });
       else await ref.delete();
@@ -6298,9 +6433,45 @@ exports.linkGoogle = onCall(
       const studies = await db.collection('studies').where('everyone', 'array-contains', email).get();
       for (const d of studies.docs) await syncStudyMeeting(d.id);
     }
-    return { link: google ? { google, inviteTo: inviteTo.length ? inviteTo : [google], choices } : null };
+    return { link: google ? Object.assign({ google, inviteTo: inviteTo.length ? inviteTo : [google], choices }, setBy && prev ? { setBy: true } : {}) : null };
   }
 );
+// A Google address linked for someone by a PI or admin (googleLinks/{email} with setBy, written by hand): their projects'
+// and study meetings' invitations and files move to it, as linkGoogle does when they link one themselves.
+exports.onGoogleLinkSet = onDocumentWritten({ document: 'googleLinks/{email}', secrets: [GOOGLE_OAUTH, GITHUB_APP], timeoutSeconds: 120 }, async (event) => {
+  const before = event.data.before.exists ? event.data.before.data() : null, after = event.data.after.exists ? event.data.after.data() : null;
+  if (!after || !after.setBy || (before && before.google === after.google)) return;
+  const email = event.params.email;
+  for (const d of (await db.collection('projectWorkspaces').where('members', 'array-contains', email).get()).docs) await syncWorkspace(d.id);
+  for (const d of (await db.collection('studies').where('everyone', 'array-contains', email).get()).docs) await syncStudyMeeting(d.id);
+});
+
+// deleteMyProfile {} (2026-11-24): someone deletes their own BOLD.OS profile. Their details and group (members), their
+// links and feeds, their settings, agents' tokens and devices go; they leave the projects they're on (each synced, so
+// their invitations and files go too); then their sign-in. What they wrote with others (comments, cards, conversations,
+// proposals) stays, as on Slack. PIs and admins are taken off the role lists first. To come back, they join again.
+// Pure: the documents of theirs that go, by email and by uid.
+function ownDocs(email, uid){
+  return ['members', 'googleLinks', 'githubLinks', 'calendarFeeds', 'busyFeeds', 'onboarding', 'visits', 'homeLetters', 'letterJobs', 'chatCounts']
+    .map(function(c){ return c + '/' + email; }).concat(uid ? ['prefs/' + uid] : []);
+}
+exports.deleteMyProfile = onCall({ secrets: [GOOGLE_OAUTH, GITHUB_APP], timeoutSeconds: 300 }, async (request) => {
+  const email = signedInEmail(request).toLowerCase(), uid = request.auth.uid;
+  const roles = (await rolesEmails('pis')).concat(await rolesEmails('admins')).map((e) => String(e).toLowerCase());
+  if (roles.indexOf(email) >= 0) throw new HttpsError('failed-precondition', 'You’re a PI or admin: another one takes you off the role lists first.');
+  // Their projects: off each, and its invitations, files and team with it.
+  for (const d of (await db.collection('projectWorkspaces').where('members', 'array-contains', email).get()).docs) {
+    await d.ref.update({ members: FieldValue.arrayRemove(email) });
+    await syncWorkspace(d.id).catch((err) => logger.warn('deleteMyProfile: a project couldn’t be synced', { id: d.id, error: String(err && err.message || err) }));
+  }
+  const batch = db.batch();
+  ownDocs(email, uid).forEach((p) => batch.delete(db.doc(p)));
+  for (const c of ['apiTokens', 'pushTokens']) (await db.collection(c).where('email', '==', email).get()).docs.forEach((d) => batch.delete(d.ref));
+  await batch.commit();
+  await admin.auth().deleteUser(uid);
+  logger.info('A profile was deleted by its person');
+  return { deleted: true };
+});
 
 // ---------- Studies: a PhD or Master student's details and supervision meeting ----------
 // studies/{email}: the student's working title, the people involved in their studies
@@ -6538,7 +6709,7 @@ exports.meetingTimes = onCall({ timeoutSeconds: 60 }, async (request) => {
   const email = callerEmail(request), data = request.data || {};
   const id = String(data.id || ''), boardId = data.board ? String(data.board) : null;
   if (!validSlug(id) || (boardId && !validSlug(boardId))) throw new HttpsError('invalid-argument', 'No project given.');
-  const cardSnap = await cardRefFor(id, boardId).get();
+  const cardSnap = await readProjectCard(id, boardId);
   if (!cardSnap.exists) throw new HttpsError('not-found', 'That project isn’t there any more.');
   const card = cardSnap.data(), pid = projectIdOf(card, id);
   await requireSeesProject(email, pid);
@@ -6578,7 +6749,7 @@ exports.moveMeeting = onCall({ timeoutSeconds: 120, secrets: [GOOGLE_OAUTH, GITH
   if (kind === 'project') {
     const boardId = data.board ? String(data.board) : null;
     if (!validSlug(id) || (boardId && !validSlug(boardId))) throw new HttpsError('invalid-argument', 'No project given.');
-    const cardSnap = await cardRefFor(id, boardId).get();
+    const cardSnap = await readProjectCard(id, boardId);
     if (!cardSnap.exists) throw new HttpsError('not-found', 'That project isn’t there any more.');
     const pid = projectIdOf(cardSnap.data(), id);
     await requireSeesProject(email, pid);
@@ -7497,9 +7668,10 @@ exports.projectInvite = onCall(
       if ((await access.groupFor(email)) === 'pan') throw new HttpsError('failed-precondition', 'Talk to the lead on Slack first: they add you to it.');
       const id = String(d.id || ''), board = d.board ? String(d.board) : null;
       if (!validSlug(id) || (board && !validSlug(board))) throw new HttpsError('invalid-argument', 'No project given.');
-      const snap = await cardRefFor(id, board).get();
+      const snap = await readProjectCard(id, board);
       if (!snap.exists) throw new HttpsError('not-found', 'That project isn’t there any more.');
       const card = snap.data(), pid = projectIdOf(card, id);
+      if (research.levelOf(card) !== 'project') throw new HttpsError('failed-precondition', 'Only a stepping stone is joined: join one of its stepping stones.');
       const ws = (await db.collection('projectWorkspaces').doc(pid).get()).data() || {};
       if ((ws.members || []).map(lowerEmail).indexOf(email) >= 0) throw new HttpsError('already-exists', 'You’re already on it.');
       const dup = await col.where('pid', '==', pid).where('email', '==', email).get();
@@ -7512,10 +7684,11 @@ exports.projectInvite = onCall(
     if (d.action === 'invite' || d.action === 'list') {
       const id = String(d.id || ''), board = d.board ? String(d.board) : null;
       if (!validSlug(id) || (board && !validSlug(board))) throw new HttpsError('invalid-argument', 'No project given.');
-      const snap = await cardRefFor(id, board).get();
+      const snap = await readProjectCard(id, board);
       if (!snap.exists) throw new HttpsError('not-found', 'That project isn’t there any more.');
       const card = snap.data(), pid = projectIdOf(card, id);
       if (!(await canEditCard(email, card))) throw new HttpsError('permission-denied', 'Only the project’s submitter, authors, PIs and admins invite people to it.');
+      if (d.action === 'invite' && research.levelOf(card) !== 'project') throw new HttpsError('failed-precondition', 'Only a stepping stone has people invited to it: invite them to one of its stepping stones.');
       if (d.action === 'list') {
         const all = await col.where('pid', '==', pid).get();
         return { invites: all.docs.map((x) => Object.assign({ id: x.id }, x.data())).sort((a, b) => (a.status === 'open' ? 0 : 1) - (b.status === 'open' ? 0 : 1) || b.at - a.at).slice(0, 50) };
@@ -7555,7 +7728,7 @@ exports.projectInvite = onCall(
     const inv = (await ref.get()).data();
     if (d.action === 'admit') {
       if (!inv || inv.status !== 'asked') throw new HttpsError('failed-precondition', inv ? 'It’s already been ' + inv.status + '.' : 'That request isn’t there.');
-      const snap = await cardRefFor(inv.cardId, inv.board).get();
+      const snap = await readProjectCard(inv.cardId, inv.board);
       if (!snap.exists || !(await canEditCard(email, snap.data()))) throw new HttpsError('permission-denied', 'Only the project’s owner, authors, PIs and admins accept a request to join it.');
       const out = await joinProjectAs(inv.email, inv.pid, snap.data(), true);
       await ref.update({ status: 'accepted', decidedAt: Date.now(), decidedBy: email });
@@ -7564,13 +7737,13 @@ exports.projectInvite = onCall(
     }
     let editor = false;
     if (d.action === 'withdraw' && inv) {
-      const snap = await cardRefFor(inv.cardId, inv.board).get();
+      const snap = await readProjectCard(inv.cardId, inv.board);
       editor = snap.exists && await canEditCard(email, snap.data());
     }
     const why = inviteRefusal(inv, d.action, { email, editor });
     if (why) throw new HttpsError('failed-precondition', why);
     if (d.action === 'accept') {
-      const snap = await cardRefFor(inv.cardId, inv.board).get();
+      const snap = await readProjectCard(inv.cardId, inv.board);
       const out = await joinProjectAs(email, inv.pid, snap.exists ? snap.data() : null, true);
       await ref.update({ status: 'accepted', decidedAt: Date.now() });
       await sendEvent(SLACK_BOT_TOKEN.value(), { key: 'project-invites', emails: [inv.by], headline: '📌 ' + slackText(name) + ' joined ' + linkedTitle(inv.title, projectPageUrl(inv.cardId, inv.board)) + ', as you invited them.' });
@@ -8455,7 +8628,7 @@ exports.onSetupNudgeRun = onDocumentCreated({ document: 'runs/{id}', secrets: [S
     const missing = setupMissing(ws);
     if (!migrate && !missing.length) continue;
     // Its lead only: whoever registered it (its card's submittedBy).
-    const card = await cardRefFor(ws.cardId || d.id, ws.boardId || null).get().catch(() => null);
+    const card = await readProjectCard(ws.cardId || d.id, ws.boardId || null).catch(() => null);
     const lead = card && card.exists ? lowerEmail((card.data().submittedBy || {}).email) : '';
     const to = ws.setupNudgedAt || !lead ? [] : [lead];
     plan.push({ pid: d.id, title: ws.title || (card && card.exists && card.data().title) || '', migrate, missing, to });
@@ -9421,22 +9594,61 @@ async function tellStaff(text, except, key){
   if (emails.length) await sendEvent(SLACK_BOT_TOKEN.value(), { key, emails, headline: text });
 }
 
+// The first notice is due at creation. The sweep also picks up missed triggers and retries.
+const problemReminders = require('./problem-reminders');
+async function sendProblemNotice(ref) {
+  return problemReminders.sendDue(db, ref, async ({ email, title, id, cycle }) => {
+    const href = SITE_URL + 'problem.html?problem=' + encodeURIComponent(id) + '#tab=releases';
+    const label = title.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    await pilotSlack(SLACK_BOT_TOKEN.value(), 'problem-verifier', PILOTS['problem-verifier'], {
+      emails: [email], text: 'Your problem “' + label + '” has no verifier. <' + href + '|Add a verifier in AutoKaggle Lite>.',
+      suppressPilotInbox: true, requireDelivery: true, respectOptOut: true, noticeId: 'verifier-' + id + '-' + cycle
+    });
+  });
+}
+exports.onProblemDefined = onDocumentCreated({ document: 'problemBank/{id}', secrets: [SLACK_BOT_TOKEN] },
+  event => event.data && sendProblemNotice(event.data.ref));
+exports.remindProblemVerifiers = onSchedule({ schedule: 'every 15 minutes', secrets: [SLACK_BOT_TOKEN] }, async () => {
+  const due = await db.collection('problemBank').where('verifierNoticeDue', '>=', 0).where('verifierNoticeDue', '<=', Date.now()).limit(100).get();
+  for (const row of due.docs) {
+    try { await sendProblemNotice(row.ref); }
+    catch (error) { logger.warn('Problem verifier reminder failed', { problem: row.id, error: error.message }); }
+  }
+});
+
 // Validated problems and benchmark releases; the same callable serves the pages and acting API.
-// projectChoices: the Problem Bank's project picker, one row per project as Projects lists them.
-exports.benchmarkRegistry = require('./benchmark-registry')({ db, onCall, callerEmail, isFullWrite, access, HttpsError, projectChoices: async function(){
-  const [boardsSnap, cardsSnap, unassignedSnap] = await Promise.all([db.collection('boards').get(), db.collectionGroup('cards').get(), db.collection('projects').get()]);
-  const groups = allProjectsFromCards(
-    boardsSnap.docs.map(function(d){ return { id: d.id, label: d.data().label, status: d.data().status || 'approved' }; }),
-    cardsSnap.docs.map(function(d){ return { boardId: d.ref.parent.parent.id, id: d.id, data: d.data() }; }),
-    unassignedSnap.docs.map(function(d){ return { id: d.id, data: d.data() }; }), [], []);
-  return [].concat(groups.proposed, groups.ongoing, groups.submission, groups.planned, groups.completed)
-    .map(function(i){ return { id: i.cardId || i.projectId, board: i.boardId || '', title: i.title, venue: i.boardLabel || '' }; })
+// Projects and registered papers share board cards. Read only the fields used for
+// grouping and public links, once per request, regardless of the number of problems.
+// A member is told when Lite links a session to their problem (#43), so a link they didn't make stands out.
+async function tellVerifierSessionLinked({ email, problem_id }) {
+  const p = await db.collection('problemBank').doc(problem_id).get();
+  const title = String((p.exists && p.data().title) || 'your problem').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  const href = SITE_URL + 'problem.html?problem=' + encodeURIComponent(problem_id) + '#tab=releases';
+  await pilotSlack(SLACK_BOT_TOKEN.value(), 'verifier-session', PILOTS['verifier-session'], {
+    emails: [email], text: 'AutoKaggle Lite linked a session to “' + title + '” for you. Not you? <' + href + '|Unlink it on the problem’s page>.'
+  });
+}
+const problemBank = require('./benchmark-registry')({ db, onCall, callerEmail, isFullWrite, access, HttpsError, onSessionLinked: tellVerifierSessionLinked, readDirectory: async function(includePapers){
+  const fields = ['title','openProblemId','projectId','registrationKind','createdAt','updatedAt','status','outcome','proposal.status'];
+  const [boardsSnap,cardsSnap,unassignedSnap] = await Promise.all([
+    db.collection('boards').select('label','status','archived').get(),
+    db.collectionGroup('cards').select(...fields).get(),
+    db.collection('projects').select(...fields).get()
+  ]);
+  const boards = boardsSnap.docs.map(d => ({id:d.id,...d.data()}));
+  const cards = cardsSnap.docs.filter(d => /^boards\/[^/]+\/cards\/[^/]+$/.test(d.ref.path))
+    .map(d => ({boardId:d.ref.parent.parent.id,id:d.id,data:d.data()}));
+  const groups = allProjectsFromCards(boards,cards,unassignedSnap.docs.map(d => ({id:d.id,data:d.data()})),[],[]);
+  const projects = [].concat(groups.proposed, groups.ongoing, groups.submission, groups.planned, groups.completed)
+    .map(function(i){ return { id:i.cardId || i.projectId, stable_id:i.pid, board:i.boardId || '', title:i.title, venue:i.boardLabel || '', openProblemId:i.openProblemId || '' }; })
     .sort(function(a, b){ return a.title.localeCompare(b.title); });
-} }).benchmarkRegistry;
+  return {projects, papers:includePapers ? papersByProblem(boards,cards) : null};
+} });
+exports.benchmarkRegistry = problemBank.benchmarkRegistry;
 
 // BOLD.OS for agents: personal tokens (apiTokens) and the read-only API and MCP
 // endpoint (boldApi), in functions/api.js.
-const agentApi = require('./api')({ access, db, admin, onRequest, onCall, HttpsError, logger, callerEmail, isFullWrite, allProjectsFromCards, projectGroupForCards, workspaceStarted, groupOf, SITE_URL,
+const agentApi = require('./api')({ runLinkedService:problemBank.runLinkedService, access, db, admin, onRequest, onCall, HttpsError, logger, callerEmail, isFullWrite, allProjectsFromCards, projectGroupForCards, workspaceStarted, groupOf, SITE_URL,
   SIGN_IN_PROVIDER, secrets: [SLACK_BOT_TOKEN, GOOGLE_OAUTH, GITHUB_APP], SLACK_BOT_TOKEN,
   // Asking to act, and the decision: the PIs and admins hear of a request, its owner of the decision.
   tellStaff,
@@ -9521,7 +9733,53 @@ exports.homeLetter = boldLlm.homeLetter;
 exports.onLetterJob = boldLlm.onLetterJob;
 exports.onVisit = boldLlm.onVisit;
 
-exports._internal = { proposalRoute, proposalHours, asksForMore, replaceEmail, accountEmailsBySlackId, calendarUpdates, isCalendarLimit,
+// Adding a problem by talking it through with BOLD-LLM (problem-new.html, functions/problem-interview.js): one turn of
+// the conversation → { reply, ready, draft }. Sofya, thinking off. What it may link to is read as the person, through the
+// Problem Bank's own callable (its family tree and projects), so it never sees more than they do. Saving is the page's,
+// through benchmarkRegistry's create, after they check the draft.
+// Comparing it with the form (functions/problem-trial.js): which way each person gets, and per attempt only signals
+// (no conversation text). start also returns who's asking, the problem's definer on either way.
+const problemTrial = require('./problem-trial')({ db });
+exports.problemTrial = onCall(async (request) => {
+  const email = callerEmail(request), d = request.data || {};
+  if (d.action === 'export') {
+    if (!(await isFullWrite(email))) throw new HttpsError('permission-denied', 'Only PIs and admins see the comparison.');
+    return { rows: await problemTrial.list() };
+  }
+  await access.requireAccess(email, 'projects', 'change');
+  let out;
+  try { out = await problemTrial.record(email, d); } catch (err) { throw new HttpsError('invalid-argument', err.message); }
+  if (d.event === 'start') {
+    const meSnap = await db.collection('people').where('email', '==', email).limit(1).get();
+    out.me = meSnap.empty ? null : { id: meSnap.docs[0].id, name: meSnap.docs[0].data().name || '' };
+  }
+  return out;
+});
+const problemInterview = require('./problem-interview');
+const sofyaForProblems = require('./sofya')({ key: () => BOLD_LLM_KEY.value() });
+exports.problemInterview = onCall({ secrets: [BOLD_LLM_KEY], timeoutSeconds: 120 }, async (request) => {
+  const email = callerEmail(request);
+  await access.requireAccess(email, 'projects', 'change');
+  const [family, dir] = await Promise.all([problemBank.run({ data: { action: 'family' } }, email), problemBank.run({ data: { action: 'projects' } }, email)]);
+  const lab = {
+    objectives: (family.objectives || []).filter((o) => !o.archived).map((o) => ({ id: o.id, title: o.title, kind: o.kind })),
+    problems: (family.problems || []).filter((p) => !p.archived).map((p) => ({ id: p.id, title: p.title })),
+    // Stepping stones only: northstars and moonshots are objectives, above.
+    projects: (dir.items || []).filter((p) => !(family.objectives || []).some((o) => o.id === p.id)).map((p) => ({ id: p.id, title: p.title }))
+  };
+  // Who's asking: the problem's definer, as on the form.
+  const meSnap = await db.collection('people').where('email', '==', email).limit(1).get();
+  const me = meSnap.empty ? null : { id: meSnap.docs[0].id, name: meSnap.docs[0].data().name || '' };
+  try {
+    return Object.assign({ me }, await problemInterview.interview((request.data || {}).turns, lab, sofyaForProblems.complete, require('./sofya').said, require('./sofya').jsonOf, (request.data || {}).draft));
+  } catch (err) {
+    if (/^(Start again|Keep each|Say something)/.test(err.message)) throw new HttpsError('invalid-argument', err.message);
+    logger.warn('Problem interview failed', { error: String(err.message).slice(0, 300) });
+    throw new HttpsError('unavailable', 'Sofya didn’t answer. Try again, or fill in the form yourself.');
+  }
+});
+
+exports._internal = { ownDocs, proposalRoute, proposalHours, asksForMore, replaceEmail, accountEmailsBySlackId, calendarUpdates, isCalendarLimit,
   slackImagesOf, slackToPlain, pingText, bugReportOf, bugNotes, bugTitle,
   channelsToJoin, setupMissing, setupMissingText, workspaceStarted, normalizeRepo, setupNudgeText, projectHealth,
   trialAction, trialTexts, stepsLeft, addedTo, eligibleSteps, eligibleText, onOthers,

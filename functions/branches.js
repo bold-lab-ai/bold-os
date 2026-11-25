@@ -8,7 +8,7 @@
 // changes are its commits, each with who made it and when; on a skill or tool the whole of it as proposed, its
 // commits listed. Anyone who can edit a page commits to any open branch (branchCommit, the server only: the
 // rules allow no client writes); a PI or admin who hasn't committed to it accepts or declines it, all its pages
-// together or none (decideBranch); its author or a PI withdraws it. The pages are drawn as the branch you're
+// together or none (decideBranch), or, with nobody deciding for AUTO_DAYS, it's accepted by itself (acceptDueBranches); its author or a PI withdraws it. The pages are drawn as the branch you're
 // on makes them (bold.js BOLD.branch), and each branch has its page, as a pull request (proposal.html?b=<id>).
 
 const MAX_COMMITS = 50, MAX_PAGES = 20, MAX_TITLE = 120, MAX_DESCRIPTION = 5000, MAX_NOTE = 300, MAX_SIZE = 400000;
@@ -92,6 +92,15 @@ function cannotDecide(b, email, full){
   if ((b.contributors || []).indexOf(String(email || '').toLowerCase()) >= 0) return 'You’ve committed to it: another PI or admin reviews it.';
   return '';
 }
+// A branch nobody decides is accepted by itself (2026-11-24, as a project's proposal is): AUTO_DAYS after it was
+// opened (or marked ready), or after its last commit if that's later, so a change made late still gets its week.
+const AUTO_DAYS = 7, DAY = 86400000;
+// Pure: when branch b is accepted by itself (ms), or 0 if it isn't open.
+function dueAt(b){
+  if (!b || b.status !== 'open') return 0;
+  return Math.max(b.readyAt || b.at || 0, b.editedAt || 0) + AUTO_DAYS * DAY;
+}
+const isDue = (b, now) => { const t = dueAt(b); return !!t && t <= now; };
 const isOpen = (b) => !!b && (b.status === 'open' || b.status === 'draft');
 const canWithdraw = (b, email, full) => isOpen(b) && (full || (b.by && String(b.by.email || '').toLowerCase() === String(email || '').toLowerCase()));
 
@@ -122,4 +131,4 @@ function rebased(prop, page, changes, at){
   return Object.assign({}, prop, { changes: out, editedAt: at });
 }
 
-module.exports = { rebased, isOpen, MAX_COMMITS, MAX_PAGES, MAX_TITLE, MAX_DESCRIPTION, ID, BranchError, pageKey, areaOf, isWhole, validChange, withCommit, cannotDecide, canWithdraw, commitsOf, text };
+module.exports = { AUTO_DAYS, dueAt, isDue, rebased, isOpen, MAX_COMMITS, MAX_PAGES, MAX_TITLE, MAX_DESCRIPTION, ID, BranchError, pageKey, areaOf, isWhole, validChange, withCommit, cannotDecide, canWithdraw, commitsOf, text };

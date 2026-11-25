@@ -48,9 +48,9 @@ export default {
     // lower of the two; areaWhat titles: everyone signed in sees the projects' titles, and
     // below Projects' View and Edit asks to join one, 2026-11-02); Internal review has its own area.
     { label: 'Research', href: 'projects.html', area: 'projects', areaWhat: 'titles', links: [
-      // To come: `soon: true` shows the name with a Soon tag, not a link (no page yet).
       { label: 'Problem Bank', href: 'problems.html', area: 'projects' },
       { label: 'Projects', href: 'projects.html', area: 'projects', areaWhat: 'titles' },
+      // Northstars, moonshots and stepping stones, and how they connect (#248).
       { label: 'Internal review', href: 'audit-board.html', area: 'ml-cycle' },
     ] },
     { label: 'Calendar', href: 'calendar.html', links: [], separatorAfter: true, area: 'calendar' },
@@ -62,8 +62,9 @@ export default {
     // Its sub-pages are the released events (Firestore), filled in by bold.js.
     { label: 'Events', href: 'events.html', links: [], events: true, area: 'events' },
     { label: 'Agents', href: 'agents.html', area: 'agents', links: [
+      // The MCP server: how to connect, and its tools (tools.html; tokens are made on the profile).
+      { label: 'MCP server', href: 'tools.html', area: 'tools' },
       { label: 'Activity', href: 'agents.html#activity' },
-      { label: 'Tools', href: 'tools.html', area: 'tools' },
       { label: 'Skills', href: 'skills.html', area: 'skills' },
     ], separatorAfter: true },
     // Its sub-pages are the how-to guides (Firestore), filled in by bold.js.

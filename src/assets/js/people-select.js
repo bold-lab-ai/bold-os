@@ -9,7 +9,7 @@ window.BoldPeopleSelect = (function(){
       return snap.docs.map(function(d){ return { id: d.data().slackId || d.id, name: d.data().name || '' }; })
         .filter(function(p){ return p.name; })
         .sort(function(a, b){ return a.name.localeCompare(b.name); });
-    });
+    }).catch(function(error){ loading = null; throw error; });
     return loading;
   }
   function options(people, selectedId, prompt){

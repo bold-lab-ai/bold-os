@@ -13,7 +13,9 @@
   },
   "keywords": [],
   "devDependencies": {
-    "@11ty/eleventy": "^3.1.6"
+    "@11ty/eleventy": "^3.1.6",
+    "@antithesishq/bombadil": "0.8.0",
+    "linkedom": "^0.18.15"
   },
   "private": true,
   "type": "module"

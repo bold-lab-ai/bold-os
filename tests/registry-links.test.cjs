@@ -25,3 +25,24 @@ test('quotes cannot become attributes in a linked fact',()=>{
   assert.match(html,/&quot; onclick=&quot;/);
   assert.doesNotMatch(html,/<a[^>]*onclick=/);
 });
+
+test('a benchmark launch goes to the Lite base without a session or handoff',()=>{
+  const {serviceUrl} = context.window.BOLDRegistryLinks;
+  assert.equal(serviceUrl('https://lite.example.org/lite?project=a#secret'), 'https://lite.example.org/lite');
+  for (const invalid of ['https://user:pass@example.org', 'http://example.org', 'javascript:alert(1)', 'http://localhost:8888/lite']){
+    assert.equal(serviceUrl(invalid), '');
+  }
+  const demo = {window:{BOLD_TEST:true}, URL};
+  vm.runInNewContext(fs.readFileSync(require.resolve('../src/assets/js/registry-links.js'),'utf8'), demo);
+  assert.equal(demo.window.BOLDRegistryLinks.serviceUrl('http://localhost:8888/lite'), 'http://localhost:8888/lite');
+});
+
+test('Research lists the Problem Bank; old Benchmarks bookmarks lead there', async () => {
+  const site = (await import('../src/_data/site.js')).default;
+  const research = site.nav.find(group => group.label === 'Research').links;
+  assert.ok(research.some(link => link.href === 'problems.html'));
+  assert.ok(!research.some(link => link.href === 'benchmarks.html'));
+  const redirect = fs.readFileSync(require.resolve('../src/pages/benchmarks.html'), 'utf8');
+  assert.match(redirect, /http-equiv="refresh" content="0; url=problems\.html"/);
+  assert.match(redirect, /href="problems\.html"/);
+});

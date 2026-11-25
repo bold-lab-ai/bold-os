@@ -423,12 +423,12 @@ service cloud.firestore {
       // ask a PI/admin to approve or delete it.
       allow update, delete: if hasFullWrite();
 
-      // A paper on the board is also a project (project.html#board=…).
+      // A venue card records a project submission or past work registered for internal review.
       match /cards/{cardId} {
         allow read: if may('ml-cycle', 'view') || seesProject(resource.data.get('projectId', cardId));
         // Only the server (projectWorkspace 'submit') files a card under another
         // card's project (`projectId`); nobody changes it afterwards.
-        allow create: if (may('ml-cycle', 'edit') || may('projects', 'edit')) && request.resource.data.get('projectId', cardId) == cardId;
+        allow create: if false; // Only register_past_paper and projectWorkspace submit venue cards.
         // A card can be changed only by whoever created it, a reviewer
         // assigned to it, or a PI/admin — same base condition as before.
         //
@@ -452,7 +452,9 @@ service cloud.firestore {
           request.resource.data.reviewers == resource.data.reviewers ||
           email() == resource.data.submittedBy.email ||
           hasFullWrite()
-        ) && request.resource.data.get('projectId', '') == resource.data.get('projectId', '');
+        ) && !request.resource.data.diff(resource.data).affectedKeys().hasAny(
+          ['verificationPlan', 'openProblemId', 'openProblemTitle', 'projectId', 'registrationKind']
+        ) && (resource.data.get('registrationKind','') != 'past_paper' || !request.resource.data.keys().hasAny(['proposal'])) && researchLinksOk();
         allow delete: if (may('ml-cycle', 'edit') || may('projects', 'edit')) && (
           email() == resource.data.submittedBy.email ||
           email() == resource.data.reviewers.junior ||
@@ -480,25 +482,44 @@ service cloud.firestore {
       allow read, write: if false;
       match /validations/{version} { allow read, write: if false; }
     }
+    match /benchmarkSources/{id} { allow read, write: if false; }
     match /benchmarkReceipts/{id} { allow read, write: if false; }
+    // The registry validates both endpoints and serializes hierarchy changes.
+    match /problemRelationships/{id} { allow read, write: if false; }
+    match /problemFamilyState/{id} { allow read, write: if false; }
 
+    match /projectProposalReceipts/{id} { allow read, write: if false; }
+    match /paperRegistrationReceipts/{id} { allow read, write: if false; }
+
+    // A project's level and what it's part of (#248, functions/research-map.js): a northstar is part of
+    // nothing; a moonshot of northstars; a stepping stone (no level, as from before) of moonshots or problems.
+    function researchLinksShape(d){
+      return d.get('level', 'project') in ['northstar', 'moonshot', 'project'] &&
+        d.get('parents', []) is list && d.get('parents', []).size() <= 20 &&
+        d.get('problems', []) is list && d.get('problems', []).size() <= 20 &&
+        d.get('connection', '') is string && d.get('connection', '').size() <= 2000;
+    }
+    function researchLinked(d){
+      return d.get('level', 'project') == 'northstar' || d.get('parents', []).size() > 0 ||
+        (d.get('level', 'project') == 'project' && d.get('problems', []).size() > 0);
+    }
+    // On an update: the shape always; linked up once its level or links change (older ones stay editable meanwhile).
+    function researchLinksOk(){
+      return researchLinksShape(request.resource.data) && (
+        !request.resource.data.diff(resource.data).affectedKeys().hasAny(['level', 'parents', 'problems']) ||
+        researchLinked(request.resource.data));
+    }
     match /projects/{projectId} {
       allow read: if seesProject(resource.data.get('projectId', projectId));
-      // A new project is proposed (#226): within the standard compute allowance (proposal.more false, no GPU hours),
-      // or asking for more (its GPU hours); onProjectRegistered approves it or sends it to the PIs and admins.
-      allow create: if may('projects', 'edit') && request.resource.data.submittedBy.email == email() &&
-        request.resource.data.get('projectId', projectId) == projectId &&
-        request.resource.data.proposal.status == 'proposed' &&
-        !('dueAt' in request.resource.data.proposal) && (
-          (request.resource.data.proposal.get('more', true) == false && !('gpuHours' in request.resource.data.proposal)) ||
-          (request.resource.data.proposal.get('more', true) == true &&
-            request.resource.data.proposal.gpuHours is number && request.resource.data.proposal.gpuHours > 0 && request.resource.data.proposal.gpuHours <= 10000000));
+      // The callable validates the scientific problem, every selected release and its level and links (#248) atomically.
+      allow create: if false;
       allow update: if may('projects', 'edit') && (
         email() == resource.data.submittedBy.email ||
         email() in resource.data.get('authorEmails', []) ||
         hasFullWrite()
-      ) && request.resource.data.get('projectId', '') == resource.data.get('projectId', '') &&
-        (hasFullWrite() || request.resource.data.get('proposal', null) == resource.data.get('proposal', null));
+      ) && request.resource.data.get('registrationKind','') == resource.data.get('registrationKind','') && request.resource.data.get('verificationPlan',null) == resource.data.get('verificationPlan',null) && request.resource.data.get('openProblemId','') == resource.data.get('openProblemId','') && request.resource.data.get('projectId', '') == resource.data.get('projectId', '') &&
+        (hasFullWrite() || request.resource.data.get('proposal', null) == resource.data.get('proposal', null)) &&
+        researchLinksOk();
       allow delete: if may('projects', 'edit') && (
         email() == resource.data.submittedBy.email || hasFullWrite()
       );
@@ -1022,6 +1043,18 @@ service cloud.firestore {
 
     // A person's read points (read-point.js): which version of a document they
     // last marked as read. Theirs alone, keyed by their Firebase Auth uid.
+    // A problem being talked through with BOLD (problem-new.html): its conversation and what BOLD gathered, kept
+    // to pick up later. Only whoever started it reads or changes it; deleted once the problem is saved.
+    match /problemDrafts/{id} {
+      allow read, delete: if isSignedIn() && resource.data.email == email();
+      allow create, update: if may('projects', 'change') && request.resource.data.email == email()
+        && (resource == null || resource.data.email == email())
+        && request.resource.data.keys().hasOnly(['email', 'turns', 'draft', 'done', 'title', 'me', 'createdAt', 'updatedAt'])
+        && request.resource.data.turns is list && request.resource.data.turns.size() <= 41
+        && request.resource.data.draft is map && request.resource.data.done is bool
+        && request.resource.data.title is string && request.resource.data.title.size() <= 200
+        && request.resource.data.createdAt is number && request.resource.data.updatedAt is number;
+    }
     match /readPoints/{userId}/docs/{key} {
       allow read, delete: if isSignedIn() && request.auth.uid == userId;
       allow create, update: if isSignedIn() && request.auth.uid == userId

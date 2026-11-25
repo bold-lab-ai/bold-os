@@ -1,0 +1,55 @@
+/* The Problem Bank's steps (the bank, adding a problem, a problem's page): numbered marks joined by a hairline, in
+   Cabin; the current step in the accent, a finished one ticked (as the checklist beside the conversation). */
+.pb-steps{list-style:none; counter-reset:pb-step; display:grid; grid-auto-flow:column; grid-auto-columns:minmax(0, 1fr); margin:22px 0 30px; padding:0; font-family:var(--sans);}
+.pb-steps > li{counter-increment:pb-step; position:relative; display:flex; flex-direction:column; align-items:center; gap:8px; padding:0; text-align:center; font-size:13.5px; line-height:1.35; color:var(--muted);}
+.pb-steps > li[hidden]{display:none;}
+.pb-steps > li::before{content:counter(pb-step); position:relative; z-index:1; display:grid; place-items:center; width:24px; height:24px; box-sizing:border-box;
+  border:1px solid var(--line); border-radius:50%; background:var(--paper); font-size:11px; font-weight:600; color:var(--muted);}
+/* Justified: the first step at the page's left edge, the last at its right, the others centred. The hairline runs
+   from this mark to the next one's: a mark 12px in at either end, at the centre in between. */
+.pb-steps > li:first-child{align-items:flex-start; text-align:left;}
+.pb-steps > li:last-child, .pb-steps > li:has(+ li[hidden]:last-child){align-items:flex-end; text-align:right;}
+.pb-steps > li::after{content:''; position:absolute; top:12px; left:calc(50% + 20px); right:calc(-50% + 20px); height:1px; background:var(--line);}
+.pb-steps > li:first-child::after{left:32px;}
+.pb-steps > li:nth-last-child(2)::after, .pb-steps > li:has(+ li + li[hidden]:last-child)::after{right:calc(-100% + 32px);}
+.pb-steps > li:last-child::after, .pb-steps > li:has(+ li[hidden]:last-child)::after{display:none;}
+.pb-steps > li[aria-current="step"]{color:var(--ink); font-weight:600;}
+.pb-steps > li[aria-current="step"]::before{border-color:var(--accent); color:var(--accent); box-shadow:0 0 0 3px color-mix(in srgb, var(--accent) 14%, transparent);}
+.pb-steps > li.is-done{color:var(--ink-soft);}
+.pb-steps > li.is-done::before{content:'\2713'; border-color:var(--accent); background:var(--accent); color:var(--on-fill);}
+.pb-steps > li.is-done::after{background:var(--accent);}
+/* "Coming soon": a small-caps note under its step. */
+.pb-steps small{display:block; margin-top:3px; font-size:10px; font-weight:600; letter-spacing:.12em; text-transform:uppercase; color:var(--muted);}
+/* A problem's page: the step's own controls (its project, Add verifier) sit under its name. */
+.pb-steps label{font-size:12px; font-weight:400; color:var(--muted);}
+.pb-steps select{max-width:100%; font:13px var(--sans);}
+.pb-steps .btn-primary{background:var(--accent); border-color:var(--accent); color:var(--on-fill);}
+@media (max-width:640px){
+  .pb-steps{grid-auto-flow:row; grid-auto-columns:auto; row-gap:14px;}
+  .pb-steps > li, .pb-steps > li:first-child, .pb-steps > li:last-child, .pb-steps > li:has(+ li[hidden]:last-child){flex-direction:row; flex-wrap:wrap; align-items:center; gap:10px; text-align:left;}
+  .pb-steps > li::after{display:none;}
+}
+#problemBody .detail-head{display:grid; grid-template-columns:minmax(0,1fr) auto;}
+#problemBody .detail-head h2{overflow-wrap:anywhere;}
+#problemBody .detail-head > .badge{grid-column:2; grid-row:1; align-self:start; white-space:nowrap;}
+#problemBody .detail-badges{grid-column:1 / -1;}
+
+.pb-project-options{max-height:16rem;overflow:auto;padding:.5rem 0;}
+.pb-project-options label{display:flex;gap:.5rem;align-items:baseline;padding:.25rem 0;font-weight:normal;}
+.pb-project-options input[type=checkbox]{width:auto;}
+.pb-form summary{cursor:pointer;}
+.pb-purpose{display:inline-flex;gap:.5rem;align-items:baseline;}
+.pb-purpose input[type=checkbox]{width:auto;flex:none;}
+.pb-papers{margin-top:8px; font:14px/1.5 var(--sans);}
+.pb-papers summary{width:fit-content; color:var(--link); cursor:pointer;}
+#problemBody .tab:disabled{color:var(--muted); opacity:.55; cursor:default;}
+.pb-paper-list{list-style:none; padding:0; margin:0; max-width:var(--article-max); overflow-wrap:anywhere;}
+.pb-paper-list > li{padding:10px 0; border-bottom:1px solid var(--line);}
+.pb-papers .pb-paper-list{border-left:2px solid var(--line); margin:6px 0 0 4px; padding-left:12px;}
+.pb-papers .pb-paper-list > li{padding:4px 0; border:0;}
+.pb-paper-venue{display:block; color:var(--muted); font:13px/1.45 var(--sans);}
+/* Lite sessions linked to the problem (#43). */
+.pb-sessions{margin:0 0 20px; font:14px var(--sans);}
+.pb-sessions h3{margin:0 0 6px; font:600 14px var(--sans);}
+.pb-sessions ul{margin:0; padding-left:18px;}
+.pb-sessions li{margin:2px 0;}

@@ -46,6 +46,13 @@ function escapeHtml(s){ return BOLD.escapeHtml(s); }
   var OLD_KINDS = { group: 'Group meeting', pitch: 'Pitch Day', conference: 'Conference', invited: 'Invited talk', other: 'Other' };
   var events = null;   // the released events, loaded when a presentation is edited
   var authorRows = [];     // in-progress rows while editing the authors, see authors.js
+  // Northstars, moonshots and stepping stones (#248): the map (researchMap), for its Part of and Made of; the picker while editing.
+  var R = window.BoldResearch, rmap = null, partPicker = null;
+  BOLD.onUser(function(u){
+    if (!u || rmap || !window.BoldResearchPicker) return;
+    BoldResearchPicker.load().then(function(m){ rmap = m; if (card && !editing) render(); })
+      .catch(function(err){ console.error('[BOLD Lab] loading the map failed', err); });
+  });
   var projectId = (location.hash.match(/[#&]id=([^&]+)/) || [])[1];
   if (projectId) projectId = decodeURIComponent(projectId);
   var boardId = (location.hash.match(/[#&]board=([^&]+)/) || [])[1];
@@ -161,6 +168,18 @@ function escapeHtml(s){ return BOLD.escapeHtml(s); }
   function keywordLink(k){ return '<a href="projects.html#keyword=' + encodeURIComponent(k) + '">' + esc(k) + '</a>'; }
 
   function missing(){ return '<span class="detail-muted">Not set</span>'; }
+  function proposalVerifierRows(plan){
+    if (!plan) return '';
+    if (plan.mode === 'benchmark') return row('Verifier at proposal', 'This project is building a benchmark. A separate verifier is not required.');
+    if (plan.mode === 'deferred') return row('Verifier at proposal', 'Define verifier later') +
+      row('Reason for deferral', esc(plan.reason)) + row('Expected onboarding', esc(plan.expectedOnboarding));
+    if (plan.mode !== 'linked') return '';
+    var releases = (plan.releases || []).map(function(release){
+      var url = 'problem.html?problem=' + encodeURIComponent(release.problem_id) + '#tab=releases&release=' + encodeURIComponent(release.id);
+      return '<a href="' + esc(url) + '">' + esc(release.title) + ' · version ' + esc(String(release.version)) + '</a>';
+    });
+    return releases.length ? row('Verifier releases at proposal', releases.join('<br>')) : '';
+  }
   // A row; its actions (detail-act: Edit, Set up, Pause, Invite someone, …), wherever in the value they're made,
   // go together, in order, on its right (project.css), as one choice: "Set up or Edit".
   function act(html){ return '<span class="detail-act">' + html + '</span>'; }
@@ -207,6 +226,47 @@ function escapeHtml(s){ return BOLD.escapeHtml(s); }
       (off ? ' disabled title="' + off + '"' : '') + '>Edit</button>');
   }
 
+  // Its level, what it's part of and how, and what it's made of (#248, research-map.js); edited together.
+  function researchRows(){
+    var level = R.levelOf(card), pid = card.projectId || projectId, html = '';
+    var partOf = level === 'northstar' ? '<a href="boldiquette.html#our-goals-for-bold">BOLD\u2019s goals</a>'
+      : !rmap ? '<span class="detail-muted">Loading\u2026</span>'
+      : (BoldResearchPicker.linksHtml(rmap, card) || '<span class="detail-muted">Not linked yet: say what it\u2019s part of</span>');
+    var editor = '<label class="detail-hint" for="partLevel">It\u2019s a</label> <select id="partLevel">' + R.LEVELS.map(function(l){
+        return '<option value="' + l + '"' + (l === level ? ' selected' : '') + '>' + R.NAMES[l] + '</option>'; }).join('') + '</select>' +
+      '<div id="partPicker" class="part-picker"></div>' +
+      '<label class="detail-hint" for="partConnection">How it connects</label><textarea id="partConnection" maxlength="2000" rows="3">' + esc(card.connection || '') + '</textarea>';
+    html += editableRow('part', 'Part of', '<span class="level-badge lv-' + level + '">' + R.NAMES[level] + '</span> ' + partOf, '', editor, 'partSave');
+    if (editing !== 'part' && card.connection && level !== 'northstar') html += row('How it connects', esc(card.connection));
+    var down = R.childLevel(level);
+    if (down && rmap) {
+      var kids = (rmap.items || []).filter(function(i){ return (i.parents || []).indexOf(pid) >= 0 && i.level === down; });
+      html += row('Made of', (kids.length ? kids.map(function(i){ return '<a href="' + esc(BoldResearchPicker.href(i)) + '">' + esc(i.title) + '</a>'; }).join(', ') : '<span class="detail-muted">No ' + R.PLURAL[down].toLowerCase() + ' yet</span>') +
+        act('<a class="btn-text detail-inline-edit" href="projects-register.html#level=' + down + '&part=' + encodeURIComponent(pid) + '">+ ' + R.NAMES[down] + '</a>'));
+    }
+    return html;
+  }
+  function wirePart(){
+    var draw = function(){
+      // Another level is part of another level: its choices start empty.
+      var level = el('partLevel').value;
+      if (!rmap) { el('partPicker').innerHTML = '<p class="detail-muted">Loading\u2026</p>'; return; }
+      partPicker = BoldResearchPicker.mount(el('partPicker'), rmap, level, level === R.levelOf(card) ? card : {}, card.projectId || projectId);
+      el('partConnection').hidden = level === 'northstar';
+    };
+    el('partLevel').addEventListener('change', draw);
+    draw();
+    el('partSave').addEventListener('click', function(){
+      var fail = failer();
+      if (!partPicker) return fail('Wait for them to load.');
+      var links = R.normalizeLinks(Object.assign({ level: el('partLevel').value, connection: el('partConnection').value }, partPicker.read()));
+      var issue = R.linkIssue(links);
+      if (issue) return fail(issue);
+      saveField(el('partSave'), { level: links.level, parents: links.parents, problems: links.problems, connection: links.connection }, fail);
+      if (window.BoldResearchPicker) BoldResearchPicker.load(true).then(function(m){ rmap = m; if (!editing) render(); });
+    });
+  }
+
   // The page's tabs, chosen by &tab= in the address (Overview when there's none).
   // The second tab is named for what it holds (the project's meeting, slides and notes, and
   // its talks); its hash stays #presentations, so links keep working.
@@ -243,7 +303,10 @@ function escapeHtml(s){ return BOLD.escapeHtml(s); }
   var PANELS = {
     // What the project is.
     overview: function(){
-      var html = '<dl class="detail-grid">';
+      var html = '<dl class="detail-grid">' + researchRows();
+      // Its open problem (#41), unless Part of already names it.
+      if (card.openProblemId && (card.problems || []).indexOf(card.openProblemId) < 0) html += '<dt>Open problem</dt><dd><a href="problem.html?problem=' + encodeURIComponent(card.openProblemId) + '">View in Problem Bank</a></dd>';
+      html += proposalVerifierRows(card.verificationPlan);
       html += '<dt>Authors</dt><dd>' + (editing === 'authors'
         ? '<div id="authorsWrap"></div>' +
           '<button class="btn-text" type="button" id="authorsAdd">+ Add author</button>' +
@@ -574,7 +637,7 @@ function escapeHtml(s){ return BOLD.escapeHtml(s); }
       title: card.title, abstractText: card.abstractText, keywords: card.keywords, slackChannel: card.slackChannel,
       computeEstimate: card.computeEstimate
     });
-    ['authors', 'authorEmails', 'overleafLink', 'arxivLink', 'pitchLink'].forEach(function(k){ if (card[k]) next[k] = card[k]; });
+    ['authors', 'authorEmails', 'overleafLink', 'arxivLink', 'pitchLink', 'level', 'parents', 'problems', 'connection'].forEach(function(k){ if (card[k]) next[k] = card[k]; });
     el('submitSave').disabled = true;
     callWorkspace({ action: 'submit', venue: venue, card: next }).then(function(r){
       try { localStorage.removeItem(CACHE_KEY + me.email.toLowerCase()); } catch (e){}
@@ -645,11 +708,13 @@ function escapeHtml(s){ return BOLD.escapeHtml(s); }
     var list = memberEmails();
     var names = list.map(function(e){ var p = personByEmail(e); return esc(p && p.name || e); }).join(', ');
     return (names || missing()) + (wsMsg ? '<div class="detail-hint">' + wsMsg + '</div>' : '') +
-      (window.BoldProjectInvite ? BoldProjectInvite.html() : '');
+      (window.BoldProjectInvite && R.levelOf(card) === 'project' ? BoldProjectInvite.html() : '');
   }
   function joinButton(){
     var mine = memberEmails().some(isMe), joined = ws && (ws.joined || []).some(isMe);
     var off = wsBusy || !wsLoaded ? ' disabled' : '';
+    // A northstar or moonshot isn't joined (#248): its stepping stones are.
+    if (!mine && R.levelOf(card) !== 'project') return '';
     return !mine ? '<button class="btn-box is-primary detail-remove" type="button" data-ws="join"' + off + '>Join project</button>'
       : joined ? '<button class="btn-box detail-remove" type="button" data-ws="leave"' + off + '>Leave project</button>' : '';
   }
@@ -666,6 +731,7 @@ function escapeHtml(s){ return BOLD.escapeHtml(s); }
     joinRequested = false;
     try { history.replaceState(null, '', location.pathname + location.search + location.hash.replace(/&join=1(?=&|$)/, '')); } catch (e){}
     if (memberEmails().some(isMe)) { wsMsg = 'You\u2019re already on this project.'; return; }
+    if (R.levelOf(card) !== 'project') { wsMsg = 'A ' + R.NAMES[R.levelOf(card)].toLowerCase() + ' isn\u2019t joined: join one of its stepping stones.'; return; }
     workspaceAction('join');
   }
 
@@ -1136,6 +1202,8 @@ function escapeHtml(s){ return BOLD.escapeHtml(s); }
     } else if (editing === 'abstract') {
       wireAbstractPreview();
       el('abstractSave').addEventListener('click', saveAbstract);
+    } else if (editing === 'part') {
+      wirePart();
     } else if (editing === 'keywords') {
       var errorEl = el('detailEditError');
       keywordField = wireKeywordField(card.keywords, failer(), function(){ errorEl.hidden = true; });
@@ -1401,6 +1469,11 @@ function escapeHtml(s){ return BOLD.escapeHtml(s); }
         return show('This project isn\u2019t here \u2014 it may have been removed. Find it under Projects.');
       }
       var fresh = doc.data();
+      if (boardId && fresh.registrationKind === 'past_paper') {
+        cacheDrop(projectId);
+        location.replace('audit-board.html#board=' + encodeURIComponent(boardId) + '&card=' + encodeURIComponent(projectId));
+        return;
+      }
       // Readable means they may see it (the rules: Projects' View, or one of its people), whatever
       // the page's own level says (#148: someone invited to it).
       if (BOLD.allowPage) BOLD.allowPage();

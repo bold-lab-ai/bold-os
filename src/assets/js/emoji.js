@@ -4,7 +4,20 @@
 // itself is written, not its name, so it shows the same everywhere (Slack too). The names are Slack's
 // (emoji-data.js, loaded when first needed). Loaded on every signed-in page (base.njk), after mentions.js
 // (BoldCaret). One list for the whole page, on whichever box is being typed in.
+// Arrows too (2026-11-25): -> <- => and -- become → ← ⇒ and — once a space is typed after them, never in code
+// (`…` or a ``` block); Backspace straight after puts back what was typed.
 (function(){
+  var ARROWS = { '->': '→', '<-': '←', '=>': '⇒', '--': '—' };
+  // Pure: an arrow just finished by a space → { start, text } (start: where the arrow is; text: it and the space),
+  // or null. Not after another - < = > or ! (-->, <--, >=>, <!--), nor in code: an open ` on the line, or inside a ``` block.
+  function arrow(before){
+    var m = /(^|[^\-<=>!])(->|<-|=>|--)( )$/.exec(before);
+    if (!m) return null;
+    var line = before.slice(before.lastIndexOf('\n') + 1);
+    if ((line.match(/`/g) || []).length % 2) return null;
+    if ((before.match(/^\s*```/gm) || []).length % 2) return null;
+    return { start: before.length - 3, text: ARROWS[m[2]] + ' ' };
+  }
   // Pure: the ":name" being typed just before the caret, if any → { start, query } (start: where the : is). Two
   // letters at least, after a space, a bracket or the start, so times (10:30) and links don't open it.
   function typing(before){
@@ -40,7 +53,7 @@
     for (var i = 0; i < all.length; i++) if (all[i].names.indexOf(name) >= 0) return all[i].e;
     return '';
   }
-  if (typeof module !== 'undefined' && module.exports) { module.exports = { typing: typing, whole: whole, parse: parse, find: find, byName: byName }; return; }
+  if (typeof module !== 'undefined' && module.exports) { module.exports = { arrow: arrow, typing: typing, whole: whole, parse: parse, find: find, byName: byName }; return; }
 
   var all = null, loading = null;
   var box = null, list = [], at = 0, field = null, start = -1;
@@ -109,7 +122,28 @@
     if (el.tagName === 'TEXTAREA') return true;
     return el.tagName === 'INPUT' && /^(text|search)$/.test(el.type) && el.getAttribute('spellcheck') !== 'false';
   }
-  document.addEventListener('input', function(e){ if (isField(e.target)) { if (field !== e.target) at = 0; show(e.target); } });
+  // The last arrow made, so Backspace straight after puts back what was typed: { ta, at (the caret after it), was }.
+  var made = null;
+  function arrows(ta, e){
+    if (e.inputType !== 'insertText' || e.data !== ' ' || ta.selectionStart !== ta.selectionEnd) return;
+    var before = ta.value.slice(0, ta.selectionStart), a = arrow(before);
+    if (!a) return;
+    put(ta, a.start, a.text);
+    made = { ta: ta, at: ta.selectionStart, was: before.slice(a.start) };
+  }
+  document.addEventListener('input', function(e){
+    if (!isField(e.target)) return;
+    if (made && made.ta === e.target && e.inputType !== 'insertText') made = null;
+    arrows(e.target, e);
+    if (field !== e.target) at = 0; show(e.target);
+  });
+  document.addEventListener('keydown', function(e){
+    if (!made || e.target !== made.ta) return;
+    var ta = made.ta, m = made; made = null;
+    if (e.key !== 'Backspace' || ta.selectionStart !== m.at || ta.selectionEnd !== m.at) return;
+    e.preventDefault();
+    put(ta, m.at - 2, m.was);
+  });
   // Before the page's own keys (Enter sending a comment, say), while the list is open.
   document.addEventListener('keydown', function(e){
     if (!box || e.target !== field || e.metaKey || e.ctrlKey || e.isComposing) return;

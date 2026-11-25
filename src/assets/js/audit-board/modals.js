@@ -4,9 +4,8 @@
 
   // ---------- dynamic author rows (Edit fields) ----------
   // Array of in-progress { name, email, isNew } rows, reset each time the
-  // Edit-fields modal opens (authors aren't collected at registration any
-  // more — see onAddCard's own comment; they're added here instead, at
-  // Submit the abstract). Authors resolve to a real person's email via
+  // Edit-fields modal opens. A project's authors can be updated before
+  // submitting the abstract. Authors resolve to a real person's email via
   // the roster picker (2026-09-12) — same as reviewers (reviewerInputHtml)
   // — with a "+ New author" escape hatch (typed Name + Email) for someone
   // genuinely outside the Slack workspace. Used to be free text; every
@@ -89,109 +88,171 @@
     return false;
   }
 
-  // Registration-form draft autosave (2026-09-14+1) \u2014 reported by a user:
-  // "I lose the fields I've filled out if the page refreshes... I already
-  // had to fill it out a couple of times." Nothing in this app ever
-  // reloads the page itself (loadInitialData/onAuthStateChanged re-render
-  // in place, they never navigate \u2014 see their own comments), so losing an
-  // in-progress form has to be the BROWSER reloading the tab out from
-  // under it (a backgrounded tab is exactly when mobile browsers do that \u2014
-  // "double checking the title, coauthors emails, etc." reads as switching
-  // away and back). Nothing client-side can stop that outright, but the
-  // form's contents don't have to die with it: every change is mirrored to
-  // localStorage (not sessionStorage \u2014 a real reload, or even fully
-  // closing and reopening the tab, should still find it) under a key
-  // scoped to this venue AND this signed-in person, so switching venues or
-  // accounts on the same browser never surfaces someone else's stray
-  // draft. Cleared only on a successful Submit (onAddCard) \u2014 closing the
-  // modal any other way (Cancel, clicking outside, a real reload) leaves
-  // it in place, restored next time "Register a paper" is opened.
-  function registerDraftKey(boardId){
-    var email = state.currentUser && state.currentUser.email;
-    return 'airb-draft-register:' + boardId + ':' + (email || '');
+  function paperRegistrationReason(){
+    if (!state.currentUser) return 'Sign in with Slack to register a paper.';
+    if (BOLD.can('ml-cycle', 'edit') || BOLD.can('projects', 'edit')) return '';
+    return 'Registering a paper requires edit access to Internal Review or Projects.';
   }
-  function saveRegisterDraft(boardId){
+
+  function paperDraftKey(board, email){
+    return 'airb-draft-register:' + board + ':' + email;
+  }
+
+  function readPaperDraft(key){
+    try { return JSON.parse(localStorage.getItem(key)) || {}; }
+    catch (e){ return {}; }
+  }
+
+  function savePaperDraft(key, draft){
     try {
-      var titleEl = document.getElementById('pTitle');
-      if (!titleEl) return; // modal already closed \u2014 nothing to save
-      var title = titleEl.value;
-      var computeEstimate = document.getElementById('pCompute').value;
-      var note = document.getElementById('pNote').value;
-      // Nothing typed yet (including the very first render of a brand-new
-      // modal) \u2014 don't create a draft out of thin air, and if a real
-      // draft was just emptied back out by hand, clear it rather than
-      // leaving a stale entry no longer reflected on screen.
-      if (!title.trim() && !computeEstimate.trim() && !note.trim()){
-        clearRegisterDraft(boardId);
-        return;
+      if ([draft.title, draft.computeEstimate, draft.note, draft.problemId].some(function(value){ return value.trim(); })) {
+        localStorage.setItem(key, JSON.stringify(draft));
+      } else {
+        localStorage.removeItem(key);
       }
-      var draft = {
-        title: title,
-        computeEstimate: computeEstimate,
-        note: note,
-        savedAt: Date.now()
-      };
-      localStorage.setItem(registerDraftKey(boardId), JSON.stringify(draft));
-    } catch (e){ /* private-mode/quota errors \u2014 losing autosave silently beats crashing the form */ }
+    } catch (e){ /* The form still works if browser storage is unavailable. */ }
   }
-  function loadRegisterDraft(boardId){
-    try {
-      var raw = localStorage.getItem(registerDraftKey(boardId));
-      return raw ? JSON.parse(raw) : null;
-    } catch (e){ return null; }
-  }
-  function clearRegisterDraft(boardId){
-    try { localStorage.removeItem(registerDraftKey(boardId)); } catch (e){}
+
+  var pendingPaperCard = null;
+
+  function openRegisteredPaper(){
+    if (!pendingPaperCard) return;
+    var target = pendingPaperCard;
+    if (state.currentBoardId !== target.board || state.view !== 'venue' || !state.currentUser || state.currentUser.email !== target.email){
+      pendingPaperCard = null;
+      return;
+    }
+    if (state.cards.some(function(card){ return card.id === target.id; })){
+      pendingPaperCard = null;
+      openCard(target.id);
+    }
   }
 
   function openModal(){
-    if (!requireSignedIn()) return;
+    var reason = paperRegistrationReason();
+    if (reason) { showToast(reason, 'error'); return; }
     var current = getCurrentBoard();
-    var draft = loadRegisterDraft(current && current.id);
-    if (current && current.status === 'pending'){
-      showToast('This venue hasn’t been approved yet.', 'error');
-      return;
-    }
+    if (!current || current.status === 'pending') { showToast('Choose an approved venue first.', 'error'); return; }
+    var email = state.currentUser.email;
+    var key = paperDraftKey(current.id, email);
+    var draft = readPaperDraft(key);
+    var problemId = draft.problemId || '';
+    var requestId = draft.requestId || crypto.randomUUID();
+    var registry = firebase.app().functions('europe-west2').httpsCallable('benchmarkRegistry');
+    var busy = false;
+    var canDefine = BOLD.can('projects', 'view') && BOLD.can('projects', 'edit');
     els.modalRegion.innerHTML =
-      '<div class="modal-overlay" id="modalOverlay">' +
-        '<div class="modal" role="dialog" aria-modal="true" aria-labelledby="modalTitle">' +
-          '<h2 id="modalTitle">Register paper for review</h2>' +
-          '<div id="paperForm">' +
-            '<div style="font-size:12px;color:var(--muted);margin-bottom:14px;">Registering as ' +
-              escapeHtml(state.currentUser.name || state.currentUser.email) + ' (' + escapeHtml(state.currentUser.email) + ') \u2014 used as the submitter and corresponding author.</div>' +
-            (draft ? '<div id="draftNotice" style="font-size:12px;color:var(--accent);background:var(--accent-dim);padding:6px 10px;border-radius:var(--radius);margin-bottom:14px;">Restored your unsaved draft from ' + formatTimestamp(draft.savedAt) + ' \u2014 <button type="button" class="btn-text" id="discardDraft" style="font-size:inherit;">Discard</button></div>' : '') +
-            '<div class="field"><label for="pTitle">Paper title</label><input type="text" id="pTitle" value="' + escapeHtml((draft && draft.title) || '') + '"></div>' +
-            '<div class="field"><label for="pCompute">Compute estimate</label><input type="text" id="pCompute" placeholder="e.g. ~2000 A100-hours" value="' + escapeHtml((draft && draft.computeEstimate) || '') + '">' +
-              '<div style="font-size:12px;color:var(--muted);margin-top:4px;">Required at registration (8 weeks out)</div></div>' +
-            '<div class="field"><label for="pNote">Note for the reviewers (optional)</label><textarea id="pNote" placeholder="Anything they should know">' + escapeHtml((draft && draft.note) || '') + '</textarea></div>' +
-            '<div style="font-size:12px;color:var(--muted);margin-bottom:14px;">Authors and the Overleaf link come later, at Submit the abstract &mdash; there’s no first draft yet to point to.</div>' +
-            '<div class="field-error" id="paperFormError" hidden>Please fill in the required fields above.</div>' +
-            '<div class="modal-actions">' +
-              '<button class="btn" type="button" id="cancelModal">Cancel</button>' +
-              '<button class="btn btn-primary" type="button" id="submitCardBtn">Submit</button>' +
-            '</div>' +
-          '</div>' +
-        '</div>' +
-      '</div>';
-    document.getElementById('cancelModal').addEventListener('click', closeModal);
-    document.getElementById('modalOverlay').addEventListener('click', function(e){
-      if (e.target.id === 'modalOverlay') closeModal();
+      '<div class="modal-overlay" id="modalOverlay"><div class="modal" role="dialog" aria-modal="true" aria-labelledby="modalTitle">' +
+      '<h2 id="modalTitle">Register paper for review</h2>' +
+      '<form id="paperForm"><p>Registering as ' + escapeHtml(state.currentUser.name || email) + ' for ' + escapeHtml(current.label || current.id) + '.</p>' +
+      (draft.savedAt ? '<p id="draftNotice">Restored your unsent draft. <button class="btn-text" type="button" id="discardDraft">Discard</button></p>' : '') +
+      '<div class="field"><label for="pTitle">Paper title</label><input id="pTitle" type="text" maxlength="300" required></div>' +
+      '<div class="field"><label for="pProblem">Open problem</label><select id="pProblem" required disabled aria-describedby="paperProblemStatus">' +
+        '<option value="">Choose an open problem</option></select>' +
+        '<span id="paperProblemStatus" role="status">Loading open problems…</span> ' +
+        '<button id="retryPaperProblems" class="btn-text" type="button" hidden>Refresh list</button>' +
+        (canDefine ? '<div>Can’t find the appropriate problem? Define one <a href="problems.html" target="_blank" rel="noopener" aria-label="here, in the Problem Bank (opens in a new tab)">here</a>.</div>' : '<div>Ask a collaborator to add any missing problem to the Problem Bank.</div>') + '</div>' +
+      '<div class="field"><label for="pCompute">Compute estimate</label><input id="pCompute" type="text" maxlength="500" placeholder="e.g. 8 A100-hours"></div>' +
+      '<div class="field"><label for="pNote">Note for the reviewers (optional)</label><textarea id="pNote" maxlength="4000"></textarea></div>' +
+      '<div class="field-error" id="paperFormError" role="alert" hidden></div>' +
+      '<div class="modal-actions"><button class="btn" type="button" id="cancelModal">Cancel</button>' +
+        '<button class="btn btn-primary" type="submit" id="submitCardBtn" disabled>Register paper</button></div></form></div></div>';
+    var form = document.getElementById('paperForm');
+    var title = form.elements.pTitle, select = form.elements.pProblem, compute = form.elements.pCompute, note = form.elements.pNote;
+    var submit = form.elements.submitCardBtn, cancel = form.elements.cancelModal, refresh = form.elements.retryPaperProblems;
+    var error = document.getElementById('paperFormError'), status = document.getElementById('paperProblemStatus');
+    title.value = draft.title || '';
+    compute.value = draft.computeEstimate || '';
+    note.value = draft.note || '';
+
+    function visible(){
+      return form.isConnected && state.currentUser && state.currentUser.email === email && state.currentBoardId === current.id;
+    }
+    function remember(){
+      savePaperDraft(key, {title:title.value, computeEstimate:compute.value, note:note.value, problemId:problemId, requestId:requestId, savedAt:Date.now()});
+    }
+    function updateSubmit(){
+      submit.disabled = busy || !title.value.trim() || select.disabled || !select.value;
+    }
+    async function loadProblems(){
+      select.disabled = true;
+      refresh.hidden = true;
+      status.textContent = 'Loading open problems…';
+      updateSubmit();
+      try {
+        var result = await registry({action:'past_paper_problem_choices'});
+        if (!visible()) return;
+        var items = result.data.items;
+        select.length = 1;
+        items.forEach(function(problem){ select.add(new Option(problem.title, problem.id)); });
+        select.value = problemId;
+        select.disabled = !items.length;
+        if (!items.length) status.textContent = 'There are no active open problems. Refresh this list after a problem is added.';
+        else if (problemId && !select.value) status.textContent = 'The saved problem is no longer available. Choose another open problem.';
+        else status.textContent = '';
+      } catch (e){
+        if (visible()) status.textContent = 'Could not load the open problems. Refresh the list to try again.';
+      } finally {
+        if (visible()) { refresh.hidden = false; updateSubmit(); }
+      }
+    }
+    form.addEventListener('input', function(){
+      error.hidden = true;
+      remember();
+      updateSubmit();
     });
-    document.getElementById('submitCardBtn').addEventListener('click', onAddCard);
-    ['pTitle', 'pCompute'].forEach(function(id){
-      document.getElementById(id).addEventListener('keydown', function(ev){
-        if (ev.key === 'Enter'){ ev.preventDefault(); onAddCard(ev); }
-      });
+    select.addEventListener('change', function(){ problemId = select.value; remember(); updateSubmit(); });
+    refresh.addEventListener('click', loadProblems);
+    if (form.elements.discardDraft) form.elements.discardDraft.addEventListener('click', function(){
+      try { localStorage.removeItem(key); } catch (e){}
+      openModal();
     });
-    // Draft autosave (2026-09-14+1) — see saveRegisterDraft's own comment.
-    // One delegated listener covers every text field on the form.
-    document.getElementById('paperForm').addEventListener('input', function(){ saveRegisterDraft(current.id); });
-    var discardBtn = document.getElementById('discardDraft');
-    if (discardBtn) discardBtn.addEventListener('click', function(){
-      clearRegisterDraft(current.id);
-      openModal(); // cheapest way to reset every field back to blank
+    function dismiss(){
+      if (busy) return;
+      closeModal();
+      var trigger = document.getElementById('submitPaperBtn');
+      if (trigger) trigger.focus();
+    }
+    cancel.addEventListener('click', dismiss);
+    document.getElementById('modalOverlay').addEventListener('click', function(event){ if (event.target.id === 'modalOverlay') dismiss(); });
+    form.addEventListener('keydown', function(event){ if (event.key === 'Escape') dismiss(); });
+    form.addEventListener('submit', async function(event){
+      event.preventDefault();
+      if (!visible() || submit.disabled) return;
+      busy = true;
+      remember();
+      var payload = {action:'register_past_paper', request_id:requestId, board:current.id, problem_id:select.value,
+        title:title.value.trim(), compute_estimate:compute.value.trim(), note:note.value.trim()};
+      var controls = Array.from(form.elements).filter(function(control){ return !control.disabled; });
+      controls.forEach(function(control){ control.disabled = true; });
+      error.hidden = true;
+      submit.textContent = 'Registering…';
+      try {
+        var result = (await registry(payload)).data;
+        if (result.board !== current.id || !result.card_id) throw new Error('Could not confirm registration. Retry to check this paper.');
+        if (readPaperDraft(key).requestId === requestId) {
+          try { localStorage.removeItem(key); } catch (e){}
+        }
+        if (!visible()) return;
+        closeModal();
+        pendingPaperCard = {board:result.board, id:result.card_id, email:email};
+        openRegisteredPaper();
+        showToast('Registered for review.', 'ok');
+      } catch (e){
+        if (!visible()) return;
+        busy = false;
+        controls.forEach(function(control){ control.disabled = false; });
+        submit.textContent = 'Register paper';
+        error.hidden = false;
+        error.textContent = e.code === 'functions/already-exists'
+          ? 'This draft has already been registered. Check the venue board. To register another paper, reopen this form and discard the saved draft.'
+          : e.message || 'Could not register this paper. Try again.';
+        if (e.code === 'functions/failed-precondition' || e.code === 'functions/not-found') loadProblems();
+        else updateSubmit();
+      }
     });
-    document.getElementById('pTitle').focus();
+    title.focus();
+    loadProblems();
   }
 
   function closeModal(){ els.modalRegion.innerHTML = ''; }

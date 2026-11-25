@@ -47,3 +47,12 @@ test('BOLD-internal and above: approved at once within the standard allowance, 7
   assert.strictEqual(proposalHours({ more: true, gpuHours: 20000 }), '20,000 GPU hours');
   assert.strictEqual(proposalHours({ more: false }), 'the standard compute allowance');
 });
+
+test('standalone past papers stay on the review board, alongside project submissions and legacy records',()=>{
+  const data={title:'Research',status:'register'};
+  const venues=[{id:'v',label:'Conference',status:'approved'}];
+  const cards=[{id:'paper-x',boardId:'v',data:{...data,registrationKind:'past_paper'}},
+    {id:'old-paper',boardId:'v',data},{id:'new-submission',boardId:'v',data:{...data,projectId:'project-x'}}];
+  const rows=allProjectsFromCards(venues,cards,[],[],[]);
+  assert.deepStrictEqual(rows.submission.map(c=>c.cardId).sort(),['new-submission','old-paper']);
+});

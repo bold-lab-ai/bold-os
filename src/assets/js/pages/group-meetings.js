@@ -41,7 +41,8 @@
   }
   function fmt(date){ return new Date(date + 'T12:00:00').toLocaleDateString(undefined, { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' }); }
   function projectHref(p){ return 'project.html#id=' + encodeURIComponent(p.cardId || p.id) + (p.boardId ? '&board=' + encodeURIComponent(p.boardId) : '') + '&tab=presentations'; }
-  function past(m){ return !!m && (m.date + 'T' + (m.startTime || '00:00')) <= new Date().toLocaleString('sv-SE', { timeZone: 'Europe/London', hour12: false }).replace(' ', 'T').slice(0, 16); }
+  // `date` is the meeting's own date (its slots' meetingId); `onDate` where it was moved to on the Calendar.
+  function past(m){ return !!m && ((m.onDate || m.date) + 'T' + (m.startTime || '00:00')) <= new Date().toLocaleString('sv-SE', { timeZone: 'Europe/London', hour12: false }).replace(' ', 'T').slice(0, 16); }
   function future(m){ return !!m && !m.hidden && m.status !== 'skipped' && !past(m); }
   function mine(s){ return !!access && !!access.slackId && !!s.presenterSlackId && s.presenterSlackId === access.slackId; }
   function able(s){ return !!access && mine(s) && future(meetings.filter(function(m){ return m.date === s.meetingId; })[0]) && !s.pendingActionId; }
@@ -96,9 +97,8 @@
   function meetingHtml(m, index){
     var rows = slots.filter(function(s){ return s.meetingId === m.date; }).sort(function(a,b){ return a.slotNumber - b.slotNumber; });
     var remove = m.origin === 'site' && !rows.length ? '<button type="button" class="btn-text" data-action="deleteMeeting" data-date="' + esc(m.date) + '"' + disabled(access && access.admin, 'Only a rota administrator can remove a new empty meeting') + '>Remove meeting</button>' : '';
-    var visibility = '<button type="button" class="btn-text" data-action="meetingVisibility" data-date="' + esc(m.date) + '" data-hidden="' + (m.hidden ? 'false' : 'true') + '"' + disabled(access && access.admin && (!m.hidden || !access.seriesHidden), access && access.seriesHidden && m.hidden ? 'Release the event series first' : 'Only a series organiser, PI or admin can change visibility') + '>' + (m.hidden ? 'Release meeting' : 'Hide meeting') + '</button>';
-    return '<section class="rota-meeting' + (index === 0 && !archive ? ' is-next' : '') + '" id="date-' + esc(m.date) + '"><div class="rota-meeting-head has-actions"><div>' + (index === 0 && !archive ? '<span class="rota-meeting-eyebrow">Next meeting</span>' : '') + '<h2>' + esc(fmt(m.date)) + '</h2></div><p>' + esc(m.startTime || '') + ' · ' + esc(m.format || '') + (m.status === 'skipped' ? ' · Skipped' + (m.skipReason ? ': ' + esc(m.skipReason) : '') : '') + (m.hidden ? ' · Hidden' : '') + '</p>' +
-      actionsHtml('rota-actions-meeting-' + m.date, 'Actions for meeting on ' + fmt(m.date), visibility + remove) + '</div>' +
+    return '<section class="rota-meeting' + (index === 0 && !archive ? ' is-next' : '') + '" id="date-' + esc(m.date) + '"><div class="rota-meeting-head has-actions"><div>' + (index === 0 && !archive ? '<span class="rota-meeting-eyebrow">Next meeting</span>' : '') + '<h2>' + esc(fmt(m.onDate || m.date)) + '</h2></div><p>' + esc(m.startTime || '') + ' · ' + esc(m.format || '') + (m.onDate && m.onDate !== m.date ? ' · Moved from ' + esc(fmt(m.date)) : '') + (m.status === 'skipped' ? ' · Skipped' + (m.skipReason ? ': ' + esc(m.skipReason) : '') : '') + '</p>' +
+      (remove ? actionsHtml('rota-actions-meeting-' + m.date, 'Actions for meeting on ' + fmt(m.date), remove) : '') + '</div>' +
       (m.status === 'skipped' ? '' : '<div class="rota-slots rota-slots--' + Math.min(rows.length, 3) + '">' + rows.map(slotHtml).join('') + '</div>') + '</section>';
   }
   function changesHtml(){
@@ -196,10 +196,10 @@
   function refresh(){
     if (!user || busy) return;
     text('Loading…');
-    call('Access').then(function(a){ access = a.data; return Promise.all([
-      call('Snapshot'), db.collection('projectWorkspaces').get().catch(function(){ return { docs: [] }; })
-    ]); }).then(function(v){
-      var snapshot = v[0].data;
+    // One call for who they are and the rota; the projects (for linking a talk) alongside it.
+    Promise.all([call('Page'), db.collection('projectWorkspaces').get().catch(function(){ return { docs: [] }; })]).then(function(v){
+      access = v[0].data.access;
+      var snapshot = v[0].data.snapshot;
       meetings = snapshot.meetings || [];
       var linkedMeeting = selectedDate && meetings.filter(function(m){ return m.date === selectedDate; })[0];
       if (linkedMeeting) { archive = past(linkedMeeting); updateArchiveHeader(); }
@@ -297,21 +297,13 @@
     if (action === 'claim') { act('Claim', { slotId: s.id }); return; }
     if (action === 'deleteSlot') { act('DeleteSlot', { slotId: s.id }); return; }
     if (action === 'deleteMeeting') { act('DeleteMeeting', { date: button.dataset.date }); return; }
-    if (action === 'meetingVisibility') {
-      var hidden = button.dataset.hidden === 'true', date = button.dataset.date;
-      BOLD.confirmAction({ title: (hidden ? 'Hide' : 'Release') + ' the meeting on ' + fmt(date) + '?', go: hidden ? 'Hide meeting' : 'Release meeting',
-        effects: [hidden ? 'Hide this date from members’ Events, Calendar and rota' : 'Show this date on Events, Calendar and the rota'], always: true
-      }).then(function(ok){ if (ok) act('SetMeetingVisibility', { date: date, hidden: hidden }); });
-      return;
-    }
     if (action === 'leave') { act('Leave', {}); return; }
     if (action === 'editSeries') { location.href = 'series.html?series=' + encodeURIComponent(access.seriesId) + '&edit=1&back=group-meetings.html'; return; }
     if (action === 'seriesVisibility') {
       var release = access.seriesHidden;
       BOLD.confirmAction({ title: release ? 'Release the group meeting series?' : 'Hide the group meeting series?', go: release ? 'Release series' : 'Hide series',
-        effects: release ? ['Show the series in Events to everyone with Events access', 'Open the rota page to members; it stays empty until you release its meetings, one at a time']
-          : ['Hide the series and every meeting from Events, the Calendar and the rota', 'Releasing the series again won’t release its meetings: each has to be released again'],
-        warn: release ? '' : 'Hiding can’t be undone in one step.', always: true
+        effects: release ? ['Show the series and every meeting in Events, the Calendar and the rota to everyone with Events access']
+          : ['Hide the series and every meeting from Events, the Calendar and the rota'], always: true
       }).then(function(ok){ if (ok) actSeries(release ? 'release' : 'hide'); });
       return;
     }
@@ -322,14 +314,13 @@
     }
     if (action === 'meeting') {
       var m = meetings.filter(function(x){ return x.date === selectedDate; })[0] || meetings[0] || {};
-      showPanel('<h2>Meeting details</h2><form id="rotaForm" data-submit="SaveMeeting"><label>Date <input type="date" name="date" required value="' + esc(m.date || '') + '"></label><label>Season <select name="seasonId">' + seasons.map(function(x){ return '<option value="' + esc(x.id) + '"' + (x.id === m.seasonId ? ' selected' : '') + '>' + esc(x.label || x.id) + '</option>'; }).join('') + '</select></label><label>Format <select name="format"><option value="short"' + (m.format === 'short' ? ' selected' : '') + '>Short</option><option value="long"' + (m.format === 'long' ? ' selected' : '') + '>Long</option></select></label><label>Start <input type="time" name="startTime" value="' + esc(m.startTime || '') + '"></label><label>Duration in minutes <input type="number" name="durationMinutes" min="15" max="480" value="' + esc(m.durationMinutes || 60) + '"></label><label>Location <input name="location" value="' + esc(m.location || '') + '"></label><button type="submit">Save meeting</button></form>'); return;
+      showPanel('<h2>Meeting details</h2><form id="rotaForm" data-submit="SaveMeeting"><label>Date <input type="date" name="date" required value="' + esc(m.date || '') + '"></label><label>Season <select name="seasonId">' + seasons.map(function(x){ return '<option value="' + esc(x.id) + '"' + (x.id === m.seasonId ? ' selected' : '') + '>' + esc(x.label || x.id) + '</option>'; }).join('') + '</select></label><label>Format <select name="format"><option value="short"' + (m.format === 'short' ? ' selected' : '') + '>Short</option><option value="long"' + (m.format === 'long' ? ' selected' : '') + '>Long</option></select></label><label>Location <input name="location" value="' + esc(m.location || '') + '"></label><button type="submit">Save meeting</button></form>'); return;
     }
     if (s) openAction(action, s, button.dataset.focus);
   });
   body.addEventListener('submit', function(e){
     if (e.target.id !== 'rotaForm') return; e.preventDefault();
     var f = e.target, data = Object.fromEntries(new FormData(f).entries());
-    if (f.dataset.submit === 'SaveMeeting') data.durationMinutes = Number(data.durationMinutes);
     var s = slots.filter(function(x){ return x.id === f.dataset.id; })[0];
     if (s && f.dataset.submit === 'RequestSwap') data.otherSlotId = s.id;
     else if (s) { data.slotId = s.id; data.revision = s.revision; }

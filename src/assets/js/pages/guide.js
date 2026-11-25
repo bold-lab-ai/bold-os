@@ -11,7 +11,7 @@
 // other write) or declines it. PIs/admins add and delete guides
 // (guide.html?new is the form for a new one).
 // Parts may carry a `section`: then the page has one tab per section, showing
-// that section's parts (#<section-slug> or a part's #id opens its tab). The same page serves other documents edited this way (BOLDiquette:
+// that section's parts (?section=<slug>, with #<heading> for a heading). The same page serves other documents edited this way (BOLDiquette:
 // boldiquette.html), set by #guideBody's data attributes: data-collection,
 // data-slug, data-eyebrow, data-back (a link, or "" for none), data-anchor-prefix,
 // data-deletable and data-read-point ("true": what changed since the reader
@@ -105,6 +105,48 @@
   // A part as main has it (a branch is measured against it).
   function livePart(id){ return ((x && x.parts) || []).filter(function(p){ return p.id === id; })[0] || null; }
   function anchor(p){ return PREFIX + p.id; }
+  var cachedAnchorParts, cachedAnchorData, cachedAnchors;
+  function anchorRegistry(){
+    var d = doc() || {}, list = d.parts || [];
+    if (list !== cachedAnchorParts || d.headingAnchors !== cachedAnchorData) {
+      cachedAnchorParts = list; cachedAnchorData = d.headingAnchors;
+      cachedAnchors = BoldGuideAnchors.current(list, d.headingAnchors);
+    }
+    return cachedAnchors;
+  }
+  function readableTarget(id, href){
+    var registry = anchorRegistry(), query = new URL(href || location.href, location.href).searchParams;
+    var section = query.has('section') ? query.get('section') : null;
+    var entry = BoldGuideAnchors.resolve(registry, id, section);
+    if (entry) return entry;
+    var legacy = PREFIX && id.indexOf(PREFIX) === 0 ? id.slice(PREFIX.length) : id;
+    entry = BoldGuideAnchors.resolveLegacy(registry, legacy);
+    return entry && entry.active ? entry : null;
+  }
+  function headingPart(id, href){
+    var entry = readableTarget(id, href);
+    return entry ? part(entry.partId) : null;
+  }
+  function hashId(hash){
+    try { return decodeURIComponent(String(hash || '').replace(/^#/, '')); }
+    catch (e) { return ''; }
+  }
+  function linkHtml(id, title, p, index){
+    var entry = p && anchorRegistry().entries.filter(function(e){ return e.active && e.partId === p.id && e.index === (index == null ? -1 : index); })[0];
+    return BoldGuideCopy.html(entry ? entry.slug : id, title || id, p && hasSections() ? G.slugify(p.section || '') : null);
+  }
+  function copyPath(p, title){
+    return (p ? [p.section, p.title, title] : [title]).filter(Boolean).filter(function(v, i, list){ return list.indexOf(v) === i; }).join(' › ');
+  }
+  function linkHeadings(){
+    Array.prototype.forEach.call(body.querySelectorAll('.guide-text h3[id], .guide-text h4[id], .guide-text h5[id], .guide-text h6[id]'), function(h){
+      var owner = h.closest('.guide-part');
+      var p = owner && part(owner.getAttribute('data-pid'));
+      var siblings = owner && owner.querySelectorAll('.guide-text h3[id], .guide-text h4[id], .guide-text h5[id], .guide-text h6[id]');
+      h.insertAdjacentHTML('beforeend', linkHtml(h.id, copyPath(p, h.textContent), p, siblings ? Array.prototype.indexOf.call(siblings, h) : 0));
+    });
+  }
+  BoldGuideCopy.mount(body);
   function hasSections(){ return parts().some(function(p){ return p.section; }); }
 
   // ---------- tabs (one per section) ----------
@@ -129,17 +171,59 @@
   // A comment a #hash names (#c=<id>, as Slack sends), or ''.
   function commentFor(hash){ var m = /^#?c=(.+)$/.exec(String(hash || '')); return m ? decodeURIComponent(m[1]) : ''; }
   // The section a #hash names: a section's slug, one of its parts' id, or a comment's part.
-  function tabFor(hash){
-    var h = decodeURIComponent(String(hash || '').replace(/^#/, ''));
+  function tabFor(hash, href){
+    var h = hashId(hash);
     if (!h) return null;
     if (commentFor(hash)) {
       var at = comments && comments.show(commentFor(hash)), cp = at && !at.proposalId && part(at.partId);
       return cp ? (cp.section || '') : null;
     }
+    // Hash-only section links predate readable heading fragments.
+    var oldSection = sections().filter(function(v){ return G.slugify(v) === h; })[0];
+    if (!new URL(href || location.href, location.href).searchParams.has('section') && oldSection !== undefined) return oldSection;
+    var owner = headingPart(h, href);
+    if (owner) return owner.section || '';
     var byName = sections().filter(function(v){ return G.slugify(v) === h; })[0];
     if (byName !== undefined) return byName;
-    var p = parts().filter(function(q){ return anchor(q) === h; })[0];
-    return p ? (p.section || '') : null;
+    return null;
+  }
+  // Explicit section selection and the heading fragment are independent. A
+  // resolvable old fragment still wins if a stale query names a different tab.
+  function tabFromUrl(href){
+    var url = new URL(href || location.href, location.href), target = tabFor(url.hash, url.href);
+    if (target !== null) return target;
+    if (!url.searchParams.has('section')) return null;
+    var name = url.searchParams.get('section');
+    var match = sections().filter(function(v){ return G.slugify(v) === name; })[0];
+    if (match !== undefined) return match;
+    // Section-only bookmarks can follow a renamed tab when its persisted aliases
+    // identify exactly one current destination (a split must not guess).
+    var previous = anchorRegistry().entries.filter(function(e){
+      return e.active && e.aliases.some(function(a){ return a.section === name; });
+    }).map(function(e){ var p = part(e.partId); return p ? (p.section || '') : null; })
+      .filter(function(v, i, all){ return v !== null && all.indexOf(v) === i; });
+    return previous.length === 1 ? previous[0] : null;
+  }
+  function sectionHref(section){
+    var url = new URL(location.href);
+    url.searchParams.set('section', G.slugify(section)); url.hash = '';
+    return url.pathname + url.search;
+  }
+  // Normalize old bookmarks and in-page fragment links without adding a second
+  // history entry. Query selects a tab; a fragment only identifies its content.
+  function canonicalizeUrl(section){
+    if (!hasSections() || section === null) return;
+    var url = new URL(location.href), id = hashId(url.hash);
+    if (!id && !url.searchParams.has('section')) return; // the page's default view
+    var sectionOnly = !url.searchParams.has('section') && sections().some(function(v){ return G.slugify(v) === id; });
+    var target = sectionOnly ? null : readableTarget(id);
+    url.searchParams.set('section', G.slugify(section));
+    if (sectionOnly) url.hash = '';
+    else if (target) url.hash = '#' + encodeURIComponent(target.slug);
+    var next = url.pathname + url.search + url.hash;
+    if (next !== location.pathname + location.search + location.hash) {
+      try { history.replaceState(history.state, '', next); } catch (e){}
+    }
   }
   function tabsHtml(){
     var t = currentTab();
@@ -153,7 +237,7 @@
       var cur = v === t && !newTab;
       // Dragged onto another tab, it moves there (committed).
       var drag = viewing || form ? '' : ' draggable="true" data-sec="' + esc(v) + '" title="Drag to move this tab"';
-      return '<a class="guide-tab' + (cur ? ' is-current' : '') + '" href="#' + esc(G.slugify(v)) + '"' + (cur ? ' aria-current="page"' : '') + drag + '>' +
+      return '<a class="guide-tab' + (cur ? ' is-current' : '') + '" href="' + esc(sectionHref(v)) + '"' + (cur ? ' aria-current="page"' : '') + drag + '>' +
         esc(v || 'Other') + '</a>' + (cur ? arrows : '');
     }).join('') +
       (viewing ? '' : '<button type="button" class="guide-tab gd-tab-add' + (newTab ? ' is-current' : '') + '" aria-label="Suggest a new tab" title="Suggest a new tab">+</button>') + foldAllButton() + '</nav>';
@@ -185,8 +269,8 @@
       (q ? '' : '<div class="guide-part-controls">' + (form ? '' : grip) + icon('gd-edit', 'Suggest a change', BOLD.ICON_PENCIL) +
         icon('gd-up', 'Suggest moving it up', BOLD.ICON_UP, at === 0) + icon('gd-down', 'Suggest moving it down', BOLD.ICON_DOWN, at === all.length - 1) + '</div>') +
       '<h2><button type="button" class="gd-fold" data-id="' + esc(p.id) + '" aria-expanded="' + !fold + '" title="' + (fold ? 'Show' : 'Fold') + ' this part">' +
-        '<span class="guide-num">' + (i + 1) + '</span>' + esc(p.title) + '</button></h2></div>' +
-      (fold ? '' : '<div class="guide-text">' + md(p.body) + '</div>') + '</section>';
+        '<span class="guide-num">' + (i + 1) + '</span>' + esc(p.title) + '</button>' + linkHtml(anchor(p), copyPath(p), p) + '</h2></div>' +
+      (fold ? '' : '<div class="guide-text">' + md(p.body, { headingPrefix: anchor(p) }) + '</div>') + '</section>';
   }
 
   // Marks the contents entry of the part being read.
@@ -474,6 +558,7 @@
     keepSlot();
     var open = body.querySelector('.guide-form');
     if (open) bindForm(open);
+    linkHeadings();
     watchContents();
     if (comments && !form) comments.decorate();
   }
@@ -655,6 +740,7 @@
       '<div class="hero">' + BACK + EYEBROW_HTML + '<h1>' + esc(d.title) + '</h1>' +
         (d.description ? '<p class="hero-note">' + esc(d.description) + '</p>' : '') + '</div>' +
       '<main>' + tabsHtml() + '<div class="guide-layout"><div class="guide-main">' + shown().map(partHtml).join('') + '</div>' + contentsHtml() + '</div></main>';
+    linkHeadings();
     watchContents();
   }
 
@@ -869,12 +955,12 @@
   // Don't redraw over a form being filled in. The page is drawn after it
   // loads, so a link to one of its parts (#…) is followed once it's there.
   // A link to the proposed changes (#proposals, as Slack sends PIs) waits for them too.
-  var jumped = !location.hash, proposalsLoaded = false;
+  var jumped = !location.hash && !new URLSearchParams(location.search).has('section'), proposalsLoaded = false;
   function refresh(){
     if (form) return;
     var ready = !jumped && x && (proposalsLoaded || !/^#proposal/.test(location.hash)) &&
       (!commentFor(location.hash) || (comments && comments.ready() && proposalsLoaded));
-    if (ready) tab = tabFor(location.hash);
+    if (ready) { tab = tabFromUrl(); canonicalizeUrl(tab); }
     render();
     if (ready) { jumped = true; goTo(location.hash); }
   }
@@ -891,12 +977,13 @@
       if (el) el.scrollIntoView({ block: 'center' });
       return;
     }
-    var id = decodeURIComponent(String(hash).replace(/^#/, ''));
+    var id = hashId(hash), readable = readableTarget(hashId(hash));
+    if (readable) id = PREFIX + readable.currentLegacy;
     if (id === 'proposals') { BOLD.openBranches(); return; }
     // A link to a proposed change (#proposal-<id>, from before branches): its branch's page (they share the id).
     var pm = /^proposal-(.+)$/.exec(id);
     if (pm) { location.replace(BOLD.branchPage(pm[1])); return; }
-    var fp = parts().filter(function(q){ return anchor(q) === id; })[0];
+    var fp = headingPart(id);
     if (fp && folded[fp.id]) { folded[fp.id] = false; saveFolded(); render(); }
     var target = document.getElementById(id);
     if (!target && tabFor(hash) !== null) target = document.getElementById('gdTabs');
@@ -909,26 +996,55 @@
     if (e.target.classList.contains('gd-r-title')) v.title = e.target.value;
     else if (e.target.classList.contains('gd-r-body')) v.text = e.target.value;
   });
-  // A section tab switches in place, the tab bar staying where it is on screen.
-  body.addEventListener('click', function(e){
-    var a = e.target.closest('.guide-tab');
-    if (!a || !x || form || e.metaKey || e.ctrlKey || e.shiftKey) return;
-    var t = tabFor(a.getAttribute('href'));
-    if (t === null) return;
+  // Handle every same-guide link, including the sidebar outside guideBody.
+  // Changing the guide, branch, or any other query parameter still loads a page.
+  function sameGuideUrl(href){
+    var url = new URL(href, location.href), current = new URL(location.href);
+    if (url.origin !== current.origin || url.pathname !== current.pathname) return null;
+    var from = new URLSearchParams(current.search), to = new URLSearchParams(url.search);
+    from.delete('section'); to.delete('section'); from.sort(); to.sort();
+    return from.toString() === to.toString() ? url : null;
+  }
+  function followGuideLink(e){
+    var a = e.target.closest && e.target.closest('a[href]');
+    if (!a || e.defaultPrevented || e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey || !x || form) return;
+    if (a.hasAttribute('download') || (a.target && a.target !== '_self')) return;
+    var url = sameGuideUrl(a.href);
+    if (!url) return;
+    var t = tabFromUrl(url.href);
+    if (t === null) {
+      if (url.hash || url.searchParams.has('section')) return;
+      t = sections()[0] || null;
+    }
     e.preventDefault();
-    try { history.pushState(null, '', a.getAttribute('href')); } catch (err){}
-    BOLD.switchTab('#gdTabs', body, function(){ tab = t; render(); });
-  });
-  // The sidebar's section links (and Back) change the #hash.
-  window.addEventListener('hashchange', function(){
+    if (url.href !== location.href) {
+      try { history.pushState(history.state, '', url.pathname + url.search + url.hash); } catch (err){ return; }
+    }
+    function show(){
+      tab = t; canonicalizeUrl(tab); render();
+      if (location.hash) goTo(location.hash);
+      else if (!a.classList.contains('guide-tab')) {
+        var tabs = document.getElementById('gdTabs');
+        if (tabs) tabs.scrollIntoView({ block: 'start' });
+      }
+    }
+    if (a.classList.contains('guide-tab')) BOLD.switchTab('#gdTabs', body, show);
+    else show();
+  }
+  document.addEventListener('click', followGuideLink);
+  // Old sidebar fragments and new query-based tabs both support Back/Forward.
+  function navigateFromUrl(){
     if (!x || form) return;
     if (/^#proposal-/.test(location.hash)) { goTo(location.hash); return; }
-    var t = tabFor(location.hash);
-    if (t === null) return;
+    var t = tabFromUrl();
+    if (t === null) t = sections()[0] || null;
     tab = t;
+    canonicalizeUrl(tab);
     render();
     goTo(location.hash);
-  });
+  }
+  window.addEventListener('hashchange', navigateFromUrl);
+  window.addEventListener('popstate', navigateFromUrl);
   BOLD.onUser(function(user){
     var mine = ++signIns;
     unsubs.forEach(function(u){ u(); }); unsubs = [];

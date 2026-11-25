@@ -21,7 +21,9 @@
 // (prefix), tool, args, at, expireAt } (expireAt: for a Firestore TTL policy, 90 days).
 const crypto = require('crypto');
 const keycloak = require('./keycloak');
-const { seesEvent } = require('./access');
+const verifierHandoff = require('./verifier-handoff');
+const { isPastPaper } = require('./past-paper');
+const { seesEvent, rank: groupRank } = require('./access');
 // Search ranking, shared with the site: copied here at deploy (firebase.json's predeploy),
 // else the site's copy (run as a script: the repo's root package is an ES module).
 const rank = (function(){
@@ -175,19 +177,25 @@ module.exports = function(deps){
     const m = /^Bearer\s+(bold_[A-Za-z0-9_-]{20,})\s*$/.exec(req.get('authorization') || '');
     if (!m) throw httpError(401, 'Send your BOLD.OS token: Authorization: Bearer bold_…  Make one on your BOLD.OS profile, in its Agents tab.');
     const ref = db.collection('apiTokens').doc(sha(m[1]));
+    const currentLiteService = ref.id === verifierHandoff.serviceHash();
     const minute = Math.floor(Date.now() / 60000);
     const t = await db.runTransaction(async (tx) => {
       const snap = await tx.get(ref);
       if (!snap.exists) return null;
       const x = snap.data(), count = x.minute === minute ? (x.count || 0) + 1 : 1;
-      if (count > RATE_PER_MINUTE) return Object.assign({ limited: true }, x);
-      tx.update(ref, { minute, count, lastUsedAt: Date.now() });
+      // The Lite service token carries every member's handoffs: it has ten times the limit, and each member
+      // has their own (verifier-handoff.js, countFor).
+      if (count > (currentLiteService ? RATE_PER_MINUTE * 10 : RATE_PER_MINUTE)) return Object.assign({ limited: true }, x);
+      // A rotated service credential must never fall back to the owner's general tools.
+      tx.update(ref, { minute, count, lastUsedAt: Date.now(), ...(currentLiteService ? {liteVerifierOnly:true} : {}) });
       return x;
     });
-    if (!t) throw httpError(401, 'That token isn’t valid: it may have been revoked.');
-    if (t.limited) throw httpError(429, 'At most ' + RATE_PER_MINUTE + ' requests a minute: wait a moment.');
-    if (!(await personByEmail(t.email))) throw httpError(403, 'Only people in the BOLD Slack can use BOLD.OS.');
-    return { email: t.email, prefix: t.prefix, name: t.name || '', label: t.label || '', write: !!t.write };
+    if (!t || t.revoked) throw httpError(401, 'That token isn’t valid: it may have been revoked.');
+    if (t.limited) throw httpError(429, 'At most ' + (currentLiteService ? RATE_PER_MINUTE * 10 : RATE_PER_MINUTE) + ' requests a minute: wait a moment.');
+    // The Lite service token acts only on members' handoffs, each checked as that member: it doesn't
+    // depend on whoever made it still being in the BOLD Slack.
+    if (!currentLiteService && !(await personByEmail(t.email))) throw httpError(403, 'Only people in the BOLD Slack can use BOLD.OS.');
+    return { liteService: currentLiteService || t.liteVerifierOnly === true, currentLiteService, email: t.email, prefix: t.prefix, name: t.name || '', label: t.label || '', write: !!t.write };
   }
   // Someone using BOLD.OS through Sofya's chat: their access is an entry among their tokens (apiTokens/<sha of
   // 'sofya:' + email>, kind 'sofya', made the first time), so their profile's Agents tab shows it and its activity, and
@@ -209,7 +217,9 @@ module.exports = function(deps){
       const x = snap.data();
       if (x.revoked) return x;
       const count = x.minute === minute ? (x.count || 0) + 1 : 1;
-      if (count > RATE_PER_MINUTE) return Object.assign({ limited: true }, x);
+      // The Lite service token carries every member's handoffs: it has ten times the limit, and each member
+      // has their own (verifier-handoff.js, countFor).
+      if (count > (currentLiteService ? RATE_PER_MINUTE * 10 : RATE_PER_MINUTE)) return Object.assign({ limited: true }, x);
       tx.update(ref, { minute, count, lastUsedAt: Date.now() });
       return x;
     });
@@ -251,7 +261,7 @@ module.exports = function(deps){
     rotaSeasons: () => cached('rotaSeasons', async () => docs(await db.collection('groupMeetingSeasons').get())),
     rotaMeetings: () => cached('rotaMeetings', async () => {
       const series = await db.collection('eventSeries').where('page', '==', 'group-meetings.html').limit(1).get();
-      return series.empty ? [] : docs(await db.collection('events').where('series', '==', series.docs[0].id).get());
+      return series.empty ? [] : docs(await db.collection('groupRotaMeetings').where('series', '==', series.docs[0].id).get());
     }),
     rotaSlots: () => cached('rotaSlots', async () => docs(await db.collection('groupRotaSlots').get())),
     studies: () => cached('studies', async () => docs(await db.collection('studies').get())),
@@ -342,11 +352,15 @@ module.exports = function(deps){
     const mine = (list) => (list || []).some((e) => String(e || '').toLowerCase() === email);
     let events = [], meetings = [];
     if (seeEvents) {
-      events = (await lab.eventsFor(email)).filter((e) => !isHidden(e, full)).map((e) => ({
-        id: e._id, title: e.title, start: e.startDate, end: e.endDate, place: e.place || '', description: plain(e.description),
+      // A skipped group meeting is left out, as on the Calendar page.
+      events = (await lab.eventsFor(email)).filter((e) => !isHidden(e, full) && e.status !== 'skipped').map((e) => ({
+        id: e._id, title: e.title, start: e.startDate, end: e.endDate, time: e.startTime || '', minutes: e.durationMinutes || 0, place: e.place || '', description: plain(e.description),
         url: url(e.page || 'event.html?event=' + encodeURIComponent(e._id)) }));
       // Lab meetings (eventSeries): the released ones they aren't invited to.
-      (await lab.seriesFor(email)).filter((x) => x.hidden === false && x.meeting && (x.eventId || x.pausedAt) && (x.guests || []).indexOf(email) < 0).forEach((x) => {
+      // One with an invite of its own (`ownInvite`): in the feed of whoever its group doesn't take in, as they don't have that invite.
+      const myRank = groupRank(await access.groupFor(email));
+      (await lab.seriesFor(email)).filter((x) => x.hidden === false && x.meeting && (x.eventId || x.pausedAt || x.ownInvite) && (x.guests || []).indexOf(email) < 0 &&
+        !(x.ownInvite && x.invite && x.invite.mode === 'group' && myRank >= groupRank(x.invite.group))).forEach((x) => {
         meetings.push({ id: 'series-' + x._id, title: x.title, meeting: x.meeting, moved: x.meetingMoved, start: x.eventStart, pausedAt: x.pausedAt,
           description: plain(x.description), url: url('series.html?series=' + encodeURIComponent(x._id)) });
       });
@@ -395,7 +409,7 @@ module.exports = function(deps){
     if (!/^[A-Za-z0-9_-]{1,80}$/.test(String(id || ''))) throw httpError(400, 'Give a project id, from list_projects.');
     const [cards, unassigned] = await Promise.all([lab.cards(), lab.unassigned()]);
     const hit = cards.find((c) => c.id === id) || unassigned.map((u) => ({ boardId: null, id: u.id, data: u.data })).find((c) => c.id === id);
-    if (!hit) throw httpError(404, 'No project with that id.');
+    if (!hit || isPastPaper(hit.data)) throw httpError(404, 'No project with that id.');
     return hit;
   }
 
@@ -417,9 +431,10 @@ module.exports = function(deps){
     },
     {
       name: 'list_projects',
-      description: 'The lab’s research projects, as on the Projects page: proposed (waiting for a PI or admin to approve them), approved (planned: not started yet), ongoing (being worked on), in submission (on a venue’s board) and completed, most recently updated first. Filter by group, keyword, words, or only yours.',
+      description: 'The lab’s research projects, as on the Projects page, each a northstar, a moonshot or a stepping stone (level: project) with what it’s part of (part_of: their ids): proposed (waiting for a PI or admin to approve them), approved (planned: not started yet), ongoing (being worked on), in submission (on a venue’s board) and completed, most recently updated first. Filter by group, keyword, words, or only yours.',
       inputSchema: { type: 'object', properties: {
         group: { type: 'string', enum: ['proposed', 'planned', 'ongoing', 'submission', 'completed'] },
+        level: { type: 'string', enum: ['northstar', 'moonshot', 'project'], description: 'Only northstars, moonshots or stepping stones (project).' },
         keyword: { type: 'string', description: 'A project keyword, e.g. "reinforcement learning".' },
         query: { type: 'string', description: 'Words in the title, abstract, keywords or people.' },
         mine: { type: 'boolean', description: 'Only projects you are a member of.' },
@@ -483,12 +498,12 @@ module.exports = function(deps){
   // Who can see what (functions/access.js): each reading tool reads one page, and answers
   // only if its person may view that page. Acting goes through the rules and callables,
   // which check it themselves.
-  const TOOL_PAGE = { list_benchmarks: 'projects', register_benchmark: 'projects', edit_problem: 'projects', search: 'search', list_group_rota: 'events', list_projects: 'projects', get_project: 'projects', find_people: 'people', get_person: 'people',
+  const TOOL_PAGE = { list_benchmarks: 'projects', register_benchmark: 'projects', create_open_problem: 'projects', edit_problem: 'projects', search: 'search', list_group_rota: 'events', list_projects: 'projects', get_project: 'projects', find_people: 'people', get_person: 'people',
     calendar: 'calendar', my_items: 'profile', list_introduction_offers: 'service-desk', list_tools: 'tools', list_skills: 'skills', get_skill: 'skills' };
   const pageOfTool = (name, args) => { const p = String((args || {}).page || '').trim().toLowerCase();
     return name === 'read_page' ? (p === 'boldiquette' ? 'boldiquette' : require('./access').guideArea(p)) : TOOL_PAGE[name]; };
-  async function mayView(who, page){
-    if (!page || await access.can(who.email, page, 'view')) return;
+  async function mayView(who, page, permission = 'view'){
+    if (!page || await access.can(who.email, page, permission)) return;
     const level = ((await access.table())[page] || {}).view || 'internal';
     throw httpError(403, 'That page is for ' + (require('./access').LEVEL_NAMES[level] || level) + ' and above (BOLDiquette › Who can see what).');
   }
@@ -496,7 +511,11 @@ module.exports = function(deps){
   // A tool by name: BOLD.OS's own, else one the lab's agents added (run in mcpSandbox).
   async function toolNamed(who, name){
     const t = TOOLS.find((x) => x.name === name);
-    if (t) return Object.assign({}, t, { run: async (w, args) => { await mayView(w, pageOfTool(t.name, args)); return t.run(w, args); } });
+    if (t) return Object.assign({}, t, { run: async (w, args) => {
+      const proposalChoices = t.name === 'list_benchmarks' && ['problem_choices','releases'].includes(args?.view);
+      await mayView(w, pageOfTool(t.name, args), proposalChoices ? 'list' : 'view');
+      return t.run(w, args);
+    } });
     const one = (await added.toolList(Object.assign({}, who, { write: true }))).find((x) => x.name === name);
     if (!one) return null;
     // The lab's added tools come from the Tools page.
@@ -561,7 +580,8 @@ module.exports = function(deps){
       if (!manager && (series.hidden || !(await access.seesIt(who.email, series)))) return;
       const published = new Set(seasons.filter((s) => s.publicationState === 'published').map((s) => s._id));
       const visible = [];
-      for (const m of meetings) if (published.has(m.seasonId) && (manager || !m.hidden && await access.seesIt(who.email, m))) visible.push(m);
+      // Seeing the series is seeing its meetings.
+      for (const m of meetings) if (published.has(m.seasonId)) visible.push(m);
       const dates = new Set(visible.map((m) => m.date));
       const names = Object.fromEntries(people.map((p) => [p.slackId || p._id, p.name || '']));
       item('rota', series.title || 'Group meetings', 'Rota', seasons.filter((s) => published.has(s._id)).map((s) => s.label).join(' '), 'group-meetings.html');
@@ -577,7 +597,7 @@ module.exports = function(deps){
     if ((want('problems') || want('benchmarks')) && await access.can(who.email, 'projects', 'view')) jobs.push(Promise.all([db.collection('problemBank').get(), db.collection('benchmarks').get()]).then(([problems, releases]) => {
       const live = new Set(problems.docs.filter((d) => !d.data().archived).map((d) => d.id));
       if (want('problems')) problems.docs.filter((d) => live.has(d.id)).forEach((d) => { const x = d.data();
-        item('problems', x.title, 'Problem Bank', [x.objective, x.task_kind, x.notes].filter(Boolean).join(' '), 'problem.html?problem=' + encodeURIComponent(d.id)); });
+        item('problems', x.title, 'Problem Bank', [x.objective, x.significance, x.existing_solutions, x.task_kind, x.notes].filter(Boolean).join(' '), 'problem.html?problem=' + encodeURIComponent(d.id)); });
       if (want('benchmarks')) releases.docs.filter((d) => live.has(d.data().problem_id)).forEach((d) => { const x = d.data();
         item('benchmarks', x.title, 'Evaluator version ' + x.evaluator.version, [x.task_kind, x.evaluator.commit, (x.research || {}).expected_basis].filter(Boolean).join(' '), 'problem.html?problem=' + encodeURIComponent(x.problem_id)); });
     }));
@@ -630,6 +650,8 @@ module.exports = function(deps){
       venue: p.boardLabel || null, owner: p.owner || '',
       authors: (p.authors || []).map((x) => x.name || name(x.email)), keywords: p.keywords || [],
       slack_channel: p.slackChannel || '', url: url(projectHref(p.projectId || p.cardId, p.boardId)),
+      // Its level and what it's part of (#248): northstar, moonshot or project (a stepping stone).
+      level: p.level || 'project', part_of: p.parents || [], problems: p.problems || [],
     };
   }
   async function listProjects(who, a){
@@ -643,6 +665,7 @@ module.exports = function(deps){
       (g[group] || []).forEach((p) => {
         const id = p.pid || p.projectId || p.cardId;
         if (kw && !(p.keywords || []).some((k) => fold(k) === kw)) return;
+        if (a.level && (p.level || 'project') !== a.level) return;
         if (ws.length && !matches([p.title, p.abstract, (p.keywords || []).join(' '), p.owner, (p.authors || []).map((x) => x.name).filter((n) => n !== p.owner).join(' ')].join(' '), ws)) return;
         const team = (members[id] || []).map((e) => String(e).toLowerCase());
         if (a.mine && team.indexOf(who.email) === -1 && !(p.authors || []).some((x) => String(x.email).toLowerCase() === who.email)) return;
@@ -661,7 +684,7 @@ module.exports = function(deps){
     // Its cards: the one asked for, and every card of the same project.
     const all = cards.filter((c) => labels[c.boardId]).concat(unassigned.map((u) => ({ boardId: null, id: u.id, data: u.data })));
     const hit = all.find((c) => c.id === id);
-    if (!hit) throw httpError(404, 'No project with that id.');
+    if (!hit || isPastPaper(hit.data)) throw httpError(404, 'No project with that id.');
     const pid = hit.data.projectId || hit.id;
     const mine = all.filter((c) => (c.data.projectId || c.id) === pid).sort((x, y) => (x.data.createdAt || 0) - (y.data.createdAt || 0));
     const card = mine[mine.length - 1].data, w = workspaces.find((x) => x._id === pid) || {};
@@ -684,6 +707,9 @@ module.exports = function(deps){
       stage: card.status || '', outcome: card.outcome || '',
       venues: mine.map((c) => ({ venue: c.boardId ? labels[c.boardId] : 'No venue yet', stage: c.data.status || '', outcome: c.data.outcome || '' })),
       abstract: card.abstractText || '', keywords: card.keywords || [],
+      level: card.level || 'project', part_of: card.parents || [], problems: card.problems || [], connection: card.connection || '',
+      parts: all.filter((c) => (c.data.parents || []).indexOf(pid) >= 0).map((c) => ({ id: c.data.projectId || c.id, title: c.data.title || 'Untitled', level: c.data.level || 'project' }))
+        .filter((x, i, arr) => arr.findIndex((y) => y.id === x.id) === i),
       registered_by: card.submittedBy ? card.submittedBy.name || name(card.submittedBy.email) : '',
       authors: (card.authors || []).map((x) => ({ name: x.name || name(x.email), profile: profile(x.email) })),
       members: (w.members || []).map((e) => ({ name: name(e), profile: profile(e) })),
@@ -952,7 +978,9 @@ module.exports = function(deps){
   const boldApi = onRequest({ cors: true, memory: '512MiB', timeoutSeconds: 300, secrets }, async (req, res) => {
     const path = req.path.replace(/\/+$/, '') || '/';
     if (path === '/' && req.method === 'GET') {
-      return res.json({ name: 'BOLD.OS API', mcp: '/mcp', mcp_also: 'prompts (the skills) and resources (every page, bold://…)', read: TOOLS.filter((t) => !t.write && !t.setup).map((t) => 'GET /v1/' + t.name), act: TOOLS.filter((t) => t.write).map((t) => 'POST /v1/' + t.name), auth: 'Authorization: Bearer <token from the Agents tab of your BOLD.OS profile>' });
+      return res.json({ name: 'BOLD.OS API', mcp: '/mcp', mcp_also: 'prompts (the skills) and resources (every page, bold://…)', read: TOOLS.filter((t) => !t.write && !t.setup).map((t) => 'GET /v1/' + t.name), act: TOOLS.filter((t) => t.write).map((t) => 'POST /v1/' + t.name),
+        // Each with what it does, for the MCP server page (tools.html); the same text agents get (public in the repo too).
+        tools: TOOLS.filter((t) => !t.setup).map((t) => ({ name: t.name, description: t.description, acting: !!t.write })), auth: 'Authorization: Bearer <token from the Agents tab of your BOLD.OS profile>' });
     }
     // A Calendar subscription (calendarFeed): the link is the key, as calendar apps can't send one.
     const cal = /^\/calendar\/([^/]+)\.ics$/.exec(path);
@@ -974,6 +1002,22 @@ module.exports = function(deps){
       if (!err.status) { logger.error('boldApi auth failed', { error: String(err.stack || err) }); return res.status(500).json({ error: 'Something went wrong.' }); }
       if (err.status === 401) res.set('WWW-Authenticate', 'Bearer realm="BOLD.OS"');
       return res.status(err.status).json(path === '/mcp' ? { jsonrpc: '2.0', id: null, error: { code: -32001, message: err.message } } : { error: err.message });
+    }
+    // This service credential can act only on member-authorized Lite handoffs.
+    const linked = /^\/v1\/(claim_verifier_handoff|register_linked_verifier)$/.exec(path);
+    if (linked || who.liteService) {
+      if (!linked || !who.currentLiteService || !who.write)
+        return res.status(403).json({error:'Use a dedicated approved Lite handoff credential for this operation.'});
+      if (req.method !== 'POST') return res.status(405).set('Allow','POST').json({error:'Send a POST with a JSON body.'});
+      if (!verifierHandoff.configured()) return res.status(409).json({error:'Linked verifier handoffs are disabled.'});
+      // Handoffs are bearer secrets. Store the operation name only in the audit log.
+      log(who,linked[1],{});
+      try { return res.json(await deps.runLinkedService(linked[1],req.body || {})); }
+      catch (err) {
+        const status = CODE_STATUS[err.code] || 500;
+        if (status === 500) logger.error('Linked verifier request failed',{operation:linked[1]});
+        return res.status(status).json({error:status === 500 ? 'Linked verifier request failed.' : err.message});
+      }
     }
     if (path === '/mcp') {
       const body = req.body;

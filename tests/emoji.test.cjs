@@ -7,7 +7,7 @@ const read = (f) => fs.readFileSync(__dirname + '/../src/assets/js/' + f, 'utf8'
 const ctx = { window: {}, module: { exports: {} } };
 vm.runInNewContext(read('emoji-data.js'), ctx); vm.runInNewContext(read('emoji.js'), ctx);
 const M = ctx.module.exports, plain = (f) => (...a) => JSON.parse(JSON.stringify(f(...a)));
-const E = { parse: plain(M.parse), byName: M.byName, typing: plain(M.typing), whole: plain(M.whole), find: plain(M.find) };
+const E = { arrow: (t) => M.arrow(t) ? plain(M.arrow)(t) : null, parse: plain(M.parse), byName: M.byName, typing: plain(M.typing), whole: plain(M.whole), find: plain(M.find) };
 const all = E.parse(ctx.window.BoldEmojiData);
 
 test('the list: Slack’s names', () => {
@@ -40,4 +40,11 @@ test('what it finds: the name itself, then names starting with it, then words in
 test('a whole :name: typed', () => {
   assert.deepStrictEqual(E.whole('Great :tada:'), { start: 6, name: 'tada' });
   assert.strictEqual(E.whole('at 10:30:'), null);
+});
+
+test('-> <- => and -- become arrows and a dash once a space follows, never in code or as part of something else', () => {
+  const cases = { 'a -> ': '→ ', 'x <- ': '← ', 'so => ': '⇒ ', 'word -- ': '— ', 'a-> ': '→ ', '`x` -> ': '→ ', '```\nc\n```\nok -> ': '→ ' };
+  for (const [t, want] of Object.entries(cases)) assert.equal((E.arrow(t) || {}).text, want, t);
+  assert.equal(E.arrow('a -> ').start, 2);
+  for (const t of ['a --> ', '<!-- ', '--flag ', '--- ', '>= ', '<=> ', 'a->b', 'see `a -> ', '```\ncode -> ']) assert.equal(E.arrow(t), null, t);
 });

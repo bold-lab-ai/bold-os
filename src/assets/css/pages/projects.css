@@ -136,6 +136,7 @@ main .btn-text:hover{text-decoration-color:currentColor;}
 /* ---------- calendar: kinds, the week's dates and its events ---------- */
 .cal-actions{flex-wrap:wrap;}
 .type-badge.cal-event{color:var(--plum);}
+.week-block.cal-event{color:var(--plum); border-color:var(--plum);}
 .type-badge.cal-study{color:var(--green);}
 .week-block.cal-study{color:var(--green); border-color:var(--green);}
 .week-block.cal-study.is-mine{background:var(--green); color:var(--on-fill);}
@@ -248,3 +249,17 @@ a.btn.is-off:hover{border-color:var(--line); color:var(--muted);}
 .sdc-error{margin-top:10px;}
 .sdc-about{margin-top:32px; font-family:var(--serif); font-size:17px; line-height:1.6; max-width:var(--article-max);}
 .sdc-about img{max-width:100%; height:auto; border:1px solid var(--line);}
+/* Stepping stones, moonshots, northstars (#248), and the Map. */
+.proj-levels{display:flex; align-items:center; flex-wrap:wrap; margin-top:18px;}
+.proj-levels .view-btn{border:1px solid var(--line);}
+.proj-levels .view-btn + .view-btn{border-left:none;}
+.proj-levels .proj-count{margin-left:6px; color:var(--muted); font-weight:400;}
+.proj-levels .proj-count:empty{display:none;}
+/* ---------- MCP server (tools.html): how to connect, above its tools ---------- */
+.mcp-connect{margin-top:8px; padding:18px 20px; border:1px solid var(--line); background:var(--surface);}
+.mcp-head{margin:0 0 6px; font-family:var(--sans); font-size:11px; font-weight:600; letter-spacing:.12em; text-transform:uppercase; color:var(--muted);}
+.mcp-steps{margin:0 0 10px; padding-left:20px; font-size:15px; line-height:1.55; color:var(--ink-soft);}
+.mcp-steps li{margin:3px 0;}
+.mcp-steps code{font-size:13.5px; padding:1px 4px; border-radius:3px; background:color-mix(in srgb, var(--ink) 6%, transparent);}
+.mcp-connect .btn{display:inline-block; margin-top:12px; text-decoration:none;}
+.tool-builtin{margin-left:8px; font-family:var(--sans); font-size:10.5px; font-weight:600; letter-spacing:.08em; text-transform:uppercase; color:var(--muted); border:1px solid var(--line); padding:1px 6px; vertical-align:2px;}

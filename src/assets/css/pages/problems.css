@@ -50,8 +50,8 @@ a.btn{display:inline-block; text-decoration:none;}
 .proj-empty{margin:0; font-family:var(--sans); font-size:14px; color:var(--muted);}
 #pbMore{margin-top:16px;}
 /* grid, as Projects' */
-#problems[data-view="grid"] .proj-list{display:grid; grid-template-columns:repeat(auto-fill, minmax(260px, 1fr)); gap:16px;}
-#problems[data-view="grid"] .proj-list li{padding:16px; border:1px solid var(--line);}
+#problems[data-view="grid"] .proj-list:not([hidden]){display:grid; grid-template-columns:repeat(auto-fill, minmax(260px, 1fr)); gap:16px;}
+#problems[data-view="grid"] .proj-list > li{padding:16px; border:1px solid var(--line);}
 #problems[data-view="grid"] .proj-list li.proj-none{grid-column:1 / -1; padding:0; border:none;}
 
 /* badges: as Projects' */
@@ -79,3 +79,53 @@ a.btn{display:inline-block; text-decoration:none;}
 
 @media (max-width:820px){ .hero{padding:44px var(--gutter) 8px;} }
 @media (max-width:600px){ .actions{align-items:flex-start;} }
+
+.pb-card-head{display:flex; align-items:flex-start; justify-content:space-between; gap:12px;}
+#problems .proj-main{flex:1;}
+.pb-missing{color:var(--warn-text,var(--ink)); white-space:nowrap;}
+.pb-add-verifier{display:inline-block; margin-top:8px; font-weight:600;}
+#pbInputs{min-width:0; margin:0; padding:0; border:0; display:grid; gap:16px;}
+#pbInputs button{justify-self:start;}
+#pbAdd[aria-disabled="true"], #openBenchmarkLite[aria-disabled="true"]{opacity:.55; cursor:default;}
+
+/* ---------- adding a problem with BOLD (problem-new.html): the home page's conversation (bold.css .ha-*),
+   and beside it what the Problem Bank needs, each ticked once BOLD has it from what they said ---------- */
+.pb-talk{display:grid; grid-template-columns:minmax(0, 1fr) 220px; column-gap:48px; align-items:start; margin-top:8px;}
+.pb-talk-box{font-family:var(--sans); max-width:var(--article-max, 40em);}
+/* The reply box can be made taller by dragging its bottom-right corner (the browser's grip). */
+.pb-talk-box .ha-form textarea{resize:vertical; min-height:3.4em; max-height:70vh;}
+.pb-talk-box .ha-saved{margin:12px 0 0; font-size:12px; color:var(--muted);}
+.pb-needs{position:sticky; top:24px; font-family:var(--sans); font-size:12.5px; line-height:1.45;}
+.pb-needs .home-box-title{margin:0 0 10px; font-size:10.5px; font-weight:600; letter-spacing:.12em; text-transform:uppercase; color:var(--muted);}
+.pb-checks{list-style:none; margin:0 0 16px; padding:0; display:flex; flex-direction:column; gap:8px;}
+.pb-checks li{display:flex; align-items:baseline; gap:8px; color:var(--muted); transition:color .3s ease;}
+.pb-checks li::before{content:''; flex:none; display:inline-grid; place-items:center; width:13px; height:13px; box-sizing:border-box; border:1px solid var(--line); border-radius:50%; font-size:9px; line-height:1; color:var(--on-fill); transform:translateY(2px); transition:background .3s ease, border-color .3s ease;}
+.pb-checks li.is-done{color:var(--ink);}
+.pb-checks li.is-done::before{content:'\2713'; border-color:var(--accent); background:var(--accent);}
+.pb-checks small{color:var(--muted);}
+.pb-status{margin:10px 0 0; font-size:12px; color:var(--muted);}
+.pb-status:empty{display:none;}
+.pb-needs #pbToReview[hidden]{display:none;}
+.pb-drafts{margin-top:22px; padding-top:14px; border-top:1px solid var(--line);}
+.pb-drafts[hidden], .pb-drafts #pbNew[hidden]{display:none;}
+.pb-draft-list{list-style:none; margin:0 0 8px; padding:0; display:flex; flex-direction:column; gap:7px;}
+.pb-draft-list li{display:flex; align-items:baseline; gap:6px;}
+.pb-draft-list a{flex:1; min-width:0; color:var(--ink-soft); text-decoration:none; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;}
+.pb-draft-list a:hover{color:var(--link);}
+.pb-draft-list li.is-current a{color:var(--ink); font-weight:600;}
+.pb-draft-list small{color:var(--muted); font-size:11px; white-space:nowrap;}
+.pb-draft-list .btn-text{font-size:11px; color:var(--muted); padding:0;}
+.pb-draft-list .btn-text:hover{color:var(--danger-text);}
+.pb-busy{margin:0 0 12px; padding:8px 12px; border-left:2px solid var(--danger-text); font:13px var(--sans); color:var(--ink-soft);}
+.pb-busy[hidden], #pbChatPart[hidden], #pbNeedsPart[hidden], .pb-switch .btn-text[hidden]{display:none;}
+.pb-switch{margin:18px 0 0; font:12.5px var(--sans);}
+.pb-switch .btn-text{font-size:12.5px; color:var(--muted);}
+.pb-switch .btn-text:hover{color:var(--link);}
+/* The form way: no conversation above, so no rule above the fields. */
+.pb-talk.is-form .pb-review{margin-top:0; padding-top:0; border-top:0;}
+.pb-review{margin-top:28px; padding-top:20px; border-top:1px solid var(--line);}
+.pb-review[hidden]{display:none;}
+.pb-review-head{margin:0 0 4px; font:600 15px var(--sans);}
+.pb-review textarea{resize:vertical;}
+@media (max-width:900px){ .pb-talk{grid-template-columns:minmax(0, 1fr);} .pb-needs{position:static; order:-1; margin-bottom:20px;} }
+@media (prefers-reduced-motion:reduce){ .pb-checks li, .pb-checks li::before{transition:none;} }

@@ -13,6 +13,7 @@ const KINDS = [
   ] },
   { section: 'Projects', items: [
     { id: 'proj-people-mine', label: 'People joining or leaving my projects, and their setup still missing', features: ['project-joined-mine', 'project-left-mine', 'project-setup'] },
+    { id: 'problem-verifier', label: 'My open problems that need a verifier', features: ['problem-verifier'] },
     { id: 'proj-invites', label: 'Invitations to projects, and their answers', features: ['project-invites'] },
   ] },
   { section: 'Boards', items: [

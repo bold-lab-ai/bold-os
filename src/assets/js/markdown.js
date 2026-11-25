@@ -136,11 +136,23 @@ window.BoldMarkdown = (function(){
         '<span class="tl-wk">' + esc(p.when) + '</span></a></li>';
     }).join('') + '</ol></nav>';
   }
-  var breaks = false;
+  var breaks = false, headingContext = null;
+  function headingAttrs(text, legacy){
+    if (!headingContext) return legacy ? ' id="' + esc(legacy) + '"' : '';
+    var base = headingContext.prefix + '--' + (slug(text) || 'heading'), id = base, n = 2;
+    while (headingContext.used[id]) id = base + '-' + n++;
+    headingContext.used[id] = true;
+    headingContext.items.push({ id: id, legacy: legacy || '' });
+    return ' id="' + esc(id) + '"';
+  }
+  function legacyAnchor(id){
+    return headingContext ? '<span id="' + esc(id) + '" class="gd-heading-alias" aria-hidden="true"></span>' : '';
+  }
   function render(text, opts){
-    var was = breaks;
+    var was = breaks, previousHeadings = headingContext;
+    if (opts && opts.headingPrefix) headingContext = { prefix: opts.headingPrefix, used: Object.create(null), items: opts.headings || [] };
     if (opts) breaks = !!opts.breaks;
-    try { return renderLines(text); } finally { breaks = was; }
+    try { return renderLines(text); } finally { breaks = was; headingContext = previousHeadings; }
   }
   function renderLines(text){
     var lines = String(text || '').replace(/\r\n?/g, '\n').split('\n');
@@ -181,11 +193,11 @@ window.BoldMarkdown = (function(){
       if (ph) {
         var pn = Math.min(ph[1].length + 2, 6), info = phases[phaseAt++];
         if (phaseAt === 1) out += timeline(phases);
-        out += '<h' + pn + ' class="md-phase" id="' + info.id + '">' + inline(ph[2]) + ' <span class="md-when">' + esc(whenText(ph[3])) + '</span></h' + pn + '>';
+        out += '<h' + pn + ' class="md-phase"' + headingAttrs(ph[2], info.id) + '>' + legacyAnchor(info.id) + inline(ph[2]) + ' <span class="md-when">' + esc(whenText(ph[3])) + '</span></h' + pn + '>';
         i++; continue;
       }
       var h = /^(#{1,4})\s+(.*)$/.exec(line);
-      if (h) { var n = Math.min(h[1].length + 2, 6); out += '<h' + n + '>' + inline(h[2]) + '</h' + n + '>'; i++; continue; }
+      if (h) { var n = Math.min(h[1].length + 2, 6); out += '<h' + n + headingAttrs(h[2]) + '>' + inline(h[2]) + '</h' + n + '>'; i++; continue; }
       if (/^>\s?/.test(line)) {
         var quote = [];
         for (; i < lines.length && /^>\s?/.test(lines[i]); i++) quote.push(lines[i].replace(/^>\s?/, ''));

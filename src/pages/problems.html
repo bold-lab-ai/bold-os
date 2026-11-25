@@ -1,10 +1,11 @@
 ---
 area: "projects"
 title: "Problem Bank | BOLD Lab"
-description: "Open research problems, each linked to a project, and the evaluators built for them."
+description: "Open research problems, their projects, registered papers and verifiers."
 sdk: ["firestore", "functions"]
 css: "problems"
-scripts: ["pages/problems.js"]
+styles: ["problem-steps", "problem-tree", "research-graph"]
+scripts: ["problem-projects.js", "problem-papers.js", "problem-tree.js", "research-graph-model.js", "research-graph.js", "pages/problems.js"]
 permalink: "problems.html"
 nav: "problems.html"
 ---
@@ -19,9 +20,10 @@ nav: "problems.html"
     <div class="view-toggle" role="group" aria-label="View">
       <button type="button" class="view-btn" data-view="list" aria-pressed="true">List</button>
       <button type="button" class="view-btn" data-view="grid" aria-pressed="false">Grid</button>
+      <button type="button" class="view-btn" data-view="tree" aria-pressed="false">By objective</button>
+      <button type="button" class="view-btn" data-view="graph" aria-pressed="false">Graph</button>
     </div>
-    <!-- New problems start in AutoKaggle Lite, which registers them here. -->
-    <a class="btn btn-primary" id="pbLite" href="#" target="_blank" rel="noopener">Onboard in AutoKaggle Lite ↗</a>
+    <a class="btn btn-primary" id="pbAdd" aria-disabled="true">Add problem</a>
   </div>
 
   <div class="filters" role="search">
@@ -29,7 +31,7 @@ nav: "problems.html"
     <button type="button" class="btn-text" id="pbClear" hidden>Clear search</button>
   </div>
 
-  <div class="tabs" role="tablist" aria-label="Stage">
+  <div class="tabs" id="pbStageTabs" role="tablist" aria-label="Stage">
     <button class="tab active" type="button" data-tab="open" role="tab" aria-selected="true" aria-controls="pbOpen">Open<span class="proj-count" id="cntOpen"></span></button>
     <button class="tab" type="button" data-tab="implemented" role="tab" aria-selected="false" tabindex="-1" aria-controls="pbImplemented">Implemented<span class="proj-count" id="cntImplemented"></span></button>
     <button class="tab" type="button" data-tab="checked" role="tab" aria-selected="false" tabindex="-1" aria-controls="pbChecked">Checked<span class="proj-count" id="cntChecked"></span></button>
@@ -48,8 +50,21 @@ nav: "problems.html"
     <button type="button" class="btn" id="pbMore" hidden>Load more</button>
   </div>
 
+  <section id="pbTree" aria-label="Research family tree" hidden>
+    <div class="pb-tree-tools">
+      <h2>Research family tree</h2>
+      <label><input type="checkbox" id="pbIncludeArchived"> Include archived</label>
+      <a class="btn-text" href="projects-register.html#level=moonshot">+ Moonshot</a>
+    </div>
+    <p id="pbTreeStatus" class="proj-msg" role="status"></p>
+    <button type="button" id="pbTreeRetry" class="btn-text" hidden>Try again</button>
+    <div id="pbTreeBranches"></div>
+    <p id="pbGraphNotice" class="proj-msg" role="status" hidden></p>
+    <section id="pbGraph" aria-label="Research graph" hidden></section>
+  </section>
+
   <details class="pb-note"><summary>What the stages mean</summary>
-    <p>AutoKaggle reports each evaluator's stage; a PI or admin approves a validated one here.</p>
+    <p>The tabs show the latest registered verifier’s stage. Open a problem to see the checks and approval for each verifier.</p>
     <ul>
       <li><strong>Implemented:</strong> the build and full contract coverage pass.</li>
       <li><strong>Checked:</strong> code review, synthetic, known-score and invalid-submission tests and a clean-clone run pass too.</li>

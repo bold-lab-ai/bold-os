@@ -481,7 +481,7 @@
     if (!BOLD.getApp()) return null;
     try {
       auth = firebase.auth();
-      if (BOLD.useAuthEmulator) auth.useEmulator('http://localhost:9099');
+      if (BOLD.useAuthEmulator) auth.useEmulator('http://localhost:9099', { disableWarnings: !!window.BOLD_TEST }); // test-mode.js shows the demo banner and account switcher.
     } catch (e){ auth = null; return null; }
     auth.onAuthStateChanged(function(user){
       current = user; authReady = true; skipConfirm = null;
@@ -589,8 +589,8 @@
   // settings have their own button (mountSettings). Signed out: Sign in with Slack.
   function renderAuthRegion(region, user){
     if (user) {
-      // The shared profile photo (initials without one); your name heads its menu
-      // (your email is on your profile; without a name, the email).
+      // The shared profile photo (initials without one); your name heads its menu, with the email
+      // you're signed in with under it (without a name, the email alone).
       var name = user.displayName || user.email || 'Signed in', who = esc(name);
       var initials = esc(name.split(/[\s@.]+/).filter(Boolean).slice(0, 2).map(function(w){ return w[0].toUpperCase(); }).join(''));
       var face = '<span class="mast-avatar mast-initials">' + initials + '</span>';
@@ -598,7 +598,8 @@
         '<div class="mast-auth mast-menu-wrap">' +
           '<button class="mast-menu-btn" type="button" aria-haspopup="true" aria-expanded="false" aria-controls="mastMenu" aria-label="' + who + '’s menu" title="' + who + '">' + face + '</button>' +
           '<ul class="mast-menu" id="mastMenu" role="menu" hidden>' +
-            '<li role="none" class="mast-menu-who">Signed in as <strong>' + who + '</strong></li>' +
+            '<li role="none" class="mast-menu-who">Signed in as <strong>' + who + '</strong>' +
+              (user.displayName && user.email ? '<span class="mast-menu-email" title="' + esc(user.email) + '">' + esc(user.email) + '</span>' : '') + '</li>' +
             '<li role="none"><a role="menuitem" href="profile.html">Profile</a></li>' +
             // Your group, and changing it (#278): findable from every page.
             '<li role="none"><a role="menuitem" href="group-request.html" id="mastGroupItem">' + groupItemText() + '</a></li>' +
@@ -708,7 +709,10 @@
   var may = function(area, what){ return function(){ return BOLD.can(area, what) ? '' : BOLD.cannotReason(area, what); }; };
   var CREATE = [
     { head: 'New' },
+    { label: 'Open problem', href: 'problem-new.html', can: may('projects', 'edit') },
     { label: 'Project', href: 'projects-register.html', can: may('projects', 'edit') },
+    { label: 'Moonshot', href: 'projects-register.html#level=moonshot', can: may('projects', 'edit') },
+    { label: 'Northstar', href: 'projects-register.html#level=northstar', can: may('projects', 'edit') },
     { label: 'Event series', href: 'series.html?new', can: may('events', 'edit') },
     { label: 'Guide', href: 'guide.html?new', can: pi },
     // Skills and tools are both for agents (MCP): side by side, named so.
@@ -719,7 +723,10 @@
     { label: 'Change your group', href: 'group-request.html', can: function(){ return BOLD.myGroup() === 'exec' ? 'You’re in BOLD-exec, the top group' : ''; } },
     { label: 'Ask for a letter', href: 'letters.html#ask', can: may('service-desk', 'edit') },
     { label: 'Offer an introduction', href: 'introductions.html#offer', can: may('service-desk', 'edit') },
-    { label: 'A paper for internal review', href: 'audit-board.html', can: may('ml-cycle', 'edit') },
+    { label: 'A paper for internal review', href: 'audit-board.html', can: function(){
+      if (!BOLD.can('ml-cycle', 'view')) return BOLD.cannotReason('ml-cycle', 'view');
+      return BOLD.can('ml-cycle', 'edit') || BOLD.can('projects', 'edit') ? '' : 'Requires editing access to Internal Review or Projects';
+    } },
   ];
   var ICON_PLUS = '<svg viewBox="0 0 16 16" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path d="M8 3v10M3 8h10"/></svg>';
   var ICON_DOWN = '<svg viewBox="0 0 10 10" width="9" height="9" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path d="M2 3.5 5 6.5 8 3.5"/></svg>';
@@ -1680,7 +1687,7 @@
         var out = [];
         ((snap.exists && snap.data().parts) || []).forEach(function(p){
           if (p.section && !out.some(function(e){ return e.title === p.section; }))
-            out.push({ title: p.section, href: 'boldiquette.html#' + BOLD.slugify(p.section) });
+            out.push({ title: p.section, href: 'boldiquette.html?section=' + encodeURIComponent(BOLD.slugify(p.section)) });
         });
         return out;
       });

@@ -261,7 +261,7 @@
       var why = only || (last ? 'At least one address gets them' : '');
       return '<label' + (why ? ' title="' + escapeHtml(why) + '"' : '') + '><input type="checkbox" class="g-to" value="' + escapeHtml(a) + '"' + (on ? ' checked' : '') + (gBusy || why ? ' disabled' : '') + '> ' + escapeHtml(a) + (a === link.google && !only ? ' (Google)' : '') + '</label>';
     }).join('') + (only ? '<span class="g-why">' + escapeHtml(only) + '.</span>' : '') + '</fieldset>';
-    box.innerHTML = accountHtml({ name: (p && p.displayName) || link.google, handle: '', note: escapeHtml(link.google) }) + pick + err +
+    box.innerHTML = accountHtml({ name: (p && p.displayName) || link.google, handle: '', note: escapeHtml(link.google) + (link.setBy ? ' · linked for you by a PI or admin' : '') }) + pick + err +
       '<span class="gh-actions"><button type="button" class="btn-box g-unlink"' + off + '>Unlink Google</button></span>';
   }
   el('googleBody').addEventListener('change', function(e){
@@ -310,7 +310,9 @@
     } else if (t.classList.contains('g-unlink')) {
       if (!window.confirm('Unlink your Google account? Your projects\u2019 invitations and files go back to your Slack email.')) return;
       t.disabled = true;
-      user.unlink('google.com').then(loadGoogle).catch(function(err){
+      // Linked for them by a PI or admin: there's no Google account on their sign-in to unlink, only the link.
+      var gone = providerOf(user, 'google.com') ? user.unlink('google.com') : firebase.app().functions('europe-west2').httpsCallable('linkGoogle')({ unlink: true });
+      gone.then(loadGoogle).catch(function(err){
         console.error('[BOLD Lab] unlinking Google failed', err);
         gError = 'Couldn\u2019t unlink Google \u2014 try again.'; loadGoogle();
       });
@@ -329,6 +331,38 @@
   });
   document.addEventListener('bold:photostyle', drawPhotoStyle);
   drawPhotoStyle();
+
+  // Delete my profile (deleteMyProfile): always asks, saying what goes and what stays; then they're signed out.
+  // PIs and admins see it greyed: another takes them off the role lists first.
+  BOLD.onUser(function(user){
+    var box = el('profileDelete'), btn = el('profileDeleteBtn');
+    if (!box) return;
+    box.hidden = !user;
+    if (!user) return;
+    BOLD.onAccess(function(a){
+      var staff = !!(a && (a.isPI || a.isAdmin || a.fullWrite));
+      btn.disabled = staff;
+      btn.title = staff ? 'You’re a PI or admin: another one takes you off the role lists first.' : '';
+    });
+  });
+  el('profileDeleteBtn').addEventListener('click', function(){
+    var btn = el('profileDeleteBtn');
+    BOLD.confirmAlways({ title: 'Delete your BOLD.OS profile?', go: 'Delete my profile', no: 'Keep it',
+      warn: 'This can’t be undone. To come back, you join BOLD again.',
+      effects: ['Delete your details, your group and your settings', 'Take you off your projects, with their meeting invitations, files and GitHub team',
+        'Unlink your Google and GitHub accounts and revoke your agents’ tokens', 'Delete your sign-in, and sign you out',
+        'Keep what you wrote with others (comments, cards, conversations), as on Slack'] }).then(function(ok){
+      if (!ok) return;
+      btn.disabled = true; btn.textContent = 'Deleting…';
+      return firebase.app().functions('europe-west2').httpsCallable('deleteMyProfile', { timeout: 300000 })().then(function(){
+        return BOLD.getAuth().signOut().catch(function(){});
+      }).then(function(){ location.href = 'index.html'; });
+    }).catch(function(err){
+      console.error('[BOLD Lab] deleting the profile failed', err);
+      btn.disabled = false; btn.textContent = 'Delete my profile';
+      window.alert((err && err.message) || 'Couldn’t delete your profile — try again.');
+    });
+  });
 
   // Whether to confirm before actions that reach outside BOLD.OS (BOLD.confirmAction).
   BOLD.onUser(function(user){
