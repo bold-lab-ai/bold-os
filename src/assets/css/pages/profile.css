@@ -287,3 +287,7 @@ a.btn-box{text-decoration:none; display:inline-block;}
 .profile-delete[hidden]{display:none;}
 .profile-delete-btn{font-size:13px; color:var(--muted);}
 .profile-delete-btn:not(:disabled):hover{color:var(--danger-text);}
+
+/* Agents: how to connect, before a token is made. */
+.api-steps{margin:10px 0 6px; padding-left:20px; font-size:14px; line-height:1.5; color:var(--ink-soft);}
+.api-steps li{margin:3px 0;}
