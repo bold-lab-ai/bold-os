@@ -22,7 +22,7 @@
     // looked for it in Conversations and didn't find it).
     box.innerHTML = '<p class="hero-note">BOLD.OS has an <strong>MCP server</strong>: connect Claude Code, or any agent that speaks MCP, and it reads what you can read here, and acts for you once a PI or admin approves. <a href="agents.html#activity">What your tokens did</a>.</p>' +
       (fresh ? '' : '<ol class="api-steps"><li>Name a token after the agent that will use it, and make it below.</li><li>Copy the command it shows you (only once) into a terminal: Claude Code then has BOLD.OS’s tools.</li><li>Ask it anything about the lab: search, projects, people, the calendar, the BOLDiquette, skills.</li></ol>' +
-        '<p class="acct-note">Its address: <code>' + esc(API) + '/mcp</code>, with the header <code>Authorization: Bearer &lt;your token&gt;</code>.</p>') +
+        '<p class="api-addr">Its address, for any other agent, with the header <code>Authorization: Bearer &lt;your token&gt;</code>:</p>' + BOLD.copyBoxHtml(API + '/mcp')) +
       (fresh ? '<div class="api-fresh"><p class="acct-note">Your token for <strong>' + esc(fresh.label) + '</strong>, shown only now:</p>' + BOLD.copyBoxHtml(fresh.token) +
         '<p class="acct-note">To add it to Claude Code:</p>' +
         BOLD.copyBoxHtml('claude mcp add --scope user --transport http bold-os ' + API + '/mcp --header "Authorization: Bearer ' + fresh.token + '"') +
