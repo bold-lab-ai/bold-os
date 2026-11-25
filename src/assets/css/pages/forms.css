@@ -43,3 +43,8 @@
 #forms .fm-tabs { display: flex; gap: .5rem; border-bottom: 1px solid var(--line); margin-bottom: 1rem; }
 #forms .fm-tabs button { padding: .7rem 1rem; margin: 0; background: none; color: var(--ink); border: 0; border-bottom: 3px solid transparent; cursor: pointer; font: 16px var(--sans); }
 #forms .fm-tabs button[aria-selected=true] { border-bottom-color: var(--accent); font-weight: 600; }
+
+#forms .fm-editor-actions { display: flex; justify-content: flex-end; flex-wrap: wrap; gap: .75rem; margin-top: 1.5rem; }
+#forms .fm-editor-actions button { margin: 0; min-height: 2.75rem; padding: .65rem 1.25rem; }
+#forms .fm-editor-actions .is-primary { background: var(--ink); color: var(--surface); }
+#forms .fm-save-hint { text-align: right; color: var(--ink-soft); font: 14px var(--sans); }

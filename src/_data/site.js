@@ -40,7 +40,6 @@ export default {
   // separatorAfter: a hairline under the group. `area`: its page in the BOLDiquette's
   // Who can see what (functions/access.js); shown only to whoever may view it.
   nav: [
-    { label: 'Forms', href: 'forms.html', links: [], area: 'forms' },
     // Its sub-pages are BOLDiquette's sections (Firestore), filled in by bold.js.
     { label: 'BOLDiquette', href: 'boldiquette.html', links: [], handbook: true, area: 'boldiquette' },
     // Reddit-like threads (conversations.html, 2026-11-04; was an experiment).
@@ -55,7 +54,8 @@ export default {
       { label: 'Projects', href: 'projects.html', area: 'projects', areaWhat: 'titles' },
       { label: 'Internal review', href: 'audit-board.html', area: 'ml-cycle' },
     ] },
-    { label: 'Calendar', href: 'calendar.html', links: [], separatorAfter: true, area: 'calendar' },
+    { label: 'Calendar', href: 'calendar.html', links: [], area: 'calendar' },
+    { label: 'Forms', href: 'forms.html', links: [], separatorAfter: true, area: 'forms' },
     { label: 'People', href: 'people.html', area: 'people', links: [
       { label: 'Members', href: 'people.html' },
       { label: 'Network', href: 'network.html' },

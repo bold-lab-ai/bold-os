@@ -86,7 +86,9 @@
       '<label><input id="fmLinkSharing" type="checkbox"' + (draft.linkSharing ? ' checked' : '') + '> Allow any BOLD member with the link to join as a participant.</label>' +
       '<p class="fm-hint">Members must sign in. You can copy the link after publishing, including when no recipients are selected.</p>' +
       '<label><input id="fmReminders" type="checkbox"' + (draft.reminders ? ' checked' : '') + '> Send weekly BOLD.OS inbox reminders to people who have not responded, starting seven days after publication or joining.</label></div>' +
-      button('save', 'Save draft') + '</section>';
+      '<div class="fm-editor-actions"><button type="button" class="btn-box" data-action="save">Save draft</button>' +
+      '<button type="button" class="btn-box is-primary" data-action="publish"' + (!id || !BOLD.can('forms', 'edit') ? ' disabled' : '') + '>' + (id ? 'Publish saved draft' : 'Publish') + '</button></div>' +
+      '<p class="fm-save-hint">' + (id ? 'Save your changes before publishing. Publish uses the last saved draft.' : 'Save a draft to enable publishing.') + '</p></section>';
   }
   function switchTab(name){
     editorTab = name;
@@ -113,7 +115,6 @@
       '<ul>' + data.forms.map(function(f){ return '<li><a href="forms.html?id=' + encodeURIComponent(f.id) + '">' + esc(f.title) + '</a> · ' + esc(f.status) + (f.owner ? ' · owner' : '') + '</li>'; }).join('') + '</ul>';
     else if (creating || data.form.status === 'draft' && data.owner) {
       html += editor();
-      if (id) html += button('publish', 'Publish saved draft', reason);
     } else {
       var f = data.form;
       html += '<h2>' + esc(f.title) + '</h2><p class="fm-answer">' + esc(f.description) + '</p><p>Status: ' + esc(f.status) + '</p>' +
