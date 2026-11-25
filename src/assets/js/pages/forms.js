@@ -7,28 +7,36 @@
   function names(emails){ return emails.map(function(e){ var p = people.filter(function(p){ return p.email === e; })[0]; return p ? p.name : e; }).join(', '); }
   function options(list, selected){ return list.map(function(p){ return '<option value="' + esc(p.email) + '"' + (selected.indexOf(p.email) !== -1 ? ' selected' : '') + '>' + esc(p.name) + '</option>'; }).join(''); }
   function empty(){ return { title: '', description: '', owners: [user.email.toLowerCase()], targetEmails: [], targetGroups: [], reminders: false, notifyOwners: false, questions: [{ id: 'q1', label: '', type: 'text', required: false, options: [] }] }; }
+  function answerEditor(q){
+    if (q.type === 'choice') return '<label>Choice options (one per line)<textarea class="fm-options no-tags">' + esc(q.options.join('\n')) + '</textarea></label>';
+    if (q.type === 'scale') return '<p class="fm-hint">Respondents choose one value from 1 to 5.</p><div class="fm-scale" role="group" aria-label="Scale answer preview">' + [1,2,3,4,5].map(function(n){ return '<label><input type="radio" disabled> ' + n + '</label>'; }).join('') + '</div>';
+    return '<label>Text answer preview<textarea class="no-tags" placeholder="Respondents write their answer here" disabled></textarea></label>';
+  }
   function questionEditor(q, i){
-    return '<fieldset class="fm-question" data-qid="' + esc(q.id) + '"><legend>Question ' + (i + 1) + '</legend>' +
+    return '<div class="fm-question fm-panel" role="group" aria-labelledby="heading-' + esc(q.id) + '" data-qid="' + esc(q.id) + '"><h3 id="heading-' + esc(q.id) + '">Question ' + (i + 1) + '</h3>' +
       '<label>Question<input class="fm-label" type="text" value="' + esc(q.label) + '" maxlength="500"></label>' +
-      '<label>Answer type<select class="fm-type">' + [['text','Text'],['choice','Single choice'],['scale','Scale (1–5)']].map(function(t){ return '<option value="' + t[0] + '"' + (q.type === t[0] ? ' selected' : '') + '>' + t[1] + '</option>'; }).join('') + '</select></label>' +
-      '<label>Choice options (one per line; used for single choice)<textarea class="fm-options no-tags">' + esc(q.options.join('\n')) + '</textarea></label>' +
-      '<label><input class="fm-required" type="checkbox"' + (q.required ? ' checked' : '') + '> Required</label>' + button('removeQuestion', 'Remove question') + '</fieldset>';
+      '<label>Answer type<select class="fm-type" data-current="' + q.type + '">' + [['text','Text'],['choice','Single choice'],['scale','Scale (1–5)']].map(function(t){ return '<option value="' + t[0] + '"' + (q.type === t[0] ? ' selected' : '') + '>' + t[1] + '</option>'; }).join('') + '</select></label>' +
+      '<div class="fm-answer-editor">' + answerEditor(q) + '</div>' +
+      '<label><input class="fm-required" type="checkbox"' + (q.required ? ' checked' : '') + '> Required</label>' + button('removeQuestion', 'Remove question') + '</div>';
   }
   function editor(){
     return '<section><h2>' + (id ? 'Edit draft' : 'New form') + '</h2><label>Title<input id="fmTitle" type="text" maxlength="160" value="' + esc(draft.title) + '"></label>' +
       '<label>Description<textarea id="fmDescription" class="no-tags">' + esc(draft.description) + '</textarea></label>' +
       '<label>Owners (can edit and read all responses)<select id="fmOwners" multiple>' + options(people, draft.owners) + '</select></label>' +
       '<label>Individual recipients<select id="fmTargets" multiple>' + options(people, draft.targetEmails) + '</select></label><p>Hold Ctrl or Command to select several people.</p>' +
-      '<fieldset><legend>Recipient groups</legend>' + [['pan','PAN-BOLD'],['associate','BOLD-associate'],['internal','BOLD-internal'],['staff','BOLD-staff'],['exec','BOLD-exec']].map(function(g){ return '<label><input class="fm-group" type="checkbox" value="' + g[0] + '"' + (draft.targetGroups.indexOf(g[0]) !== -1 ? ' checked' : '') + '> ' + g[1] + '</label>'; }).join('') +
-      '<p>Groups are exact categories. Recipients are fixed when you publish.</p></fieldset>' +
+      '<div class="fm-panel" role="group" aria-labelledby="fmGroupsHeading"><h3 id="fmGroupsHeading">Recipient groups</h3>' + [['pan','PAN-BOLD'],['associate','BOLD-associate'],['internal','BOLD-internal'],['staff','BOLD-staff'],['exec','BOLD-exec']].map(function(g){ return '<label><input class="fm-group" type="checkbox" value="' + g[0] + '"' + (draft.targetGroups.indexOf(g[0]) !== -1 ? ' checked' : '') + '> ' + g[1] + '</label>'; }).join('') +
+      '<p>Groups are exact categories. Recipients are fixed when you publish.</p></div>' +
       '<label><input id="fmReminders" type="checkbox"' + (draft.reminders ? ' checked' : '') + '> Send weekly BOLD.OS inbox reminders to people who have not responded, starting seven days after publication.</label>' +
       '<label><input id="fmOwnerDigest" type="checkbox"' + (draft.notifyOwners ? ' checked' : '') + '> Notify all owners in BOLD.OS at most once a day when new responses arrive.</label>' +
       draft.questions.map(questionEditor).join('') + button('addQuestion', 'Add question') + button('save', 'Save draft') + '</section>';
   }
   function question(q){
     var label = esc(q.label) + (q.required ? ' (required)' : ' (optional)');
+    if (q.type === 'scale') return '<div class="fm-panel fm-scale-answer" data-q="' + esc(q.id) + '" role="group" aria-labelledby="answer-' + esc(q.id) + '"><h3 id="answer-' + esc(q.id) + '">' + label + '</h3><div class="fm-scale">' +
+      ['1','2','3','4','5'].map(function(v){ return '<label><input type="radio" name="answer-' + esc(q.id) + '" value="' + v + '"> ' + v + '</label>'; }).join('') +
+      '</div>' + (q.required ? '' : '<label><input type="radio" name="answer-' + esc(q.id) + '" value="" checked> No answer</label>') + '</div>';
     return '<label>' + label + (q.type === 'text' ? '<textarea class="fm-input no-tags" data-q="' + esc(q.id) + '"></textarea>' :
-      '<select class="fm-input" data-q="' + esc(q.id) + '"><option value="">Choose…</option>' + (q.type === 'scale' ? ['1','2','3','4','5'] : q.options).map(function(v){ return '<option value="' + esc(v) + '">' + esc(v) + '</option>'; }).join('') + '</select>') + '</label>';
+      '<select class="fm-input" data-q="' + esc(q.id) + '"><option value="">Choose…</option>' + q.options.map(function(v){ return '<option value="' + esc(v) + '">' + esc(v) + '</option>'; }).join('') + '</select>') + '</label>';
   }
   function results(){
     return '<section><h2>Responses (' + data.form.responseCount + ')</h2><p>Completion records and individual submission times are not shown to owners.</p>' +
@@ -64,7 +72,7 @@
       owners: selected('fmOwners'), targetEmails: selected('fmTargets'), targetGroups: Array.from(root.querySelectorAll('.fm-group:checked')).map(function(e){ return e.value; }),
       reminders: document.getElementById('fmReminders').checked, notifyOwners: document.getElementById('fmOwnerDigest').checked,
       questions: Array.from(root.querySelectorAll('.fm-question')).map(function(q){ return { id: q.dataset.qid, label: q.querySelector('.fm-label').value, type: q.querySelector('.fm-type').value,
-        required: q.querySelector('.fm-required').checked, options: q.querySelector('.fm-options').value.split('\n').map(function(x){ return x.trim(); }).filter(Boolean) }; }) };
+        required: q.querySelector('.fm-required').checked, options: q.querySelector('.fm-options') ? q.querySelector('.fm-options').value.split('\n').map(function(x){ return x.trim(); }).filter(Boolean) : [] }; }) };
   }
   async function load(){
     data = await call(id ? { action: 'get', id: id } : { action: 'list' });
@@ -72,6 +80,21 @@
     draft = creating ? empty() : id && data.owner && data.form.status === 'draft' ? data.form : null;
     render();
   }
+  root.addEventListener('change', async function(event){
+    var select = event.target;
+    if (!select.matches('.fm-type')) return;
+    var previous = select.dataset.current, next = select.value;
+    select.value = previous;
+    if (busy || next === previous) return;
+    busy = true; select.disabled = true;
+    try {
+      var ok = await BOLD.confirmAction({ title: 'Change answer type?', always: true,
+        effects: ['Replace the answer input and permanently clear any choice options entered for this question. The question text and Required setting will be kept.'], go: 'Change type' });
+      if (!ok || !root.contains(select)) return;
+      select.value = next; select.dataset.current = next;
+      select.closest('.fm-question').querySelector('.fm-answer-editor').innerHTML = answerEditor({ type: next, options: [] });
+    } finally { busy = false; select.disabled = false; select.focus(); }
+  });
   root.addEventListener('click', async function(event){
     var b = event.target.closest('[data-action]'); if (!b || b.disabled || busy) return;
     var action = b.dataset.action, d = { action: action, id: id }, ok;
@@ -99,6 +122,7 @@
       }
       if (action === 'submit') {
         d.answers = {}; root.querySelectorAll('.fm-input').forEach(function(e){ d.answers[e.dataset.q] = e.value; });
+        root.querySelectorAll('.fm-scale-answer').forEach(function(e){ var selected = e.querySelector('input:checked'); d.answers[e.dataset.q] = selected ? selected.value : ''; });
         d.identify = document.getElementById('fmIdentify').checked;
       }
       if (action === 'reveal' || action === 'submit' && d.identify) {

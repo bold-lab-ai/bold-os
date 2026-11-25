@@ -7,10 +7,15 @@
 #forms p { margin: .7rem 0 1rem; }
 #forms label { display: block; margin: .8rem 0; font: 14px var(--sans); }
 #forms input, #forms select, #forms textarea { padding: .6rem; color: var(--ink); background: var(--paper); border: 1px solid var(--line); border-radius: var(--radius); font: 14px var(--sans); }
-#forms input[type=text], #forms textarea, #forms select[multiple] { display: block; width: 100%; box-sizing: border-box; margin-top: .5rem; }
+#forms input[type=text], #forms textarea, #forms select { display: block; width: 100%; box-sizing: border-box; margin-top: .5rem; }
+#forms .fm-type { width: auto; min-width: 12rem; max-width: 100%; }
 #forms textarea { min-height: 6rem; }
 #forms select[multiple] { min-height: 8rem; }
-#forms fieldset, .fm-response { border: 1px solid var(--line); padding: 1rem; margin: 1rem 0; background: var(--surface); }
+#forms .fm-panel, .fm-response { border: 1px solid var(--line); padding: 1rem; margin: 1rem 0; background: var(--surface); }
+#forms .fm-panel h3 { margin: 0 0 1rem; font-size: 20px; line-height: 1.3; }
+#forms .fm-scale { display: flex; flex-wrap: wrap; gap: 1.5rem; }
+#forms .fm-scale label { display: flex; align-items: center; gap: .35rem; margin: 0; }
+#forms .fm-hint { color: var(--ink-soft); }
 #forms button { margin: .4rem .7rem .4rem 0; }
 #fmError { padding: .8rem; border-left: 3px solid var(--accent); }
 .fm-answer { white-space: pre-wrap; overflow-wrap: anywhere; }
