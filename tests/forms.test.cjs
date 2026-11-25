@@ -9,6 +9,8 @@ const sample = () => ({ title: 'Test form', owners: [], targetEmails: [], target
 test('forms validate questions, owners, groups and answers', () => {
   const f = normalizeForm(sample(), 'owner@example.com');
   assert.deepEqual(f.owners, ['owner@example.com']);
+  assert.equal(f.linkSharing, false);
+  assert.equal(normalizeForm({ ...sample(), linkSharing: true }, 'owner@example.com').linkSharing, true);
   assert.throws(() => normalizeForm({ ...sample(), targetGroups: ['all'] }, 'owner@example.com'));
   assert.throws(() => normalizeForm({ ...sample(), questions: [{ id: '__proto__', label: 'Bad' }] }, 'owner@example.com'));
   assert.throws(() => normalizeForm({ ...sample(), questions: [{ id: 'x', label: 'A' }, { id: 'x', label: 'B' }] }, 'owner@example.com'));
@@ -47,6 +49,7 @@ test('forms preserve anonymous responses, restrict access, reveal only self, and
     await assert.rejects(call(coowner, { action: 'publish', id, revision: 1 }), { code: 'failed-precondition' });
     await call(coowner, { action: 'publish', id, revision: 1, confirmPublish: true, notify: false });
     assert.equal(notices.length, 0);
+    await assert.rejects(call(coowner, { action: 'join', id, confirmJoin: true }), { code: 'failed-precondition' });
     await assert.rejects(call(person, { action: 'close', id }), { code: 'permission-denied' });
     await assert.rejects(call(owner, { action: 'save', id, revision: 2, form: initial.form }), { code: 'failed-precondition' });
     const targeted = await call(person, { action: 'get', id });
@@ -75,6 +78,38 @@ test('forms preserve anonymous responses, restrict access, reveal only self, and
     await call(owner, { action: 'close', id });
     await assert.rejects(call(other, { action: 'submit', id, answers: { text: 'Too late' } }), { code: 'failed-precondition' });
     const before = notices.length; await service.reminders(); assert.equal(notices.length, before);
+    // Link sharing is opt-in, only for registered members, and never exposes answers.
+    await assert.rejects(call(coowner, { action: 'join', id, confirmJoin: true }), { code: 'failed-precondition' });
+    const shared = await call(owner, { action: 'create', form: { ...sample(), linkSharing: true, reminders: true } });
+    ids.push(shared.id); const sharedId = shared.id, sharedRef = db.doc('forms/' + sharedId);
+    await assert.rejects(call(other, { action: 'get', id: sharedId }), { code: 'permission-denied' });
+    await assert.rejects(call(other, { action: 'join', id: sharedId, confirmJoin: true }), { code: 'failed-precondition' });
+    await call(owner, { action: 'publish', id: sharedId, revision: 1, confirmPublish: true });
+    assert.equal((await sharedRef.get()).data().invitationsPending, false);
+    const preview = await call(other, { action: 'get', id: sharedId });
+    assert.equal(preview.canJoin, true); assert.equal(preview.targeted, false);
+    assert.equal(preview.responses, undefined); assert.equal(preview.form.recipientEmails, undefined);
+    await assert.rejects(call('unknown@example.com', { action: 'get', id: sharedId }), { code: 'permission-denied' });
+    await assert.rejects(call('unknown@example.com', { action: 'join', id: sharedId, confirmJoin: true }), { code: 'permission-denied' });
+    await assert.rejects(call(other, { action: 'join', id: sharedId }), { code: 'failed-precondition' });
+    await assert.rejects(call(other, { action: 'submit', id: sharedId, answers: { text: 'Before joining' } }), { code: 'permission-denied' });
+    await Promise.all([call(other, { action: 'join', id: sharedId, confirmJoin: true }), call(other, { action: 'join', id: sharedId, confirmJoin: true })]);
+    assert.deepEqual((await sharedRef.get()).data().recipientEmails, [other]);
+    assert.equal((await call(other, { action: 'list' })).forms.some(f => f.id === sharedId), true);
+    assert.equal((await call(other, { action: 'get', id: sharedId })).canJoin, false);
+    await sharedRef.update({ openedAt: Date.now() - 10 * 86400000 });
+    const beforeJoinReminder = notices.length;
+    await service.reminders(); assert.equal(notices.length, beforeJoinReminder);
+    await sharedRef.collection('reminders').doc(other).update({ at: Date.now() - 8 * 86400000 });
+    await service.reminders(); assert.equal(notices.length, beforeJoinReminder + 1);
+    await call(other, { action: 'submit', id: sharedId, answers: { text: 'Joined anonymously' } });
+    assert.equal((await call(owner, { action: 'get', id: sharedId })).responses[0].identity, null);
+    await sharedRef.update({ recipientEmails: Array.from({length: 500}, (_, i) => 'full' + i + '@example.com') });
+    await assert.rejects(call(person, { action: 'join', id: sharedId, confirmJoin: true }), { code: 'resource-exhausted' });
+    await sharedRef.update({ recipientEmails: [other] });
+    await call(owner, { action: 'close', id: sharedId });
+    await assert.rejects(call(person, { action: 'join', id: sharedId, confirmJoin: true }), { code: 'failed-precondition' });
+    await assert.rejects(call(person, { action: 'get', id: sharedId }), { code: 'permission-denied' });
     deny = true; await assert.rejects(call(person, { action: 'get', id }), { code: 'permission-denied' });
     await assert.rejects(service.handle({ auth: { token: { email: owner } }, data: {} }), { code: 'unauthenticated' });
   } finally {

@@ -1,6 +1,12 @@
 # Forms (#264)
 
-Forms have draft, open and closed states. Owners create text, single-choice and 1–5 scale questions, build an explicit recipient list, and publish a fixed questionnaire. Both owners and recipients have name/email search and bulk add/remove by role, BOLD membership, institution, location and research pillar, using current profile data. Categories populate the list once; individuals can then be removed without being re-added at publication. The creator remains an owner; the limits are 20 owners and 500 recipients. Older drafts with group targeting expand those groups in the editor and save an explicit list. Multiple owners can edit a draft and read its answers. Revision checks prevent stale edits from replacing another owner's draft. Questions, owners and recipients freeze on publication; create a new form for subsequent rounds.
+Forms have draft, open and closed states. Owners create text, single-choice and 1–5 scale questions, build an explicit recipient list, and publish a fixed questionnaire. Both owners and recipients have name/email search and bulk add/remove by role, BOLD membership, institution, location and research pillar, using current profile data. Categories populate the list once; individuals can then be removed without being re-added at publication. The creator remains an owner; the limits are 20 owners and 500 recipients. Older drafts with group targeting expand those groups in the editor and save an explicit list. Multiple owners can edit a draft and read its answers. Revision checks prevent stale edits from replacing another owner's draft. Questions, owners and sharing settings freeze on publication; create a new form for subsequent rounds. The builder has Content, Owners and Recipients tabs, which preserve unsaved inputs. Selected owners and recipients have separate name/email filters and five-person pages.
+
+## Link sharing
+
+Builders can opt into link sharing on the Recipients tab. Once published, the owner sees a copyable participant link. A form can be published with no selected recipients when link sharing is enabled. A registered BOLD member with the link and the required page access can see the title and description and explicitly join while it is open, up to the 500-participant limit. Opening the link alone does not enrol them. Joining is transactional and idempotent; participants cannot add another person or obtain owner access. Draft, closed and non-sharing forms reject self-registration. Public unauthenticated access is not supported.
+
+Joining adds the member to the owner-visible participant list, but does not identify their answers. The join confirmation explains this and any reminders. Responses and completion records remain restricted as before.
 
 ## Privacy
 
@@ -14,9 +20,9 @@ Every forms document and subcollection denies direct client reads/writes. Callab
 
 ## Notifications
 
-Publishing confirms the saved recipient selection and reminder/digest options. Initial inbox invitations are optional and can be sent later. The recipients are a snapshot of registered members at publication; future group changes do not silently add people.
+Publishing confirms the saved recipient selection and reminder/digest options. Initial inbox invitations are optional and can be sent later. The recipients are a snapshot of registered members at publication; future group changes do not silently add people. Explicit self-registration through an enabled sharing link can add participants later.
 
-If selected, weekly inbox reminders start seven days after publication and stop for each respondent once their receipt exists, or when the form closes. Transactional reminder claims suppress duplicate scheduled runs. Owners can opt into at-most-daily response digests instead of per-response notifications, reducing timing disclosure. These are inbox-only (`ping: false`): no Slack, email or Calendar activity is added.
+If selected, weekly inbox reminders start seven days after publication, or seven days after joining for self-registered participants and stop for each respondent once their receipt exists, or when the form closes. Transactional reminder claims suppress duplicate scheduled runs. Owners can opt into at-most-daily response digests instead of per-response notifications, reducing timing disclosure. These are inbox-only (`ping: false`): no Slack, email or Calendar activity is added.
 
 ## Deployment and review
 

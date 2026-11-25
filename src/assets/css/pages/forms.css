@@ -39,3 +39,7 @@
 
 #forms .fm-pagination { align-items: center; gap: 1rem; }
 #forms .fm-pagination:not([hidden]) { display: flex; }
+
+#forms .fm-tabs { display: flex; gap: .5rem; border-bottom: 1px solid var(--line); margin-bottom: 1rem; }
+#forms .fm-tabs button { padding: .7rem 1rem; margin: 0; background: none; color: var(--ink); border: 0; border-bottom: 3px solid transparent; cursor: pointer; font: 16px var(--sans); }
+#forms .fm-tabs button[aria-selected=true] { border-bottom-color: var(--accent); font-weight: 600; }

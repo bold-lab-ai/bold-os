@@ -3,12 +3,13 @@
   if (!root || !BOLD.getAuth()) return;
   var id = new URLSearchParams(location.search).get('id'), creating = new URLSearchParams(location.search).has('new');
   var selections = { owners: [], recipients: [] }, categories = [], creator;
+  var editorTab = 'content';
   var selectedViews = { owners: { query: '', page: 0 }, recipients: { query: '', page: 0 } };
   function call(d){ return BOLD.getApp().functions('europe-west2').httpsCallable('forms')(d).then(function(r){ return r.data; }); }
   function button(a, text, disabled){ return '<button type="button" class="btn-text" data-action="' + a + '"' + (disabled ? ' disabled title="' + esc(disabled) + '"' : '') + '>' + text + '</button>'; }
   function names(emails){ return emails.map(function(e){ var p = people.filter(function(p){ return p.email === e; })[0]; return p ? p.name : e; }).join(', '); }
   function options(list, selected){ return list.map(function(p){ return '<option value="' + esc(p.email) + '"' + (selected.indexOf(p.email) !== -1 ? ' selected' : '') + '>' + esc(p.name) + '</option>'; }).join(''); }
-  function empty(){ return { title: '', description: '', owners: [user.email.toLowerCase()], targetEmails: [], targetGroups: [], reminders: false, notifyOwners: false, questions: [{ id: 'q1', label: '', type: 'text', required: false, options: [] }] }; }
+  function empty(){ return { title: '', description: '', owners: [user.email.toLowerCase()], targetEmails: [], targetGroups: [], linkSharing: false, reminders: false, notifyOwners: false, questions: [{ id: 'q1', label: '', type: 'text', required: false, options: [] }] }; }
   function personLabel(email){
     var p = people.find(function(p){ return p.email === email; });
     return '<span><strong>' + esc(p ? p.name : email) + '</strong><small>' + esc(email) + (p && p.role ? ' · ' + esc(p.role) : '') + '</small></span>';
@@ -21,7 +22,7 @@
     });
     if (group) opts += '</optgroup>';
     return '<div class="fm-panel fm-picker" data-picker="' + kind + '" role="group" aria-labelledby="' + kind + '-heading"><h3 id="' + kind + '-heading">' + title + '</h3>' +
-      '<p>' + (kind === 'owners' ? 'Owners can edit the draft and read every response. The creator remains an owner. Maximum 20.' : 'Only the people in this list will receive the form. Maximum 500.') + '</p>' +
+      '<p>' + (kind === 'owners' ? 'Owners can edit the draft and read every response. The creator remains an owner. Maximum 20.' : 'These people will receive the form. Link sharing below can also allow members to join. Maximum 500 participants.') + '</p>' +
       '<div class="fm-search-wrap"><label>Search ' + kind + '<input type="search" class="fm-person-search" placeholder="First name, last name or email" aria-controls="' + kind + '-results" autocomplete="off"></label>' +
       '<div class="fm-person-results" id="' + kind + '-results" hidden></div></div>' +
       '<label>Category for ' + kind + '<select class="fm-category">' + opts + '</select></label>' +
@@ -72,12 +73,25 @@
       '<label><input class="fm-required" type="checkbox"' + (q.required ? ' checked' : '') + '> Required</label>' + button('removeQuestion', 'Remove question') + '</div>';
   }
   function editor(){
-    return '<section><h2>' + (id ? 'Edit draft' : 'New form') + '</h2><label>Title<input id="fmTitle" type="text" maxlength="160" value="' + esc(draft.title) + '"></label>' +
+    var tabs = [['content','Content'],['owners','Owners'],['recipients','Recipients']];
+    function panel(name){ return '<div id="fm-tab-' + name + '" role="tabpanel" aria-labelledby="fm-tab-button-' + name + '"' + (editorTab === name ? '' : ' hidden') + '>'; }
+    return '<section><h2>' + (id ? 'Edit draft' : 'New form') + '</h2>' +
+      '<div class="fm-tabs" role="tablist" aria-label="Form builder">' + tabs.map(function(t){ return '<button type="button" role="tab" id="fm-tab-button-' + t[0] + '" data-tab="' + t[0] + '" aria-controls="fm-tab-' + t[0] + '" aria-selected="' + (editorTab === t[0]) + '" tabindex="' + (editorTab === t[0] ? '0' : '-1') + '">' + t[1] + '</button>'; }).join('') + '</div>' +
+      panel('content') + '<label>Title<input id="fmTitle" type="text" maxlength="160" value="' + esc(draft.title) + '"></label>' +
       '<label>Description<textarea id="fmDescription" class="no-tags">' + esc(draft.description) + '</textarea></label>' +
-      picker('owners', 'Owners') + picker('recipients', 'Recipients') +
-      '<label><input id="fmReminders" type="checkbox"' + (draft.reminders ? ' checked' : '') + '> Send weekly BOLD.OS inbox reminders to people who have not responded, starting seven days after publication.</label>' +
-      '<label><input id="fmOwnerDigest" type="checkbox"' + (draft.notifyOwners ? ' checked' : '') + '> Notify all owners in BOLD.OS at most once a day when new responses arrive.</label>' +
-      draft.questions.map(questionEditor).join('') + button('addQuestion', 'Add question') + button('save', 'Save draft') + '</section>';
+      draft.questions.map(questionEditor).join('') + button('addQuestion', 'Add question') + '</div>' +
+      panel('owners') + picker('owners', 'Owners') +
+      '<label><input id="fmOwnerDigest" type="checkbox"' + (draft.notifyOwners ? ' checked' : '') + '> Notify all owners in BOLD.OS at most once a day when new responses arrive.</label></div>' +
+      panel('recipients') + picker('recipients', 'Recipients') +
+      '<label><input id="fmLinkSharing" type="checkbox"' + (draft.linkSharing ? ' checked' : '') + '> Allow any BOLD member with the link to join as a participant.</label>' +
+      '<p class="fm-hint">Members must sign in. You can copy the link after publishing, including when no recipients are selected.</p>' +
+      '<label><input id="fmReminders" type="checkbox"' + (draft.reminders ? ' checked' : '') + '> Send weekly BOLD.OS inbox reminders to people who have not responded, starting seven days after publication or joining.</label></div>' +
+      button('save', 'Save draft') + '</section>';
+  }
+  function switchTab(name){
+    editorTab = name;
+    root.querySelectorAll('[data-tab]').forEach(function(t){ var active = t.dataset.tab === name; t.setAttribute('aria-selected', active); t.tabIndex = active ? 0 : -1; });
+    root.querySelectorAll('[role="tabpanel"]').forEach(function(p){ p.hidden = p.id !== 'fm-tab-' + name; });
   }
   function question(q){
     var label = esc(q.label) + (q.required ? ' (required)' : ' (optional)');
@@ -104,11 +118,13 @@
       var f = data.form;
       html += '<h2>' + esc(f.title) + '</h2><p class="fm-answer">' + esc(f.description) + '</p><p>Status: ' + esc(f.status) + '</p>' +
         '<p class="fm-privacy">Answers are anonymous to form owners unless you choose to identify yourself. BOLD.OS keeps a private completion record for reminders. What you write may identify you.</p>';
+      if (data.canJoin) html += '<p>You can join this form using its shared link.</p>' + button('join', 'Join as a participant', reason);
       if (data.submitted) html += '<p>Your response has been submitted.</p>' +
         (data.myResponse && data.myResponse.identity ? '<p>You chose to share your name and email with the owners.</p>' : button('reveal', 'Share my name and email with the owners', reason));
       else if (data.targeted && f.status === 'open') html += '<section><h2>Your response</h2>' + f.questions.map(question).join('') +
         '<label><input id="fmIdentify" type="checkbox"> Include my name and email</label>' + (f.reminders ? '<p>Weekly inbox reminders stop once you submit.</p>' : '') + button('submit', 'Submit response', reason) + '</section>';
       if (data.owner) {
+        if (f.linkSharing && f.status === 'open') html += '<h3>Participant link</h3><p>Any signed-in BOLD member with this link can join.</p>' + BOLD.copyBoxHtml(location.origin + location.pathname + '?id=' + encodeURIComponent(id));
         html += '<section><h2>Manage form</h2><p>Recipients: ' + f.recipientEmails.length + '. Owners: ' + esc(names(f.owners)) + '.</p>' +
           (f.status === 'open' ? button('close', 'Close form and stop reminders', reason) + (f.invitationsPending ? button('invite', 'Send pending invitations', reason) : '') : '') + '</section>' + results();
       }
@@ -119,6 +135,7 @@
   function collect(){
     return { title: document.getElementById('fmTitle').value, description: document.getElementById('fmDescription').value,
       owners: selections.owners.slice(), targetEmails: selections.recipients.slice(), targetGroups: [],
+      linkSharing: document.getElementById('fmLinkSharing').checked,
       reminders: document.getElementById('fmReminders').checked, notifyOwners: document.getElementById('fmOwnerDigest').checked,
       questions: Array.from(root.querySelectorAll('.fm-question')).map(function(q){ return { id: q.dataset.qid, label: q.querySelector('.fm-label').value, type: q.querySelector('.fm-type').value,
         required: q.querySelector('.fm-required').checked, options: Array.from(q.querySelectorAll('.fm-option')).map(function(e){ return e.value.trim(); }).filter(Boolean) }; }) };
@@ -145,6 +162,12 @@
     if (wrap && !wrap.contains(event.relatedTarget)) showSearch(wrap, false);
   });
   root.addEventListener('keydown', function(event){
+    var tab = event.target.closest('[data-tab]');
+    if (tab && ['ArrowLeft','ArrowRight','Home','End'].indexOf(event.key) >= 0) {
+      var tabs = Array.from(root.querySelectorAll('[data-tab]')), i = tabs.indexOf(tab);
+      i = event.key === 'Home' ? 0 : event.key === 'End' ? tabs.length - 1 : (i + (event.key === 'ArrowRight' ? 1 : -1) + tabs.length) % tabs.length;
+      switchTab(tabs[i].dataset.tab); tabs[i].focus(); event.preventDefault(); return;
+    }
     var wrap = event.target.closest('.fm-search-wrap');
     if (wrap && event.key === 'Escape') {
       wrap.querySelector('input').focus();
@@ -176,6 +199,8 @@
     } finally { busy = false; select.disabled = false; select.focus(); }
   });
   root.addEventListener('click', async function(event){
+    var tab = event.target.closest('[data-tab]');
+    if (tab) { switchTab(tab.dataset.tab); return; }
     var b = event.target.closest('[data-action]'); if (!b || b.disabled || busy) return;
     var action = b.dataset.action, d = { action: action, id: id }, ok;
     if (action === 'previousPeople' || action === 'nextPeople') {
@@ -228,12 +253,17 @@
       }
       if (action === 'publish' || action === 'invite') {
         ok = await BOLD.confirmAction({ title: action === 'publish' ? 'Publish saved draft?' : 'Send invitations?', always: true,
-          effects: [action === 'publish' ? 'Publish the last saved questions to the saved recipient list. Questions, owners and recipients cannot be changed afterwards.' : 'Invite the form’s recipients.',
-            data.form.reminders ? 'Send weekly inbox reminders to non-responders, starting seven days after publication.' : 'No automatic reminders.',
+          effects: [action === 'publish' ? 'Publish the last saved questions to the saved recipient list. Questions, owners and sharing settings cannot be changed afterwards.' : 'Invite the form’s recipients.',
+            data.form.linkSharing ? 'Allow any signed-in BOLD member with the link to join as a participant while the form is open.' : 'Only selected recipients can participate.',
+            data.form.reminders ? 'Send weekly inbox reminders to non-responders, starting seven days after publication or joining.' : 'No automatic reminders.',
             data.form.notifyOwners ? 'Notify all owners at most daily when new responses arrive.' : 'No owner response notifications.',
             { key: 'notify', text: 'Notify all recipients in BOLD.OS now.' }], go: action === 'publish' ? 'Publish' : 'Send' });
         if (!ok) return; d.confirmPublish = true; d.notify = !ok.skip.notify; d.revision = data.form.revision;
         if (action === 'invite' && !d.notify) return;
+      }
+      if (action === 'join') {
+        ok = await BOLD.confirmAction({ title: 'Join this form?', always: true, effects: ['Add you to the participant list, which is visible to the form owners. Your answers remain anonymous unless you choose to identify yourself.', data.form.reminders ? 'Receive weekly inbox reminders, starting seven days after joining, until you submit or the form closes.' : 'No automatic reminders.'], go: 'Join form' });
+        if (!ok) return; d.confirmJoin = true;
       }
       if (action === 'submit') {
         d.answers = {}; root.querySelectorAll('.fm-input').forEach(function(e){ d.answers[e.dataset.q] = e.value; });

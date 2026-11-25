@@ -23,7 +23,7 @@ function normalizeForm(input, creator) {
     if (type === 'choice' && (options.length < 2 || options.length > 15 || options.some(o => !o || o.length > 200))) throw new Error('Choice questions need 2–15 distinct options.');
     return { id, label, type, required: q.required === true, options };
   });
-  return { title, description, owners, targetEmails, targetGroups, questions, reminders: d.reminders === true, notifyOwners: d.notifyOwners === true };
+  return { title, description, owners, targetEmails, targetGroups, questions, linkSharing: d.linkSharing === true, reminders: d.reminders === true, notifyOwners: d.notifyOwners === true };
 }
 function validateAnswers(questions, answers) {
   if (!answers || typeof answers !== 'object' || Array.isArray(answers)) throw new Error('Provide your answers.');
@@ -76,7 +76,7 @@ module.exports = function({ db, onCall, onSchedule, HttpsError, signedInEmail, a
         if (action === 'save') {
           if (!old.exists) fail('not-found', 'No such form.');
           requireOwner(f, email);
-          if (f.status !== 'draft') fail('failed-precondition', 'Published questions and recipients are fixed. Create a new form to change them.');
+          if (f.status !== 'draft') fail('failed-precondition', 'Published questions and settings are fixed. Create a new form to change them.');
           if (d.revision !== f.revision) fail('aborted', 'Another owner edited this form. Reload before saving.');
         }
         const normalized = check(() => normalizeForm(d.form, f ? f.createdBy : email));
@@ -92,9 +92,10 @@ module.exports = function({ db, onCall, onSchedule, HttpsError, signedInEmail, a
     if (action === 'get') {
       const snap = await ref.get(); if (!snap.exists) fail('not-found', 'No such form.');
       const f = snap.data(), isOwner = owner(f, email), isTarget = target(f, email);
-      if (!isOwner && !isTarget) fail('permission-denied', 'This form is not addressed to you.');
+      const canJoin = f.linkSharing === true && f.status === 'open' && !isTarget && (await db.doc('members/' + email).get()).exists;
+      if (!isOwner && !isTarget && !canJoin) fail('permission-denied', 'This form is not addressed to you.');
       const receipt = await ref.collection('completion').doc(email).get();
-      const out = { id: ref.id, form: publicForm(f), owner: isOwner, targeted: isTarget, submitted: receipt.exists };
+      const out = { id: ref.id, form: publicForm(f), owner: isOwner, targeted: isTarget, canJoin, submitted: receipt.exists };
       if (receipt.exists) {
         const response = await ref.collection('responses').doc(receipt.data().responseId).get();
         out.myResponse = response.data() || null;
@@ -106,6 +107,21 @@ module.exports = function({ db, onCall, onSchedule, HttpsError, signedInEmail, a
       }
       return out;
     }
+    if (action === 'join') {
+      if (d.confirmJoin !== true) fail('failed-precondition', 'Confirm that you want to join this form.');
+      await db.runTransaction(async tx => {
+        const [snap, member] = await Promise.all([tx.get(ref), tx.get(db.doc('members/' + email))]);
+        if (!snap.exists) fail('not-found', 'No such form.');
+        const f = snap.data();
+        if (!member.exists) fail('permission-denied', 'Only registered BOLD members can join.');
+        if (f.status !== 'open' || f.linkSharing !== true) fail('failed-precondition', 'This form is not open for joining by link.');
+        if (target(f, email)) return;
+        if (f.recipientEmails.length >= 500) fail('resource-exhausted', 'This form has reached its limit of 500 participants.');
+        tx.update(ref, { recipientEmails: f.recipientEmails.concat(email) });
+        tx.set(ref.collection('reminders').doc(email), { at: Date.now() });
+      });
+      return { id: ref.id };
+    }
     if (action === 'publish') {
       if (d.confirmPublish !== true) fail('failed-precondition', 'Confirm the recipients and reminder schedule before publishing.');
       await db.runTransaction(async tx => {
@@ -114,8 +130,8 @@ module.exports = function({ db, onCall, onSchedule, HttpsError, signedInEmail, a
         if (f.status !== 'draft' || d.revision !== f.revision) fail('failed-precondition', 'Reload the current draft before publishing.');
         const members = await tx.get(db.collection('members'));
         const recipients = members.docs.filter(m => f.targetEmails.includes(m.id) || f.targetGroups.includes(m.data().category || 'pan')).map(m => m.id);
-        if (!recipients.length || recipients.length > 500) fail('invalid-argument', 'Choose between 1 and 500 recipients.');
-        tx.update(ref, { recipientEmails: recipients, status: 'open', invitationsPending: true, openedAt: Date.now(), revision: f.revision + 1 });
+        if ((!recipients.length && !f.linkSharing) || recipients.length > 500) fail('invalid-argument', 'Choose up to 500 recipients, or enable link sharing to publish without a recipient list.');
+        tx.update(ref, { recipientEmails: recipients, status: 'open', invitationsPending: recipients.length > 0, openedAt: Date.now(), revision: f.revision + 1 });
       });
       if (d.notify === true) {
         const f = (await ref.get()).data();
