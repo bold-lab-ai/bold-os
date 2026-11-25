@@ -8,6 +8,7 @@
 #forms label { display: block; margin: .8rem 0; font: 14px var(--sans); }
 #forms input, #forms select, #forms textarea { padding: .6rem; color: var(--ink); background: var(--paper); border: 1px solid var(--line); border-radius: var(--radius); font: 14px var(--sans); }
 #forms input[type=text], #forms textarea, #forms select { display: block; width: 100%; box-sizing: border-box; margin-top: .5rem; }
+#forms #fmTitle, #forms #fmDescription, #forms .fm-input { background: var(--surface); }
 #forms .fm-type { width: auto; min-width: 12rem; max-width: 100%; }
 #forms textarea { min-height: 6rem; }
 #forms select[multiple] { min-height: 8rem; }
@@ -28,7 +29,9 @@
 #forms .fm-picker small { display: block; font: 13px var(--sans); color: var(--ink-soft); overflow-wrap: anywhere; margin-top: .3rem; }
 #forms .fm-person-result { width: 100%; text-align: left; background: none; color: var(--ink); border: 0; border-bottom: 1px solid var(--line); margin: 0; cursor: pointer; }
 #forms .fm-person-result:disabled { cursor: default; opacity: .6; }
-#forms .fm-person-results { max-height: 18rem; overflow: auto; }
+#forms .fm-search-wrap { position: relative; }
+#forms .fm-person-results { position: absolute; top: calc(100% + .25rem); left: 0; right: 0; z-index: 20; max-height: 18rem; overflow: auto; padding: 0 .75rem; background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); box-shadow: 0 .5rem 1.5rem var(--line); }
+#forms .fm-person-result:hover:not(:disabled), #forms .fm-person-result:focus-visible { background: var(--paper); }
 #forms .fm-picker-status { font: 14px var(--sans); }
 #fmError { padding: .8rem; border-left: 3px solid var(--accent); }
 .fm-answer { white-space: pre-wrap; overflow-wrap: anywhere; }

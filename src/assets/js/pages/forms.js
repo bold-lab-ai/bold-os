@@ -21,12 +21,15 @@
     if (group) opts += '</optgroup>';
     return '<div class="fm-panel fm-picker" data-picker="' + kind + '" role="group" aria-labelledby="' + kind + '-heading"><h3 id="' + kind + '-heading">' + title + '</h3>' +
       '<p>' + (kind === 'owners' ? 'Owners can edit the draft and read every response. The creator remains an owner. Maximum 20.' : 'Only the people in this list will receive the form. Maximum 500.') + '</p>' +
-      '<label>Search ' + kind + '<input type="search" class="fm-person-search" placeholder="First name, last name or email" aria-controls="' + kind + '-results" autocomplete="off"></label>' +
-      '<div class="fm-person-results" id="' + kind + '-results"></div>' +
+      '<div class="fm-search-wrap"><label>Search ' + kind + '<input type="search" class="fm-person-search" placeholder="First name, last name or email" aria-controls="' + kind + '-results" autocomplete="off"></label>' +
+      '<div class="fm-person-results" id="' + kind + '-results" hidden></div></div>' +
       '<label>Category for ' + kind + '<select class="fm-category">' + opts + '</select></label>' +
       '<div class="fm-category-actions">' + button('addCategory', 'Add category') + button('removeCategory', 'Remove category') + '</div>' +
       '<p class="fm-hint">Categories use current profile details. Add or remove a category, then adjust individuals below.</p>' +
       '<p class="fm-picker-status" role="status" aria-live="polite"></p><ul class="fm-selected"></ul></div>';
+  }
+  function showSearch(wrap, open){
+    wrap.querySelector('.fm-person-results').hidden = !open || !wrap.querySelector('input').value.trim();
   }
   function updatePicker(el){
     var kind = el.dataset.picker, selected = selections[kind], query = el.querySelector('.fm-person-search').value;
@@ -35,6 +38,8 @@
       var locked = kind === 'owners' && email === creator;
       return '<li>' + personLabel(email) + '<button type="button" class="btn-text" data-action="removePerson" data-email="' + esc(email) + '" aria-label="Remove ' + esc(email) + '"' + (locked ? ' disabled title="The creator remains an owner"' : '') + '>' + (locked ? 'Creator' : 'Remove') + '</button></li>';
     }).join('');
+    var wrap = el.querySelector('.fm-search-wrap');
+    showSearch(wrap, wrap.contains(document.activeElement));
     var matches = FormPeople.search(people, query);
     el.querySelector('.fm-person-results').innerHTML = query.trim() ?
       '<p role="status">' + matches.length + ' matches' + (matches.length > 50 ? '; showing the first 50. Refine your search.' : '') + '</p>' +
@@ -120,6 +125,22 @@
     }
     render();
   }
+  root.addEventListener('focusin', function(event){
+    var wrap = event.target.closest('.fm-search-wrap');
+    if (wrap) showSearch(wrap, true);
+  });
+  root.addEventListener('focusout', function(event){
+    var wrap = event.target.closest('.fm-search-wrap');
+    if (wrap && !wrap.contains(event.relatedTarget)) showSearch(wrap, false);
+  });
+  root.addEventListener('keydown', function(event){
+    var wrap = event.target.closest('.fm-search-wrap');
+    if (wrap && event.key === 'Escape') {
+      wrap.querySelector('input').focus();
+      showSearch(wrap, false);
+      event.preventDefault();
+    }
+  });
   root.addEventListener('input', function(event){
     if (event.target.matches('.fm-person-search')) updatePicker(event.target.closest('.fm-picker'));
   });
