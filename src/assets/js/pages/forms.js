@@ -110,9 +110,19 @@
   }
   function render(){
     var allowed = BOLD.can('forms', 'edit'), reason = allowed ? '' : BOLD.cannotReason('forms', 'edit');
-    var html = '<p id="fmError" role="alert" hidden></p><p><a href="forms.html">All forms</a></p>';
-    if (!id && !creating) html += (allowed ? '<p><a class="btn-text" href="forms.html?new">Create form</a></p>' : button('new', 'Create form', reason)) +
-      '<ul>' + data.forms.map(function(f){ return '<li><a href="forms.html?id=' + encodeURIComponent(f.id) + '">' + esc(f.title) + '</a> · ' + esc(f.status) + (f.owner ? ' · owner' : '') + '</li>'; }).join('') + '</ul>';
+    var html = '<p id="fmError" role="alert" hidden></p>';
+    if (id || creating) html += '<p><a href="forms.html">All forms</a></p>';
+    if (!id && !creating) {
+      html += '<div class="fm-list-toolbar"><h2>Your forms <span class="fm-list-count">(' + data.forms.length + ')</span></h2>' +
+        (allowed ? '<a class="btn-box is-primary fm-create" href="forms.html?new">Create form</a>' : '<button type="button" class="btn-box" disabled title="' + esc(reason) + '">Create form</button>') + '</div>';
+      html += data.forms.length ? '<ul class="fm-form-list" aria-label="Your forms">' + data.forms.map(function(f){
+        var status = { draft: 'Draft', open: 'Open', closed: 'Closed' }[f.status] || f.status;
+        var action = f.owner ? (f.status === 'draft' ? 'Edit draft' : 'Manage form') : 'View form';
+        return '<li><a class="fm-form-row" href="forms.html?id=' + encodeURIComponent(f.id) + '"><span class="fm-form-summary"><span class="fm-form-title">' + esc(f.title) + '</span>' +
+          '<span class="fm-form-meta"><span class="fm-status">' + esc(status) + '</span><span>' + (f.owner ? 'Owner' : 'Participant') + '</span></span></span>' +
+          '<span class="fm-form-action">' + action + ' <span aria-hidden="true">&rarr;</span></span></a></li>';
+      }).join('') + '</ul>' : '<div class="fm-list-empty"><h3>No forms yet</h3><p>Forms addressed to you and forms you manage will appear here.</p></div>';
+    }
     else if (creating || data.form.status === 'draft' && data.owner) {
       html += editor();
     } else {
