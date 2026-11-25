@@ -978,7 +978,9 @@ module.exports = function(deps){
   const boldApi = onRequest({ cors: true, memory: '512MiB', timeoutSeconds: 300, secrets }, async (req, res) => {
     const path = req.path.replace(/\/+$/, '') || '/';
     if (path === '/' && req.method === 'GET') {
-      return res.json({ name: 'BOLD.OS API', mcp: '/mcp', mcp_also: 'prompts (the skills) and resources (every page, bold://…)', read: TOOLS.filter((t) => !t.write && !t.setup).map((t) => 'GET /v1/' + t.name), act: TOOLS.filter((t) => t.write).map((t) => 'POST /v1/' + t.name), auth: 'Authorization: Bearer <token from the Agents tab of your BOLD.OS profile>' });
+      return res.json({ name: 'BOLD.OS API', mcp: '/mcp', mcp_also: 'prompts (the skills) and resources (every page, bold://…)', read: TOOLS.filter((t) => !t.write && !t.setup).map((t) => 'GET /v1/' + t.name), act: TOOLS.filter((t) => t.write).map((t) => 'POST /v1/' + t.name),
+        // Each with what it does, for the MCP server page (tools.html); the same text agents get (public in the repo too).
+        tools: TOOLS.filter((t) => !t.setup).map((t) => ({ name: t.name, description: t.description, acting: !!t.write })), auth: 'Authorization: Bearer <token from the Agents tab of your BOLD.OS profile>' });
     }
     // A Calendar subscription (calendarFeed): the link is the key, as calendar apps can't send one.
     const cal = /^\/calendar\/([^/]+)\.ics$/.exec(path);
