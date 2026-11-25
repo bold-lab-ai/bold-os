@@ -2,7 +2,7 @@
 area: "skills"
 title: "Agent skills | BOLD Lab"
 description: "Claude skills for BOLD work."
-css: "events"
+css: "projects"
 sdk: ["firestore", "functions"]
 scripts: ["skills-common.js", "pages/skills.js"]
 permalink: "skills.html"
@@ -14,19 +14,29 @@ permalink: "skills.html"
 
 <main>
 
-  <nav class="guide-tabs" id="skillTabs" aria-label="Skills">
-    <a class="guide-tab is-current" href="#skills" aria-current="page">Skills</a>
-    <a class="guide-tab" href="#proposed">Proposed<span id="newCount"></span></a>
-  </nav>
+  <!-- Laid out as Projects (projects.css): List or Grid, Add, a search, tabs, rows. -->
+  <div class="actions">
+    <div class="view-toggle" role="group" aria-label="View">
+      <button type="button" class="view-btn" data-view="list" aria-pressed="true">List</button>
+      <button type="button" class="view-btn" data-view="grid" aria-pressed="false">Grid</button>
+    </div>
+    <button type="button" class="btn btn-primary proj-add" id="skillAdd" disabled title="Only PIs and admins can add and change skills">+ Add a skill</button>
+  </div>
 
-  <section class="block" id="skills">
-    <ul class="event-list" id="skillList"></ul>
-    <p class="event-loading" id="skillLoading">Loading…</p>
-    <button type="button" class="event-add" id="skillAdd" disabled title="Only PIs and admins can add and change skills">+ Add a skill</button>
-  </section>
-  <section class="block" id="proposed" hidden>
-    <ul class="event-list" id="newList"></ul>
-    <p class="event-loading" id="newNone" hidden>No new skills proposed.</p>
-  </section>
+  <div class="filters" role="search">
+    <input type="search" id="skillSearch" placeholder="Search skills" aria-label="Search skills" autocomplete="off">
+  </div>
+
+  <div class="tabs" role="tablist" aria-label="Skills">
+    <button class="tab active" type="button" id="tabSkills" data-tab="skills" role="tab" aria-selected="true" aria-controls="skillList">Skills<span class="proj-count" id="cntSkills"></span></button>
+    <button class="tab" type="button" id="tabProposed" data-tab="proposed" role="tab" aria-selected="false" tabindex="-1" aria-controls="newList">Proposed<span class="proj-count" id="cntProposed"></span></button>
+  </div>
+
+  <p class="proj-msg" id="skillLoading">Loading&hellip;</p>
+
+  <div id="skillViews" class="proj-views" data-view="list">
+    <ul class="proj-list tab-panel" role="tabpanel" id="skillList" aria-labelledby="tabSkills"></ul>
+    <ul class="proj-list tab-panel" role="tabpanel" id="newList" aria-labelledby="tabProposed" hidden></ul>
+  </div>
 
 </main>
