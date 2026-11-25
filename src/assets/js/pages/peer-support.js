@@ -2,22 +2,22 @@
   var root = document.getElementById('peerSupport'), esc = BOLD.escapeHtml, state, user, busy = false;
   if (!root || !BOLD.getAuth()) return;
   function call(data){ return BOLD.getApp().functions('europe-west2').httpsCallable('peerSupport')(data).then(function(r){ return r.data; }); }
-  function button(action, label, disabled){ return '<button type="button" class="btn-text" data-action="' + action + '"' + (disabled ? ' disabled title="' + esc(disabled) + '"' : '') + '>' + label + '</button>'; }
+  function button(action, label, disabled){ return '<button type="button" class="btn-box' + (['request','accept','offer','profile','content'].indexOf(action) >= 0 ? ' is-primary' : '') + '" data-action="' + action + '"' + (disabled ? ' disabled title="' + esc(disabled) + '"' : '') + '>' + label + '</button>'; }
   function person(email){ var a = state.ambassadors.concat(state.members || []).filter(function(x){ return x.id === email || x.email === email; })[0]; return a ? a.name : email; }
   function profile(a){ return a.slackId ? '<a href="person.html?id=' + encodeURIComponent(a.slackId) + '">' + esc(a.name) + '</a>' : esc(a.name); }
   function render(){
     var mine = state.mine, can = BOLD.can('peer-support', 'edit'), reason = can ? '' : BOLD.cannotReason('peer-support', 'edit');
     root.innerHTML = '<p id="psError" class="ps-error" role="alert" hidden></p>' +
       (state.content.body ? '<section>' + BoldMarkdown.render(state.content.body) + '</section>' : '') +
-      '<p><a href="boldiquette.html#wellbeing">Peer support in the BOLDiquette</a>' +
-      (state.content.formUrl ? ' · <a href="' + esc(state.content.formUrl) + '" target="_blank" rel="noopener">Feedback questionnaire</a>' : '') + '</p>' +
-      '<section><h2>Your buddy</h2><p>Your assignment is visible to you and the peer support ambassadors.</p>' +
-      (mine && mine.status !== 'closed' ? '<p>' + (mine.status === 'pending' ? 'Waiting for an ambassador to offer a match.' :
+      '<div class="ps-resources"><a class="btn-box" href="boldiquette.html#wellbeing">Peer support in the BOLDiquette</a>' +
+      (state.content.formUrl ? ' <a class="btn-box" href="' + esc(state.content.formUrl) + '" target="_blank" rel="noopener">Feedback questionnaire</a>' : '') + '</div>' +
+      '<section class="ps-buddy"><h2>Your buddy</h2><p>Your assignment is visible to you and the peer support ambassadors.</p>' +
+      (mine && mine.status !== 'closed' ? '<p class="ps-state">' + (mine.status === 'pending' ? 'Waiting for an ambassador to offer a match.' :
         (mine.status === 'offered' ? 'Buddy offered: ' : 'Your buddy: ') + esc(person(mine.ambassadorEmail))) + '</p>' +
         (mine.status === 'offered' ? button('accept', 'Accept buddy', reason) : '') + (mine.status === 'pending' && mine.notificationPending ? button('notifyRequest', 'Notify ambassadors', reason) : '') + button('close', 'Close request / decline buddy', reason) : button('request', 'Request a buddy', reason)) + '</section>' +
       '<section><h2>Ambassadors</h2><div class="ps-directory">' + state.ambassadors.map(function(a){
         return '<article class="ps-person"><h3>' + profile(a) + '</h3><p>' + esc(a.bio || '') + '</p>' +
-          (a.slackId ? '<a href="slack://user?team=' + encodeURIComponent(BOLD.SLACK_TEAM || '') + '&id=' + encodeURIComponent(a.slackId) + '">Message on Slack</a>' : '') + '</article>';
+          (a.slackId ? '<a class="btn-box" href="slack://user?team=' + encodeURIComponent(BOLD.SLACK_TEAM || '') + '&id=' + encodeURIComponent(a.slackId) + '">Message on Slack</a>' : '') + '</article>';
       }).join('') + '</div>' + (!state.ambassadors.length ? '<p>No ambassadors have been added yet.</p>' : '') +
       button('apply', state.application && state.application.status === 'pending' ? 'Application pending' : 'Apply to be an ambassador', reason || (state.isAmbassador ? 'You are already an ambassador' : state.application && state.application.status === 'pending' ? 'Your application is awaiting review' : '')) + '</section>' +
       (state.application && state.application.status === 'pending' && state.application.notificationPending ? button('notifyApplication', 'Notify ambassadors about application', reason) : '') +
@@ -27,17 +27,17 @@
   function consoleHtml(){
     var current = state.ambassadors.filter(function(a){ return a.id === user.email.toLowerCase(); })[0] || {};
     var active = (state.requests || []).filter(function(q){ return ['offered', 'active'].indexOf(q.status) !== -1; });
-    return '<h3>Workloads</h3><ul>' + state.ambassadors.map(function(a){ return '<li>' + esc(a.name) + ': ' + active.filter(function(q){ return q.ambassadorEmail === a.id; }).length + ' buddies / offers</li>'; }).join('') + '</ul>' +
+    return '<h3>Workloads</h3><ul class="ps-workloads">' + state.ambassadors.map(function(a){ return '<li><strong>' + esc(a.name) + '</strong><span>' + active.filter(function(q){ return q.ambassadorEmail === a.id; }).length + ' buddies / offers</span></li>'; }).join('') + '</ul>' +
       '<h3>Matching</h3>' + (state.requests || []).filter(function(q){ return q.status !== 'closed'; }).map(function(q){
-        return '<article class="ps-request" data-email="' + esc(q.memberEmail) + '"><strong>#' + q.number + ' ' + esc(person(q.memberEmail)) + '</strong><p>' + esc(q.status) + (q.ambassadorEmail ? ' · ' + esc(person(q.ambassadorEmail)) : '') + '</p>' +
+        return '<article class="ps-request" data-email="' + esc(q.memberEmail) + '"><strong>#' + q.number + ' ' + esc(person(q.memberEmail)) + '</strong><p><span class="ps-badge">' + esc({pending:'Awaiting match',offered:'Offer sent',active:'Active'}[q.status] || q.status) + '</span>' + (q.ambassadorEmail ? ' · ' + esc(person(q.ambassadorEmail)) : '') + '</p>' +
           (q.status === 'pending' ? '<label>Ambassador<select class="ps-match"><option value="">Choose…</option>' + state.ambassadors.map(function(a){ return '<option value="' + esc(a.id) + '">' + esc(a.name) + '</option>'; }).join('') + '</select></label>' +
           '<label><input type="checkbox" class="ps-conflicts"> I checked that they are not active supervisors or research collaborators.</label>' + button('offer', 'Offer buddy') : q.status === 'offered' && q.notificationPending ? button('notifyOffer', 'Notify member and buddy') : '') + '</article>';
-      }).join('') + '<h3>Ambassador applications</h3>' + (state.applications || []).filter(function(a){ return a.status === 'pending'; }).map(function(a){
+      }).join('') + (!(state.requests || []).some(function(q){ return q.status !== 'closed'; }) ? '<p class="ps-empty">No buddy requests awaiting action.</p>' : '') + '<h3>Ambassador applications</h3>' + (state.applications || []).filter(function(a){ return a.status === 'pending'; }).map(function(a){
         return '<div class="ps-request" data-email="' + esc(a.email) + '">' + esc(a.name || a.email) + button('approveApplication', 'Approve application') + '</div>';
-      }).join('') + '<h3>Your ambassador profile</h3><label>About you<textarea id="psBio" class="no-tags">' + esc(current.bio || '') + '</textarea></label>' +
+      }).join('') + (!(state.applications || []).some(function(a){ return a.status === 'pending'; }) ? '<p class="ps-empty">No applications awaiting review.</p>' : '') + '<div class="ps-editor-panel"><h3>Your ambassador profile</h3><label>About you<textarea id="psBio" class="no-tags">' + esc(current.bio || '') + '</textarea></label>' +
       '<label><input id="psNewJoiners" type="checkbox"' + (current.notifyNewJoiners ? ' checked' : '') + '> Notify me in my BOLD.OS inbox when new members join and need a buddy offer.</label>' + button('profile', 'Save profile') +
-      '<h3>Page content</h3><label>Description<textarea id="psBody" class="md-field no-tags">' + esc(state.content.body || '') + '</textarea></label>' +
-      '<label>Questionnaire URL<input id="psFormUrl" type="url" value="' + esc(state.content.formUrl || '') + '"></label>' + BOLD.linkNote() + button('content', 'Save page content');
+      '</div><div class="ps-editor-panel"><h3>Page content</h3><label>Description<textarea id="psBody" class="md-field no-tags">' + esc(state.content.body || '') + '</textarea></label>' +
+      '<label>Questionnaire URL<input id="psFormUrl" type="url" value="' + esc(state.content.formUrl || '') + '"></label>' + BOLD.linkNote() + button('content', 'Save page content') + '</div>';
   }
   function load(){ return call({ action: 'load' }).then(function(s){ state = s; render(); }); }
   root.addEventListener('click', async function(event){
