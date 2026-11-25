@@ -66,7 +66,8 @@ export default {
       { label: 'MCP server', href: 'tools.html', area: 'tools' },
       { label: 'Activity', href: 'agents.html#activity' },
       { label: 'Skills', href: 'skills.html', area: 'skills' },
-    ], separatorAfter: true },
+    ] },
+    { label: 'BOLD LLM', href: 'bold-llm.html', links: [], area: 'agents', separatorAfter: true },
     // Its sub-pages are the how-to guides (Firestore), filled in by bold.js.
     { label: 'How to', href: 'guides.html', links: [], guides: true, area: 'guides' },
     // Its sub-pages are its cards (Firestore), filled in by bold.js after Get started, which stays
