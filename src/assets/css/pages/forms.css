@@ -65,3 +65,19 @@
 #forms .fm-list-empty { padding: 1.5rem; border: 1px solid var(--line); background: var(--surface); }
 #forms .fm-list-empty h3 { margin-top: 0; }
 @media (max-width: 540px) { #forms .fm-form-row { align-items: flex-start; flex-direction: column; gap: 1rem; } }
+
+#forms .btn-box { display: inline-block; min-height: 2.5rem; box-sizing: border-box; padding: .6rem 1rem; text-decoration: none; }
+#forms .btn-box.is-primary { background: var(--ink); color: var(--surface); }
+#forms .fm-overview, #forms .fm-management { background: var(--surface); border: 1px solid var(--line); padding: 1.5rem; margin: 1.5rem 0; }
+#forms .fm-overview-heading { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: .75rem; }
+#forms .fm-overview-heading h2 { margin: 0; overflow-wrap: anywhere; }
+#forms .fm-overview-heading .fm-status { font: 14px var(--sans); }
+#forms .fm-privacy { margin-top: 1.25rem; padding: 1rem; background: var(--paper); border-left: 3px solid var(--accent); color: var(--ink); }
+#forms .fm-privacy h3, #forms .fm-notice h3 { margin: 0 0 .5rem; font-size: 18px; }
+#forms .fm-privacy p, #forms .fm-notice p { margin: .4rem 0; }
+#forms .fm-notice { padding: 1rem; background: var(--surface); border: 1px solid var(--line); margin: 1rem 0; }
+#forms .fm-details { display: flex; flex-wrap: wrap; gap: 1rem 3rem; }
+#forms .fm-details dt { color: var(--ink-soft); font: 14px var(--sans); }
+#forms .fm-details dd { margin: .3rem 0 0; font-weight: 600; }
+#forms .fm-answer-question label { margin: 0; font-weight: 600; }
+#forms .fm-answer-question .fm-input { background: var(--paper); font-weight: 400; }

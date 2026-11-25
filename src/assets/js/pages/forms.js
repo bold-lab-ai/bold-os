@@ -6,7 +6,7 @@
   var editorTab = 'content';
   var selectedViews = { owners: { query: '', page: 0 }, recipients: { query: '', page: 0 } };
   function call(d){ return BOLD.getApp().functions('europe-west2').httpsCallable('forms')(d).then(function(r){ return r.data; }); }
-  function button(a, text, disabled){ return '<button type="button" class="btn-text" data-action="' + a + '"' + (disabled ? ' disabled title="' + esc(disabled) + '"' : '') + '>' + text + '</button>'; }
+  function button(a, text, disabled){ return '<button type="button" class="btn-box' + (['submit','join'].indexOf(a) >= 0 ? ' is-primary' : '') + '" data-action="' + a + '"' + (disabled ? ' disabled title="' + esc(disabled) + '"' : '') + '>' + text + '</button>'; }
   function names(emails){ return emails.map(function(e){ var p = people.filter(function(p){ return p.email === e; })[0]; return p ? p.name : e; }).join(', '); }
   function options(list, selected){ return list.map(function(p){ return '<option value="' + esc(p.email) + '"' + (selected.indexOf(p.email) !== -1 ? ' selected' : '') + '>' + esc(p.name) + '</option>'; }).join(''); }
   function empty(){ return { title: '', description: '', owners: [user.email.toLowerCase()], targetEmails: [], targetGroups: [], linkSharing: false, reminders: false, notifyOwners: false, questions: [{ id: 'q1', label: '', type: 'text', required: false, options: [] }] }; }
@@ -48,7 +48,7 @@
     el.querySelector('.fm-pagination').hidden = page.pages === 1;
     el.querySelector('.fm-selected').innerHTML = page.emails.map(function(email){
       var locked = kind === 'owners' && email === creator;
-      return '<li>' + personLabel(email) + '<button type="button" class="btn-text" data-action="removePerson" data-email="' + esc(email) + '" aria-label="Remove ' + esc(email) + '"' + (locked ? ' disabled title="The creator remains an owner"' : '') + '>' + (locked ? 'Creator' : 'Remove') + '</button></li>';
+      return '<li>' + personLabel(email) + '<button type="button" class="btn-box" data-action="removePerson" data-email="' + esc(email) + '" aria-label="Remove ' + esc(email) + '"' + (locked ? ' disabled title="The creator remains an owner"' : '') + '>' + (locked ? 'Creator' : 'Remove') + '</button></li>';
     }).join('');
     var wrap = el.querySelector('.fm-search-wrap');
     showSearch(wrap, wrap.contains(document.activeElement));
@@ -61,7 +61,7 @@
     return '<div class="fm-option-row"><input type="text" class="fm-option" aria-label="Option ' + (i + 1) + '" placeholder="Option ' + (i + 1) + '" maxlength="200" value="' + esc(value) + '"><button type="button" class="btn-text fm-option-remove" data-action="removeOption" aria-label="Remove option ' + (i + 1) + '" title="Remove option">×</button></div>';
   }
   function answerEditor(q){
-    if (q.type === 'choice') return '<div class="fm-choices" role="group" aria-label="Choice options"><p class="fm-options-label">Choice options</p><div class="fm-option-list">' + (q.options.length ? q.options : ['', '']).map(choiceRow).join('') + '</div><div class="fm-option-actions"><button type="button" class="btn-text" data-action="addOption"' + (q.options.length >= 15 ? ' disabled title="Maximum 15 options"' : '') + '><span aria-hidden="true">+</span> Add option</button></div></div>';
+    if (q.type === 'choice') return '<div class="fm-choices" role="group" aria-label="Choice options"><p class="fm-options-label">Choice options</p><div class="fm-option-list">' + (q.options.length ? q.options : ['', '']).map(choiceRow).join('') + '</div><div class="fm-option-actions"><button type="button" class="btn-box" data-action="addOption"' + (q.options.length >= 15 ? ' disabled title="Maximum 15 options"' : '') + '><span aria-hidden="true">+</span> Add option</button></div></div>';
     if (q.type === 'scale') return '<p class="fm-hint">Respondents choose one value from 1 to 5.</p><div class="fm-scale" role="group" aria-label="Scale answer preview">' + [1,2,3,4,5].map(function(n){ return '<label><input type="radio" disabled> ' + n + '</label>'; }).join('') + '</div>';
     return '<label>Text answer preview<textarea class="no-tags" placeholder="Respondents write their answer here" disabled></textarea></label>';
   }
@@ -100,18 +100,18 @@
     if (q.type === 'scale') return '<div class="fm-panel fm-scale-answer" data-q="' + esc(q.id) + '" role="group" aria-labelledby="answer-' + esc(q.id) + '"><h3 id="answer-' + esc(q.id) + '">' + label + '</h3><div class="fm-scale">' +
       ['1','2','3','4','5'].map(function(v){ return '<label><input type="radio" name="answer-' + esc(q.id) + '" value="' + v + '"> ' + v + '</label>'; }).join('') +
       '</div>' + (q.required ? '' : '<label><input type="radio" name="answer-' + esc(q.id) + '" value="" checked> No answer</label>') + '</div>';
-    return '<label>' + label + (q.type === 'text' ? '<textarea class="fm-input no-tags" data-q="' + esc(q.id) + '"></textarea>' :
-      '<select class="fm-input" data-q="' + esc(q.id) + '"><option value="">Choose…</option>' + q.options.map(function(v){ return '<option value="' + esc(v) + '">' + esc(v) + '</option>'; }).join('') + '</select>') + '</label>';
+    return '<div class="fm-panel fm-answer-question"><label>' + label + (q.type === 'text' ? '<textarea class="fm-input no-tags" data-q="' + esc(q.id) + '"></textarea>' :
+      '<select class="fm-input" data-q="' + esc(q.id) + '"><option value="">Choose…</option>' + q.options.map(function(v){ return '<option value="' + esc(v) + '">' + esc(v) + '</option>'; }).join('') + '</select>') + '</label></div>';
   }
   function results(){
     return '<section><h2>Responses (' + data.form.responseCount + ')</h2><p>Completion records and individual submission times are not shown to owners.</p>' +
-      (data.responses || []).map(function(r){ return '<article class="fm-response"><h3>' + (r.identity ? esc(r.identity.name || r.identity.email) + ' · ' + esc(r.identity.email) : 'Anonymous response') + '</h3>' +
+      (!(data.responses || []).length ? '<div class="fm-notice"><p>No responses yet. Submitted answers will appear here.</p></div>' : '') + (data.responses || []).map(function(r){ return '<article class="fm-response"><h3>' + (r.identity ? esc(r.identity.name || r.identity.email) + ' · ' + esc(r.identity.email) : 'Anonymous response') + '</h3>' +
         data.form.questions.map(function(q){ return '<p><strong>' + esc(q.label) + '</strong></p><p class="fm-answer">' + esc(r.answers[q.id] || 'No answer') + '</p>'; }).join('') + '</article>'; }).join('') + '</section>';
   }
   function render(){
     var allowed = BOLD.can('forms', 'edit'), reason = allowed ? '' : BOLD.cannotReason('forms', 'edit');
     var html = '<p id="fmError" role="alert" hidden></p>';
-    if (id || creating) html += '<p><a href="forms.html">All forms</a></p>';
+    if (id || creating) html += '<p><a class="btn-box fm-back" href="forms.html">&larr; All forms</a></p>';
     if (!id && !creating) {
       html += '<div class="fm-list-toolbar"><h2>Your forms <span class="fm-list-count">(' + data.forms.length + ')</span></h2>' +
         (allowed ? '<a class="btn-box is-primary fm-create" href="forms.html?new">Create form</a>' : '<button type="button" class="btn-box" disabled title="' + esc(reason) + '">Create form</button>') + '</div>';
@@ -127,16 +127,17 @@
       html += editor();
     } else {
       var f = data.form;
-      html += '<h2>' + esc(f.title) + '</h2><p class="fm-answer">' + esc(f.description) + '</p><p>Status: ' + esc(f.status) + '</p>' +
-        '<p class="fm-privacy">Answers are anonymous to form owners unless you choose to identify yourself. BOLD.OS keeps a private completion record for reminders. What you write may identify you.</p>';
+      html += '<header class="fm-overview"><div class="fm-overview-heading"><h2>' + esc(f.title) + '</h2><span class="fm-status">' + esc({ open: 'Open for responses', closed: 'Closed', draft: 'Draft' }[f.status] || f.status) + '</span></div>' +
+        (f.description ? '<p class="fm-answer">' + esc(f.description) + '</p>' : '') +
+        '<aside class="fm-privacy"><h3>Response privacy</h3><p>Answers are anonymous to form owners unless you choose to include your name and email.</p><p>BOLD.OS keeps a private completion record for reminders. What you write may identify you.</p></aside></header>';
       if (data.canJoin) html += '<p>You can join this form using its shared link.</p>' + button('join', 'Join as a participant', reason);
-      if (data.submitted) html += '<p>Your response has been submitted.</p>' +
+      if (data.submitted) html += '<div class="fm-notice" role="status"><h3>Response submitted</h3><p>Thank you. Your response has been saved.</p></div>' +
         (data.myResponse && data.myResponse.identity ? '<p>You chose to share your name and email with the owners.</p>' : button('reveal', 'Share my name and email with the owners', reason));
-      else if (data.targeted && f.status === 'open') html += '<section><h2>Your response</h2>' + f.questions.map(question).join('') +
-        '<label><input id="fmIdentify" type="checkbox"> Include my name and email</label>' + (f.reminders ? '<p>Weekly inbox reminders stop once you submit.</p>' : '') + button('submit', 'Submit response', reason) + '</section>';
+      else if (data.targeted && f.status === 'open') html += '<section class="fm-response-section"><h2>Your response</h2>' + f.questions.map(question).join('') +
+        '<label><input id="fmIdentify" type="checkbox"> Include my name and email</label>' + (f.reminders ? '<p>Weekly inbox reminders stop once you submit.</p>' : '') + '<div class="fm-editor-actions">' + button('submit', 'Submit response', reason) + '</div></section>';
       if (data.owner) {
-        if (f.linkSharing && f.status === 'open') html += '<h3>Participant link</h3><p>Any signed-in BOLD member with this link can join.</p>' + BOLD.copyBoxHtml(location.origin + location.pathname + '?id=' + encodeURIComponent(id));
-        html += '<section><h2>Manage form</h2><p>Recipients: ' + f.recipientEmails.length + '. Owners: ' + esc(names(f.owners)) + '.</p>' +
+        if (f.linkSharing && f.status === 'open') html += '<div class="fm-panel"><h3>Participant link</h3><p>Any signed-in BOLD member with this link can join.</p>' + BOLD.copyBoxHtml(location.origin + location.pathname + '?id=' + encodeURIComponent(id)) + '</div>';
+        html += '<section class="fm-management"><h2>Manage form</h2><dl class="fm-details"><div><dt>Participants</dt><dd>' + f.recipientEmails.length + '</dd></div><div><dt>Owners</dt><dd>' + esc(names(f.owners)) + '</dd></div></dl>' +
           (f.status === 'open' ? button('close', 'Close form and stop reminders', reason) + (f.invitationsPending ? button('invite', 'Send pending invitations', reason) : '') : '') + '</section>' + results();
       }
     }
