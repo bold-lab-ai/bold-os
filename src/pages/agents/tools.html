@@ -1,24 +1,57 @@
 ---
 area: "tools"
-title: "Agent tools | BOLD Lab"
-description: "The tools agents use with BOLD.OS: its own, and those the lab adds."
-css: "events"
+title: "MCP server | BOLD Lab"
+description: "BOLD.OS's MCP server: how to connect an agent, and its tools."
+css: "projects"
 sdk: ["firestore", "functions"]
 scripts: ["pages/tools.js"]
 permalink: "tools.html"
 nav: "tools.html"
 ---
 <div class="hero">
-  <h1>Agent tools</h1>
-  <p class="hero-note">What AI agents can do with BOLD.OS: its own tools, and those the lab adds. Propose a new tool, or a change to one; another PI or admin accepts it.</p>
+  <h1>MCP server</h1>
+  <p class="hero-note">Claude Code, or any agent that speaks MCP, reads BOLD.OS as you and, once a PI or admin approves, acts for you. Its tools are below: BOLD.OS&rsquo;s own, and those the lab adds.</p>
 </div>
 
 <main>
-  <section class="block"><div class="block-head"><h2>Added by the lab</h2></div>
-    <ul class="event-list" id="toolList"></ul>
-    <p class="event-loading" id="toolLoading">Loading…</p>
-    <a class="event-add" href="tool.html?new">+ Propose a new tool</a>
+
+  <!-- Connecting: the address, and a token from the profile (tokens are personal). -->
+  <section class="mcp-connect" aria-labelledby="mcpConnectTitle">
+    <h2 class="mcp-head" id="mcpConnectTitle">Connect</h2>
+    <ol class="mcp-steps">
+      <li>Make a token on <a href="profile.html#agents">your profile</a>, named after the agent that will use it.</li>
+      <li>Copy the command it shows you (only once) into a terminal: Claude Code then has these tools.</li>
+      <li>Any other agent: this address, with the header <code>Authorization: Bearer &lt;your token&gt;</code>.</li>
+    </ol>
+    <div id="mcpAddress"></div>
+    <a class="btn btn-primary" href="profile.html#agents">Make a token</a>
   </section>
-  <section class="block" id="proposedNew" hidden><div class="block-head"><h2>Proposed</h2></div><ul class="event-list" id="newList"></ul></section>
-  <section class="block"><div class="block-head"><h2>BOLD.OS’s own</h2></div><p class="hero-note" id="builtIn">Loading…</p></section>
+
+  <!-- Its tools, laid out as Projects (projects.css). -->
+  <div class="actions">
+    <div class="view-toggle" role="group" aria-label="View">
+      <button type="button" class="view-btn" data-view="list" aria-pressed="true">List</button>
+      <button type="button" class="view-btn" data-view="grid" aria-pressed="false">Grid</button>
+    </div>
+    <a class="btn btn-primary proj-add" href="tool.html?new">+ Propose a new tool</a>
+  </div>
+
+  <div class="filters" role="search">
+    <input type="search" id="toolSearch" placeholder="Search tools" aria-label="Search tools" autocomplete="off">
+  </div>
+
+  <div class="tabs" role="tablist" aria-label="Tools">
+    <button class="tab active" type="button" data-tab="lab" role="tab" aria-selected="true" aria-controls="toolList">Added by the lab<span class="proj-count" id="cntLab"></span></button>
+    <button class="tab" type="button" data-tab="proposed" role="tab" aria-selected="false" tabindex="-1" aria-controls="newList">Proposed<span class="proj-count" id="cntProposed"></span></button>
+    <button class="tab" type="button" data-tab="own" role="tab" aria-selected="false" tabindex="-1" aria-controls="ownList">BOLD.OS&rsquo;s own<span class="proj-count" id="cntOwn"></span></button>
+  </div>
+
+  <p class="proj-msg" id="toolLoading">Loading&hellip;</p>
+
+  <div id="toolViews" class="proj-views" data-view="list">
+    <ul class="proj-list tab-panel" role="tabpanel" id="toolList"></ul>
+    <ul class="proj-list tab-panel" role="tabpanel" id="newList" hidden></ul>
+    <ul class="proj-list tab-panel" role="tabpanel" id="ownList" hidden></ul>
+  </div>
+
 </main>

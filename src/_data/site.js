@@ -62,10 +62,9 @@ export default {
     // Its sub-pages are the released events (Firestore), filled in by bold.js.
     { label: 'Events', href: 'events.html', links: [], events: true, area: 'events' },
     { label: 'Agents', href: 'agents.html', area: 'agents', links: [
-      // Connecting an agent: the steps and a token, on the profile's Agents tab (anyone signed in has one).
-      { label: 'MCP server', href: 'profile.html#agents' },
+      // The MCP server: how to connect, and its tools (tools.html; tokens are made on the profile).
+      { label: 'MCP server', href: 'tools.html', area: 'tools' },
       { label: 'Activity', href: 'agents.html#activity' },
-      { label: 'Tools', href: 'tools.html', area: 'tools' },
       { label: 'Skills', href: 'skills.html', area: 'skills' },
     ], separatorAfter: true },
     // Its sub-pages are the how-to guides (Firestore), filled in by bold.js.

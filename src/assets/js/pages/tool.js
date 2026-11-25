@@ -19,7 +19,7 @@
   var NAME = /^[a-z][a-z0-9_]{2,40}$/;
   var ref = !isNew && NAME.test(name) ? db.collection('agentTools').doc(name) : null;
   var x = null, loaded = false, proposals = [], me = null, fullWrite = false, form = null, notice = '';
-  var BACK = '<a class="back-link" href="tools.html">&larr; All agent tools</a>';
+  var BACK = '<a class="back-link" href="tools.html">&larr; MCP server</a>';
   var FIELDS = { title: 'Title', description: 'Description', acting: 'Acts', input: 'Inputs', code: 'Code' };
   var CONTENT = ['title', 'description', 'acting', 'input', 'code'];
   var historyWrap = document.getElementById('toolHistoryWrap'), histPanel = null;
