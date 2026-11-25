@@ -17,6 +17,11 @@
 #forms .fm-scale label { display: flex; align-items: center; gap: .35rem; margin: 0; }
 #forms .fm-hint { color: var(--ink-soft); }
 #forms button { margin: .4rem .7rem .4rem 0; }
+#forms .fm-options-label { font: 14px var(--sans); margin-bottom: .5rem; }
+#forms .fm-option-row { display: flex; align-items: center; gap: .5rem; margin: .5rem 0; }
+#forms .fm-option-row input { flex: 1; min-width: 0; margin-top: 0; }
+#forms .fm-option-remove { flex: 0 0 2.75rem; min-height: 2.75rem; margin: 0; font-size: 24px; text-decoration: none; }
+#forms .fm-option-actions { display: flex; justify-content: flex-end; }
 #fmError { padding: .8rem; border-left: 3px solid var(--accent); }
 .fm-answer { white-space: pre-wrap; overflow-wrap: anywhere; }
 .fm-privacy { color: var(--ink-soft); }

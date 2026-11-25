@@ -7,8 +7,11 @@
   function names(emails){ return emails.map(function(e){ var p = people.filter(function(p){ return p.email === e; })[0]; return p ? p.name : e; }).join(', '); }
   function options(list, selected){ return list.map(function(p){ return '<option value="' + esc(p.email) + '"' + (selected.indexOf(p.email) !== -1 ? ' selected' : '') + '>' + esc(p.name) + '</option>'; }).join(''); }
   function empty(){ return { title: '', description: '', owners: [user.email.toLowerCase()], targetEmails: [], targetGroups: [], reminders: false, notifyOwners: false, questions: [{ id: 'q1', label: '', type: 'text', required: false, options: [] }] }; }
+  function choiceRow(value, i){
+    return '<div class="fm-option-row"><input type="text" class="fm-option" aria-label="Option ' + (i + 1) + '" placeholder="Option ' + (i + 1) + '" maxlength="200" value="' + esc(value) + '"><button type="button" class="btn-text fm-option-remove" data-action="removeOption" aria-label="Remove option ' + (i + 1) + '" title="Remove option">×</button></div>';
+  }
   function answerEditor(q){
-    if (q.type === 'choice') return '<label>Choice options (one per line)<textarea class="fm-options no-tags">' + esc(q.options.join('\n')) + '</textarea></label>';
+    if (q.type === 'choice') return '<div class="fm-choices" role="group" aria-label="Choice options"><p class="fm-options-label">Choice options</p><div class="fm-option-list">' + (q.options.length ? q.options : ['', '']).map(choiceRow).join('') + '</div><div class="fm-option-actions"><button type="button" class="btn-text" data-action="addOption"' + (q.options.length >= 15 ? ' disabled title="Maximum 15 options"' : '') + '><span aria-hidden="true">+</span> Add option</button></div></div>';
     if (q.type === 'scale') return '<p class="fm-hint">Respondents choose one value from 1 to 5.</p><div class="fm-scale" role="group" aria-label="Scale answer preview">' + [1,2,3,4,5].map(function(n){ return '<label><input type="radio" disabled> ' + n + '</label>'; }).join('') + '</div>';
     return '<label>Text answer preview<textarea class="no-tags" placeholder="Respondents write their answer here" disabled></textarea></label>';
   }
@@ -72,7 +75,7 @@
       owners: selected('fmOwners'), targetEmails: selected('fmTargets'), targetGroups: Array.from(root.querySelectorAll('.fm-group:checked')).map(function(e){ return e.value; }),
       reminders: document.getElementById('fmReminders').checked, notifyOwners: document.getElementById('fmOwnerDigest').checked,
       questions: Array.from(root.querySelectorAll('.fm-question')).map(function(q){ return { id: q.dataset.qid, label: q.querySelector('.fm-label').value, type: q.querySelector('.fm-type').value,
-        required: q.querySelector('.fm-required').checked, options: q.querySelector('.fm-options') ? q.querySelector('.fm-options').value.split('\n').map(function(x){ return x.trim(); }).filter(Boolean) : [] }; }) };
+        required: q.querySelector('.fm-required').checked, options: Array.from(q.querySelectorAll('.fm-option')).map(function(e){ return e.value.trim(); }).filter(Boolean) }; }) };
   }
   async function load(){
     data = await call(id ? { action: 'get', id: id } : { action: 'list' });
@@ -98,6 +101,24 @@
   root.addEventListener('click', async function(event){
     var b = event.target.closest('[data-action]'); if (!b || b.disabled || busy) return;
     var action = b.dataset.action, d = { action: action, id: id }, ok;
+    if (action === 'addOption' || action === 'removeOption') {
+      var choices = b.closest('.fm-choices'), list = choices.querySelector('.fm-option-list');
+      if (action === 'addOption') {
+        if (list.children.length >= 15) return;
+        list.insertAdjacentHTML('beforeend', choiceRow('', list.children.length));
+      } else b.closest('.fm-option-row').remove();
+      var rows = Array.from(list.children);
+      rows.forEach(function(row, i){
+        row.querySelector('input').setAttribute('aria-label', 'Option ' + (i + 1));
+        row.querySelector('input').placeholder = 'Option ' + (i + 1);
+        row.querySelector('button').setAttribute('aria-label', 'Remove option ' + (i + 1));
+      });
+      var add = choices.querySelector('[data-action="addOption"]');
+      add.disabled = rows.length >= 15; add.title = add.disabled ? 'Maximum 15 options' : '';
+      if (action === 'addOption') rows[rows.length - 1].querySelector('input').focus();
+      else add.focus();
+      return;
+    }
     if (action === 'addQuestion' || action === 'removeQuestion') {
       draft = collect();
       if (action === 'addQuestion') draft.questions.push({ id: 'q' + Date.now(), label: '', type: 'text', required: false, options: [] });
