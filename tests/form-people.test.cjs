@@ -37,3 +37,17 @@ test('bulk selection deduplicates, allows individual exclusions and preserves th
   assert.throws(() => picker.change([first], all, true, first, 2), /no changes/);
   assert.deepEqual(all, people.map(p => p.email));
 });
+
+test('selected people paginate by five, filter only selections and clamp after removal', () => {
+  const roster = Array.from({ length: 12 }, (_, i) => ({ name: 'Person ' + i, email: 'person' + i + '@example.com' }));
+  const selected = roster.slice(0, 11).map(p => p.email);
+  assert.equal(picker.selectedPage(roster, selected, '', 0).emails.length, 5);
+  assert.deepEqual(plain(picker.selectedPage(roster, selected, '', 1).emails), selected.slice(5, 10));
+  assert.equal(picker.selectedPage(roster, selected, '', 2).emails.length, 1);
+  assert.equal(picker.selectedPage(roster, selected.slice(0, 10), '', 2).page, 1);
+  assert.equal(picker.selectedPage(roster, selected, 'person11@', 0).total, 0);
+  assert.deepEqual(plain(picker.selectedPage(roster, selected, 'PERSON10@', 2).emails), [selected[10]]);
+  assert.equal(picker.selectedPage(roster, [], '', 3).page, 0);
+  assert.deepEqual(plain(picker.selectedPage([], ['missing@example.com'], 'missing', 0).emails), ['missing@example.com']);
+  assert.equal(selected.length, 11);
+});

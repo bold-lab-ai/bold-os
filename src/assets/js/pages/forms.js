@@ -3,6 +3,7 @@
   if (!root || !BOLD.getAuth()) return;
   var id = new URLSearchParams(location.search).get('id'), creating = new URLSearchParams(location.search).has('new');
   var selections = { owners: [], recipients: [] }, categories = [], creator;
+  var selectedViews = { owners: { query: '', page: 0 }, recipients: { query: '', page: 0 } };
   function call(d){ return BOLD.getApp().functions('europe-west2').httpsCallable('forms')(d).then(function(r){ return r.data; }); }
   function button(a, text, disabled){ return '<button type="button" class="btn-text" data-action="' + a + '"' + (disabled ? ' disabled title="' + esc(disabled) + '"' : '') + '>' + text + '</button>'; }
   function names(emails){ return emails.map(function(e){ var p = people.filter(function(p){ return p.email === e; })[0]; return p ? p.name : e; }).join(', '); }
@@ -26,7 +27,10 @@
       '<label>Category for ' + kind + '<select class="fm-category">' + opts + '</select></label>' +
       '<div class="fm-category-actions">' + button('addCategory', 'Add category') + button('removeCategory', 'Remove category') + '</div>' +
       '<p class="fm-hint">Categories use current profile details. Add or remove a category, then adjust individuals below.</p>' +
-      '<p class="fm-picker-status" role="status" aria-live="polite"></p><ul class="fm-selected"></ul></div>';
+      '<p class="fm-picker-status" role="status" aria-live="polite"></p>' +
+      '<label>Filter selected ' + kind + '<input type="search" class="fm-selected-search" placeholder="First name, last name or email" value="' + esc(selectedViews[kind].query) + '"></label>' +
+      '<p class="fm-selected-status" role="status"></p><ul class="fm-selected"></ul>' +
+      '<div class="fm-pagination" role="group" aria-label="Selected ' + kind + ' pages">' + button('previousPeople', 'Previous') + '<span class="fm-page-number"></span>' + button('nextPeople', 'Next') + '</div></div>';
   }
   function showSearch(wrap, open){
     wrap.querySelector('.fm-person-results').hidden = !open || !wrap.querySelector('input').value.trim();
@@ -34,7 +38,14 @@
   function updatePicker(el){
     var kind = el.dataset.picker, selected = selections[kind], query = el.querySelector('.fm-person-search').value;
     el.querySelector('.fm-picker-status').textContent = selected.length + ' ' + kind + ' selected';
-    el.querySelector('.fm-selected').innerHTML = selected.map(function(email){
+    var view = selectedViews[kind], page = FormPeople.selectedPage(people, selected, view.query, view.page);
+    view.page = page.page;
+    el.querySelector('.fm-selected-status').textContent = page.total ? 'Showing ' + (page.page * 5 + 1) + ' to ' + (page.page * 5 + page.emails.length) + ' of ' + page.total + (view.query.trim() ? ' matching people' : ' selected people') : (selected.length ? 'No selected people match your search.' : 'No people selected.');
+    el.querySelector('.fm-page-number').textContent = 'Page ' + (page.page + 1) + ' of ' + page.pages;
+    el.querySelector('[data-action="previousPeople"]').disabled = page.page === 0;
+    el.querySelector('[data-action="nextPeople"]').disabled = page.page === page.pages - 1;
+    el.querySelector('.fm-pagination').hidden = page.pages === 1;
+    el.querySelector('.fm-selected').innerHTML = page.emails.map(function(email){
       var locked = kind === 'owners' && email === creator;
       return '<li>' + personLabel(email) + '<button type="button" class="btn-text" data-action="removePerson" data-email="' + esc(email) + '" aria-label="Remove ' + esc(email) + '"' + (locked ? ' disabled title="The creator remains an owner"' : '') + '>' + (locked ? 'Creator' : 'Remove') + '</button></li>';
     }).join('');
@@ -142,6 +153,11 @@
     }
   });
   root.addEventListener('input', function(event){
+    if (event.target.matches('.fm-selected-search')) {
+      var el = event.target.closest('.fm-picker');
+      selectedViews[el.dataset.picker] = { query: event.target.value, page: 0 };
+      updatePicker(el);
+    }
     if (event.target.matches('.fm-person-search')) updatePicker(event.target.closest('.fm-picker'));
   });
   root.addEventListener('change', async function(event){
@@ -162,13 +178,20 @@
   root.addEventListener('click', async function(event){
     var b = event.target.closest('[data-action]'); if (!b || b.disabled || busy) return;
     var action = b.dataset.action, d = { action: action, id: id }, ok;
+    if (action === 'previousPeople' || action === 'nextPeople') {
+      var pickerEl = b.closest('.fm-picker');
+      selectedViews[pickerEl.dataset.picker].page += action === 'nextPeople' ? 1 : -1;
+      updatePicker(pickerEl);
+      return;
+    }
     if (['addPerson','removePerson','addCategory','removeCategory'].indexOf(action) >= 0) {
       var el = b.closest('.fm-picker'), kind = el.dataset.picker;
       var emails = action === 'addCategory' || action === 'removeCategory' ? categories[Number(el.querySelector('.fm-category').value)].emails : [b.dataset.email];
       try {
         selections[kind] = FormPeople.change(selections[kind], emails, action === 'addPerson' || action === 'addCategory', kind === 'owners' ? creator : null, kind === 'owners' ? 20 : 500);
         updatePicker(el);
-        if (action === 'addPerson' || action === 'removePerson') el.querySelector('.fm-person-search').focus();
+        if (action === 'addPerson') el.querySelector('.fm-person-search').focus();
+        if (action === 'removePerson') el.querySelector('.fm-selected-search').focus();
       } catch(e){ el.querySelector('.fm-picker-status').textContent = e.message; }
       return;
     }

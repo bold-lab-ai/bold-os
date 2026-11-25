@@ -7,6 +7,14 @@
     var words = fold(query).split(/\s+/).filter(Boolean);
     return words.length ? people.filter(function(p){ var text = fold(p.name + ' ' + p.email); return words.every(function(w){ return text.indexOf(w) !== -1; }); }) : [];
   }
+  function selectedPage(people, emails, query, page){
+    var byEmail = new Map(people.map(function(p){ return [p.email, p]; }));
+    var selected = emails.map(function(email){ return byEmail.get(email) || { email: email, name: '' }; });
+    var matches = fold(query) ? search(selected, query) : selected;
+    var pages = Math.max(1, Math.ceil(matches.length / 5));
+    page = Math.max(0, Math.min(page || 0, pages - 1));
+    return { emails: matches.slice(page * 5, page * 5 + 5).map(function(p){ return p.email; }), total: matches.length, page: page, pages: pages };
+  }
   function categories(people){
     var out = [{ label: 'Everyone', group: 'All members', emails: people.map(function(p){ return p.email; }) }];
     var groups = { pan: 'PAN-BOLD', associate: 'BOLD-associate', internal: 'BOLD-internal', staff: 'BOLD-staff', exec: 'BOLD-exec' };
@@ -27,5 +35,5 @@
     if (next.length > limit) throw new Error('Select at most ' + limit + ' people. This category would exceed the limit; no changes were made.');
     return next;
   }
-  return { search: search, categories: categories, change: change };
+  return { search: search, selectedPage: selectedPage, categories: categories, change: change };
 });
