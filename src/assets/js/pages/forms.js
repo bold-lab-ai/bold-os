@@ -42,8 +42,8 @@
     showSearch(wrap, wrap.contains(document.activeElement));
     var matches = FormPeople.search(people, query);
     el.querySelector('.fm-person-results').innerHTML = query.trim() ?
-      '<p role="status">' + matches.length + ' matches' + (matches.length > 50 ? '; showing the first 50. Refine your search.' : '') + '</p>' +
-      matches.slice(0,50).map(function(p){ var added = selected.indexOf(p.email) >= 0; return '<button type="button" class="fm-person-result" data-action="addPerson" data-email="' + esc(p.email) + '"' + (added ? ' disabled' : '') + '>' + personLabel(p.email) + '<span>' + (added ? 'Added' : 'Add') + '</span></button>'; }).join('') : '';
+      '<p role="status">' + matches.length + ' matches' + (matches.length > 5 ? '; showing the first 5. Keep typing to narrow your search.' : '') + '</p>' +
+      matches.slice(0,5).map(function(p){ var added = selected.indexOf(p.email) >= 0; return '<button type="button" class="fm-person-result" data-action="addPerson" data-email="' + esc(p.email) + '"' + (added ? ' disabled' : '') + '>' + personLabel(p.email) + '<span>' + (added ? 'Added' : 'Add') + '</span></button>'; }).join('') : '';
   }
   function choiceRow(value, i){
     return '<div class="fm-option-row"><input type="text" class="fm-option" aria-label="Option ' + (i + 1) + '" placeholder="Option ' + (i + 1) + '" maxlength="200" value="' + esc(value) + '"><button type="button" class="btn-text fm-option-remove" data-action="removeOption" aria-label="Remove option ' + (i + 1) + '" title="Remove option">×</button></div>';
@@ -56,7 +56,7 @@
   function questionEditor(q, i){
     return '<div class="fm-question fm-panel" role="group" aria-labelledby="heading-' + esc(q.id) + '" data-qid="' + esc(q.id) + '"><h3 id="heading-' + esc(q.id) + '">Question ' + (i + 1) + '</h3>' +
       '<label>Question<input class="fm-label" type="text" value="' + esc(q.label) + '" maxlength="500"></label>' +
-      '<label>Answer type<select class="fm-type" data-current="' + q.type + '">' + [['text','Text'],['choice','Single choice'],['scale','Scale (1–5)']].map(function(t){ return '<option value="' + t[0] + '"' + (q.type === t[0] ? ' selected' : '') + '>' + t[1] + '</option>'; }).join('') + '</select></label>' +
+      '<label>Answer type<select class="fm-type" data-current="' + q.type + '">' + [['text','Text'],['choice','Multiple choice (choose one)'],['scale','Scale (1–5)']].map(function(t){ return '<option value="' + t[0] + '"' + (q.type === t[0] ? ' selected' : '') + '>' + t[1] + '</option>'; }).join('') + '</select></label>' +
       '<div class="fm-answer-editor">' + answerEditor(q) + '</div>' +
       '<label><input class="fm-required" type="checkbox"' + (q.required ? ' checked' : '') + '> Required</label>' + button('removeQuestion', 'Remove question') + '</div>';
   }
