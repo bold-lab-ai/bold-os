@@ -2,11 +2,44 @@
   var root = document.getElementById('forms'), esc = BOLD.escapeHtml, data, people = [], draft, user, busy = false;
   if (!root || !BOLD.getAuth()) return;
   var id = new URLSearchParams(location.search).get('id'), creating = new URLSearchParams(location.search).has('new');
+  var selections = { owners: [], recipients: [] }, categories = [], creator;
   function call(d){ return BOLD.getApp().functions('europe-west2').httpsCallable('forms')(d).then(function(r){ return r.data; }); }
   function button(a, text, disabled){ return '<button type="button" class="btn-text" data-action="' + a + '"' + (disabled ? ' disabled title="' + esc(disabled) + '"' : '') + '>' + text + '</button>'; }
   function names(emails){ return emails.map(function(e){ var p = people.filter(function(p){ return p.email === e; })[0]; return p ? p.name : e; }).join(', '); }
   function options(list, selected){ return list.map(function(p){ return '<option value="' + esc(p.email) + '"' + (selected.indexOf(p.email) !== -1 ? ' selected' : '') + '>' + esc(p.name) + '</option>'; }).join(''); }
   function empty(){ return { title: '', description: '', owners: [user.email.toLowerCase()], targetEmails: [], targetGroups: [], reminders: false, notifyOwners: false, questions: [{ id: 'q1', label: '', type: 'text', required: false, options: [] }] }; }
+  function personLabel(email){
+    var p = people.find(function(p){ return p.email === email; });
+    return '<span><strong>' + esc(p ? p.name : email) + '</strong><small>' + esc(email) + (p && p.role ? ' · ' + esc(p.role) : '') + '</small></span>';
+  }
+  function picker(kind, title){
+    var group = '', opts = '';
+    categories.forEach(function(c, i){
+      if (c.group !== group) { if (group) opts += '</optgroup>'; group = c.group; opts += '<optgroup label="' + esc(group) + '">'; }
+      opts += '<option value="' + i + '">' + esc(c.label) + ' (' + c.emails.length + ')</option>';
+    });
+    if (group) opts += '</optgroup>';
+    return '<div class="fm-panel fm-picker" data-picker="' + kind + '" role="group" aria-labelledby="' + kind + '-heading"><h3 id="' + kind + '-heading">' + title + '</h3>' +
+      '<p>' + (kind === 'owners' ? 'Owners can edit the draft and read every response. The creator remains an owner. Maximum 20.' : 'Only the people in this list will receive the form. Maximum 500.') + '</p>' +
+      '<label>Search ' + kind + '<input type="search" class="fm-person-search" placeholder="First name, last name or email" aria-controls="' + kind + '-results" autocomplete="off"></label>' +
+      '<div class="fm-person-results" id="' + kind + '-results"></div>' +
+      '<label>Category for ' + kind + '<select class="fm-category">' + opts + '</select></label>' +
+      '<div class="fm-category-actions">' + button('addCategory', 'Add category') + button('removeCategory', 'Remove category') + '</div>' +
+      '<p class="fm-hint">Categories use current profile details. Add or remove a category, then adjust individuals below.</p>' +
+      '<p class="fm-picker-status" role="status" aria-live="polite"></p><ul class="fm-selected"></ul></div>';
+  }
+  function updatePicker(el){
+    var kind = el.dataset.picker, selected = selections[kind], query = el.querySelector('.fm-person-search').value;
+    el.querySelector('.fm-picker-status').textContent = selected.length + ' ' + kind + ' selected';
+    el.querySelector('.fm-selected').innerHTML = selected.map(function(email){
+      var locked = kind === 'owners' && email === creator;
+      return '<li>' + personLabel(email) + '<button type="button" class="btn-text" data-action="removePerson" data-email="' + esc(email) + '" aria-label="Remove ' + esc(email) + '"' + (locked ? ' disabled title="The creator remains an owner"' : '') + '>' + (locked ? 'Creator' : 'Remove') + '</button></li>';
+    }).join('');
+    var matches = FormPeople.search(people, query);
+    el.querySelector('.fm-person-results').innerHTML = query.trim() ?
+      '<p role="status">' + matches.length + ' matches' + (matches.length > 50 ? '; showing the first 50. Refine your search.' : '') + '</p>' +
+      matches.slice(0,50).map(function(p){ var added = selected.indexOf(p.email) >= 0; return '<button type="button" class="fm-person-result" data-action="addPerson" data-email="' + esc(p.email) + '"' + (added ? ' disabled' : '') + '>' + personLabel(p.email) + '<span>' + (added ? 'Added' : 'Add') + '</span></button>'; }).join('') : '';
+  }
   function choiceRow(value, i){
     return '<div class="fm-option-row"><input type="text" class="fm-option" aria-label="Option ' + (i + 1) + '" placeholder="Option ' + (i + 1) + '" maxlength="200" value="' + esc(value) + '"><button type="button" class="btn-text fm-option-remove" data-action="removeOption" aria-label="Remove option ' + (i + 1) + '" title="Remove option">×</button></div>';
   }
@@ -25,10 +58,7 @@
   function editor(){
     return '<section><h2>' + (id ? 'Edit draft' : 'New form') + '</h2><label>Title<input id="fmTitle" type="text" maxlength="160" value="' + esc(draft.title) + '"></label>' +
       '<label>Description<textarea id="fmDescription" class="no-tags">' + esc(draft.description) + '</textarea></label>' +
-      '<label>Owners (can edit and read all responses)<select id="fmOwners" multiple>' + options(people, draft.owners) + '</select></label>' +
-      '<label>Individual recipients<select id="fmTargets" multiple>' + options(people, draft.targetEmails) + '</select></label><p>Hold Ctrl or Command to select several people.</p>' +
-      '<div class="fm-panel" role="group" aria-labelledby="fmGroupsHeading"><h3 id="fmGroupsHeading">Recipient groups</h3>' + [['pan','PAN-BOLD'],['associate','BOLD-associate'],['internal','BOLD-internal'],['staff','BOLD-staff'],['exec','BOLD-exec']].map(function(g){ return '<label><input class="fm-group" type="checkbox" value="' + g[0] + '"' + (draft.targetGroups.indexOf(g[0]) !== -1 ? ' checked' : '') + '> ' + g[1] + '</label>'; }).join('') +
-      '<p>Groups are exact categories. Recipients are fixed when you publish.</p></div>' +
+      picker('owners', 'Owners') + picker('recipients', 'Recipients') +
       '<label><input id="fmReminders" type="checkbox"' + (draft.reminders ? ' checked' : '') + '> Send weekly BOLD.OS inbox reminders to people who have not responded, starting seven days after publication.</label>' +
       '<label><input id="fmOwnerDigest" type="checkbox"' + (draft.notifyOwners ? ' checked' : '') + '> Notify all owners in BOLD.OS at most once a day when new responses arrive.</label>' +
       draft.questions.map(questionEditor).join('') + button('addQuestion', 'Add question') + button('save', 'Save draft') + '</section>';
@@ -68,11 +98,11 @@
       }
     }
     root.innerHTML = html;
+    root.querySelectorAll('.fm-picker').forEach(updatePicker);
   }
   function collect(){
-    function selected(id){ return Array.from(document.getElementById(id).selectedOptions).map(function(o){ return o.value; }); }
     return { title: document.getElementById('fmTitle').value, description: document.getElementById('fmDescription').value,
-      owners: selected('fmOwners'), targetEmails: selected('fmTargets'), targetGroups: Array.from(root.querySelectorAll('.fm-group:checked')).map(function(e){ return e.value; }),
+      owners: selections.owners.slice(), targetEmails: selections.recipients.slice(), targetGroups: [],
       reminders: document.getElementById('fmReminders').checked, notifyOwners: document.getElementById('fmOwnerDigest').checked,
       questions: Array.from(root.querySelectorAll('.fm-question')).map(function(q){ return { id: q.dataset.qid, label: q.querySelector('.fm-label').value, type: q.querySelector('.fm-type').value,
         required: q.querySelector('.fm-required').checked, options: Array.from(q.querySelectorAll('.fm-option')).map(function(e){ return e.value.trim(); }).filter(Boolean) }; }) };
@@ -81,8 +111,18 @@
     data = await call(id ? { action: 'get', id: id } : { action: 'list' });
     if (BOLD.can('forms', 'edit')) people = (await call({ action: 'people' })).people;
     draft = creating ? empty() : id && data.owner && data.form.status === 'draft' ? data.form : null;
+    if (draft) {
+      creator = draft.createdBy || user.email.toLowerCase();
+      categories = FormPeople.categories(people);
+      selections.owners = draft.owners.slice();
+      // Expand legacy draft groups once, then save the explicit editable list.
+      selections.recipients = Array.from(new Set(draft.targetEmails.concat(people.filter(function(p){ return (draft.targetGroups || []).indexOf(p.category) >= 0; }).map(function(p){ return p.email; }))));
+    }
     render();
   }
+  root.addEventListener('input', function(event){
+    if (event.target.matches('.fm-person-search')) updatePicker(event.target.closest('.fm-picker'));
+  });
   root.addEventListener('change', async function(event){
     var select = event.target;
     if (!select.matches('.fm-type')) return;
@@ -101,6 +141,16 @@
   root.addEventListener('click', async function(event){
     var b = event.target.closest('[data-action]'); if (!b || b.disabled || busy) return;
     var action = b.dataset.action, d = { action: action, id: id }, ok;
+    if (['addPerson','removePerson','addCategory','removeCategory'].indexOf(action) >= 0) {
+      var el = b.closest('.fm-picker'), kind = el.dataset.picker;
+      var emails = action === 'addCategory' || action === 'removeCategory' ? categories[Number(el.querySelector('.fm-category').value)].emails : [b.dataset.email];
+      try {
+        selections[kind] = FormPeople.change(selections[kind], emails, action === 'addPerson' || action === 'addCategory', kind === 'owners' ? creator : null, kind === 'owners' ? 20 : 500);
+        updatePicker(el);
+        if (action === 'addPerson' || action === 'removePerson') el.querySelector('.fm-person-search').focus();
+      } catch(e){ el.querySelector('.fm-picker-status').textContent = e.message; }
+      return;
+    }
     if (action === 'addOption' || action === 'removeOption') {
       var choices = b.closest('.fm-choices'), list = choices.querySelector('.fm-option-list');
       if (action === 'addOption') {
@@ -134,7 +184,7 @@
       }
       if (action === 'publish' || action === 'invite') {
         ok = await BOLD.confirmAction({ title: action === 'publish' ? 'Publish saved draft?' : 'Send invitations?', always: true,
-          effects: [action === 'publish' ? 'Publish the last saved questions to the selected individuals and exact groups. Questions and recipients cannot be changed afterwards.' : 'Invite the form’s recipients.',
+          effects: [action === 'publish' ? 'Publish the last saved questions to the saved recipient list. Questions, owners and recipients cannot be changed afterwards.' : 'Invite the form’s recipients.',
             data.form.reminders ? 'Send weekly inbox reminders to non-responders, starting seven days after publication.' : 'No automatic reminders.',
             data.form.notifyOwners ? 'Notify all owners at most daily when new responses arrive.' : 'No owner response notifications.',
             { key: 'notify', text: 'Notify all recipients in BOLD.OS now.' }], go: action === 'publish' ? 'Publish' : 'Send' });

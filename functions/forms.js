@@ -58,7 +58,8 @@ module.exports = function({ db, onCall, onSchedule, HttpsError, signedInEmail, a
     if (action === 'people') {
       await access.requireAccess(email, 'forms', 'edit');
       const s = await db.collection('members').get();
-      return { people: s.docs.map(p => ({ email: p.id, name: p.data().name || p.id, category: p.data().category || 'pan' })) };
+      return { people: s.docs.map(p => ({ email: p.id, name: p.data().name || p.id, category: p.data().category || 'pan',
+        role: p.data().role || '', institution: p.data().institution || '', basedIn: p.data().basedIn || '', pillars: Array.isArray(p.data().pillars) ? p.data().pillars : [] })) };
     }
     if (action === 'list') {
       const [mine, assigned] = await Promise.all([

@@ -1,6 +1,6 @@
 # Forms (#264)
 
-Forms have draft, open and closed states. Owners create text, single-choice and 1–5 scale questions, select individual recipients or exact BOLD categories, and publish a fixed questionnaire. Multiple owners can edit a draft and read its answers. Revision checks prevent stale edits from replacing another owner's draft. Questions, owners and recipients freeze on publication; create a new form for subsequent rounds.
+Forms have draft, open and closed states. Owners create text, single-choice and 1–5 scale questions, build an explicit recipient list, and publish a fixed questionnaire. Both owners and recipients have name/email search and bulk add/remove by role, BOLD membership, institution, location and research pillar, using current profile data. Categories populate the list once; individuals can then be removed without being re-added at publication. The creator remains an owner; the limits are 20 owners and 500 recipients. Older drafts with group targeting expand those groups in the editor and save an explicit list. Multiple owners can edit a draft and read its answers. Revision checks prevent stale edits from replacing another owner's draft. Questions, owners and recipients freeze on publication; create a new form for subsequent rounds.
 
 ## Privacy
 
