@@ -54,6 +54,12 @@ button.lt-open:hover{color:var(--link); text-decoration:underline; text-decorati
 @media (max-width:560px){ .lt-materials .fact{flex-direction:column; gap:2px;} .lt-materials dt{flex:none;} }
 .lt-item .event-form{margin-top:14px;}
 .lt-agent p{margin:6px 0 8px; font-family:var(--sans); font-size:13px;}
+/* The first draft (letters.js draftHtml): its state, the text the referee reads, the drafter's form. */
+.lt-draft-state{margin:6px 0 0; font-family:var(--sans); font-size:13px; color:var(--muted);}
+.lt-draft-state .is-ok{color:var(--success-text);}
+.lt-draft-text{margin:10px 0 0; padding:12px 14px; border-left:2px solid var(--line); font-size:15px; color:var(--ink-soft); white-space:pre-line; overflow-wrap:anywhere; max-height:24em; overflow:auto;}
+.lt-dform{margin-top:8px; max-width:640px;}
+.lt-dform > .detail-muted, .lt-form .lt-hint{margin:0 0 10px; font-family:var(--sans); font-size:13px;}
 .lt-agent .copy-box pre{max-height:11em; overflow:auto;}
 
 /* ---------- the form ---------- */

@@ -4,6 +4,10 @@
 // where the requester sends it on. Every write is letterRequest; the page reads
 // the requests asked by and of the viewer (letterRequests, theirs alone). Each request
 // is one line (what it's for, who, how many letters are in); clicking it opens the rest.
+// An applicant may name a first drafter (someone they worked with closely, such as the
+// PhD student who supervised their project): they see the request on a third tab and
+// send the draft here; the referee reads it on the request (letterDrafts, the two of
+// them only), and the applicant sees only that it's in.
 (function(){
   var esc = BOLD.escapeHtml;
   var main = document.getElementById('letters');
@@ -11,11 +15,15 @@
   var db;
   try { db = firebase.firestore(BOLD.getApp()); } catch (e){ return; }
   var call = function(data){ return firebase.app().functions('europe-west2').httpsCallable('letterRequest')(data); };
-  var me = null, byMe = null, ofMe = null, writers = null, unsubs = [];
+  var me = null, byMe = null, ofMe = null, forMe = null, writers = null, unsubs = [];
+  // The first drafts the viewer may read (as referee or drafter): request id → draft.
+  var drafts = {}, draftsAs = { writer: {}, drafter: {} };
   // The open form: null, 'new', or a request's id.
   var editing = null, busy = {};
   // The requests opened (clicked) to show their details: id → true.
   var shown = {};
+  // The first drafts being typed (not sent yet): id → true.
+  var typed = {};
 
   function day(iso){ return iso ? new Date(iso + 'T00:00:00').toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' }) : ''; }
   function when(t){ return t ? new Date(t).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' }) : ''; }
@@ -93,6 +101,16 @@
     WORK.forEach(function(w){
       if (q[w.key]) lines.push('', w.short + ' (asked: “' + w.q + '”):', q[w.key]);
     });
+    var dr = drafts[q.id];
+    if (q.drafterEmail && dr) {
+      lines.push('', 'First draft, from ' + (q.drafterName || 'their first drafter') + ', who worked with the applicant (sent ' + when(dr.updatedAt || dr.at) +
+        '). Build the letter on it, in the referee’s own voice:');
+      if (dr.url) lines.push('Link: ' + dr.url);
+      if (dr.note) lines.push('Their note: ' + dr.note);
+      if (dr.text) lines.push('', dr.text);
+    } else if (q.drafterEmail) {
+      lines.push('', 'First draft: ' + (q.drafterName || 'someone') + ' is writing one; it isn’t in yet.');
+    }
     return lines.join('\n');
   }
 
@@ -101,17 +119,54 @@
     var rs = q.recipients || [], done = rs.filter(function(r){ return r.submittedAt; }).length;
     var next = nextDeadline(q), late = next !== '9999' && next < today();
     return '<span class="lt-sum">' + done + ' of ' + rs.length + ' in' +
-      (done < rs.length && next !== '9999' ? ' · ' + (late ? '<span class="is-late">overdue since ' + day(next) + '</span>' : 'next due ' + day(next)) : '') + '</span>';
+      (done < rs.length && next !== '9999' ? ' · ' + (late ? '<span class="is-late">overdue since ' + day(next) + '</span>' : 'next due ' + day(next)) : '') +
+      (q.drafterEmail ? ' · ' + (q.draftAt ? 'first draft in' : 'first draft not in yet') : '') + '</span>';
   }
 
-  function requestHtml(q, asWriter){
+  // The first draft, as each of the three sees it: the referee reads it, the drafter
+  // writes it (the form, filled from what they sent), the applicant sees only whether it's in.
+  function draftHtml(q, role){
+    if (!q.drafterEmail) return '';
+    var dr = drafts[q.id], name = esc(q.drafterName || q.drafterEmail);
+    var head = '<span class="lt-label">First draft</span>';
+    if (role === 'drafter' && (q.open !== false || !q.draftAt)) return head + (q.open === false ? '<p class="lt-draft-state">Every letter is in: no draft is needed now.</p>' : draftFormHtml(q, dr));
+    var state = q.draftAt
+      ? 'From ' + name + ' · <span class="is-ok">in ' + when(q.draftAt) + '</span>' + (dr && dr.updatedAt && dr.updatedAt !== dr.at ? ' · updated ' + when(dr.updatedAt) : '')
+      : 'From ' + name + ' · not in yet';
+    if (role !== 'writer' || !dr) return head + '<p class="lt-draft-state">' + state + '</p>';
+    return head + '<p class="lt-draft-state">' + state + '</p><dl class="lt-materials">' +
+      material('Link', dr.url && '<a href="' + esc(dr.url) + '" target="_blank" rel="noopener">Open the draft</a>') +
+      material('Their note', dr.note && '<span class="lt-text">' + linkify(dr.note) + '</span>') + '</dl>' +
+      (dr.text ? '<div class="lt-draft-text">' + linkify(dr.text) + '</div>' : '');
+  }
+
+  function draftFormHtml(q, dr){
+    dr = dr || {};
+    var b = busy[q.id] ? ' disabled' : '';
+    return '<div class="event-form lt-dform" data-id="' + esc(q.id) + '">' +
+      '<p class="detail-muted">' + esc(first(q.requesterName)) + ' asked you to write a first draft for ' + esc(q.writerName) +
+        '. Only ' + esc(first(q.writerName)) + ' and you read it; ' + esc(first(q.requesterName)) + ' sees only that it’s in.</p>' +
+      '<label>The draft<textarea class="lt-dtext no-tags" rows="12" maxlength="20000">' + esc(dr.text || '') + '</textarea></label>' +
+      '<label>Or a link to it (optional)<input type="url" class="lt-durl" maxlength="1000" value="' + esc(dr.url || '') + '" placeholder="https://…"></label>' +
+      '<label>A note for ' + esc(first(q.writerName)) + ' (optional)<textarea class="lt-dnote no-tags" rows="3" maxlength="2000">' + esc(dr.note || '') + '</textarea></label>' +
+      '<p class="ev-error" hidden></p><div class="event-form-actions">' +
+        '<button type="button" class="ev-save lt-dsave" data-id="' + esc(q.id) + '"' + b + '>' + (q.draftAt ? 'Update the draft' : 'Send the first draft') + '</button>' +
+        (q.draftAt ? '<span class="detail-muted">Sent ' + when(q.draftAt) + '</span>' : '') + '</div></div>';
+  }
+
+  // role: 'writer' (As referee), 'requester' (As applicant) or 'drafter' (As first drafter).
+  function requestHtml(q, role){
+    var asWriter = role === 'writer', asDrafter = role === 'drafter';
     var ack = q.acknowledgedAt ? '<span class="is-ok">Received ' + when(q.acknowledgedAt) + '</span>' : 'Not acknowledged yet';
     var meta = asWriter
       ? 'Applicant: ' + esc(q.requesterName) + ' · asked ' + when(q.at) + (q.acknowledgedAt ? '' : ' · not acknowledged yet')
-      : 'Referee: ' + esc(q.writerName) + ' · asked ' + when(q.at) + ' · ' + ack;
+      : asDrafter
+        ? 'Applicant: ' + esc(q.requesterName) + ' · referee: ' + esc(q.writerName) + ' · asked ' + when(q.at)
+        : 'Referee: ' + esc(q.writerName) + ' · asked ' + when(q.at) + ' · ' + ack;
     var b = busy[q.id] ? ' disabled' : '';
     var controls = asWriter
       ? (q.acknowledgedAt ? '' : '<button type="button" class="btn-text lt-ack" data-id="' + esc(q.id) + '"' + b + '>Got it</button>')
+      : asDrafter ? ''
       : '<button type="button" class="btn-text lt-edit" data-id="' + esc(q.id) + '"' + b + '>Edit</button>' +
         '<button type="button" class="btn-text danger lt-withdraw" data-id="' + esc(q.id) + '"' + b + '>Withdraw</button>';
     var open = !!shown[q.id] || editing === q.id;
@@ -125,6 +180,7 @@
         material('CV', q.cv && '<a href="' + esc(q.cv) + '" target="_blank" rel="noopener">Open</a>') +
         material('Cover letter or research statement', q.statement && '<a href="' + esc(q.statement) + '" target="_blank" rel="noopener">Open</a>') +
         WORK.map(function(w){ return material(w.short, q[w.key] && '<span class="lt-text">' + linkify(q[w.key]) + '</span>'); }).join('') + '</dl>' +
+      draftHtml(q, role) +
       (asWriter && q.open !== false ? '<span class="lt-label">For your agent</span><div class="lt-agent">' +
         '<p class="detail-muted">Paste it into Claude Code to draft the letter with the <a href="skill.html?skill=' + SKILL + '">' + SKILL + '</a> skill.</p>' +
         BOLD.copyBoxHtml(agentPrompt(q)) + '</div>' : '') +
@@ -162,6 +218,12 @@
       '<fieldset><legend>About your work with me</legend>' + WORK.map(function(w){
         return '<label>' + esc(w.q) + '<textarea class="lt-w no-tags" data-key="' + w.key + '" rows="' + (w.key === 'howWorked' ? 7 : 4) + '" maxlength="' + (w.key === 'howWorked' ? 6000 : 3000) + '">' + esc(q ? q[w.key] || '' : '') + '</textarea></label>';
       }).join('') + '</fieldset>' +
+      '<fieldset><legend>First draft (optional)</legend>' +
+        '<p class="detail-muted lt-hint">If someone you worked with closely, such as the PhD student who supervised your project, will write a first draft for your referee, choose them. They see this request and send the draft here; you see only when it’s in.</p>' +
+        (q && q.draftAt
+          ? '<label>First drafter<span class="spk-chosen">' + esc(q.drafterName || q.drafterEmail) + ' <span class="detail-muted">their draft is in, so this can’t change</span></span></label>'
+          : '<label>First drafter</label><div class="lt-drafter"></div>') +
+      '</fieldset>' +
       '<p class="ev-error" hidden></p><div class="event-form-actions">' +
         '<button type="button" class="ev-save lt-save">' + (q ? 'Save' : 'Ask for the letter') + '</button>' +
         '<button type="button" class="lt-cancel">Cancel</button></div></div>';
@@ -169,19 +231,40 @@
 
   function render(){
     if (!me) return;
-    if (byMe === null || ofMe === null) { main.innerHTML = '<p class="proj-msg">Loading&hellip;</p>'; return; }
+    if (byMe === null || ofMe === null || forMe === null) { main.innerHTML = '<p class="proj-msg">Loading&hellip;</p>'; return; }
     if (editing) return; // don't redraw over a form being filled in
     var openOf = ofMe.filter(function(q){ return q.open; }).length, openBy = byMe.filter(function(q){ return q.open; }).length;
-    // Two tabs, named by the #hash: as referee, as applicant (with how many are open).
+    var openFor = forMe.filter(function(q){ return q.open && !q.draftAt; }).length;
+    // A draft being written survives the redraw (a snapshot can come in while it's typed).
+    var kept = {}, focus = document.activeElement && document.activeElement.closest && document.activeElement.closest('.lt-dform') ? document.activeElement : null;
+    Array.prototype.forEach.call(main.querySelectorAll('.lt-dform'), function(f){
+      var id = f.getAttribute('data-id');
+      if (typed[id]) kept[id] = { text: f.querySelector('.lt-dtext').value, url: f.querySelector('.lt-durl').value, note: f.querySelector('.lt-dnote').value };
+    });
+    var focusSel = focus ? { id: focus.closest('.lt-dform').getAttribute('data-id'), cls: focus.className.split(' ')[0], at: focus.selectionStart } : null;
+    // Tabs, named by the #hash: as referee, as applicant (with how many are open) and, once
+    // someone has asked you for one, as first drafter (with how many drafts are still to send).
     main.innerHTML =
       '<nav class="guide-tabs lt-tabs" id="ltTabs" aria-label="Letters">' +
         '<a class="guide-tab" href="#referee">As referee' + (openOf ? ' (' + openOf + ')' : '') + '</a>' +
-        '<a class="guide-tab" href="#applicant">As applicant' + (openBy ? ' (' + openBy + ')' : '') + '</a></nav>' +
+        '<a class="guide-tab" href="#applicant">As applicant' + (openBy ? ' (' + openBy + ')' : '') + '</a>' +
+        (forMe.length ? '<a class="guide-tab" href="#drafter">As first drafter' + (openFor ? ' (' + openFor + ')' : '') + '</a>' : '') + '</nav>' +
       '<section class="lt-panel" id="referee">' +
-        (ofMe.length ? '<ul class="lt-list">' + sorted(ofMe).map(function(q){ return requestHtml(q, true); }).join('') + '</ul>' : '<p class="proj-msg">Nobody has asked you for a letter.</p>') + '</section>' +
+        (ofMe.length ? '<ul class="lt-list">' + sorted(ofMe).map(function(q){ return requestHtml(q, 'writer'); }).join('') + '</ul>' : '<p class="proj-msg">Nobody has asked you for a letter.</p>') + '</section>' +
       '<section class="lt-panel" id="applicant">' +
-        (byMe.length ? '<ul class="lt-list">' + sorted(byMe).map(function(q){ return requestHtml(q, false); }).join('') + '</ul>' : '<p class="proj-msg">You haven’t asked for a letter yet.</p>') +
-        '<div class="lt-new"><button type="button" class="event-add lt-ask">+ Ask for a letter</button></div></section>';
+        (byMe.length ? '<ul class="lt-list">' + sorted(byMe).map(function(q){ return requestHtml(q, 'requester'); }).join('') + '</ul>' : '<p class="proj-msg">You haven’t asked for a letter yet.</p>') +
+        '<div class="lt-new"><button type="button" class="event-add lt-ask">+ Ask for a letter</button></div></section>' +
+      (forMe.length ? '<section class="lt-panel" id="drafter">' +
+        '<ul class="lt-list">' + sorted(forMe).map(function(q){ return requestHtml(q, 'drafter'); }).join('') + '</ul></section>' : '');
+    Object.keys(kept).forEach(function(id){
+      var f = main.querySelector('.lt-dform[data-id="' + id + '"]');
+      if (!f) return;
+      f.querySelector('.lt-dtext').value = kept[id].text; f.querySelector('.lt-durl').value = kept[id].url; f.querySelector('.lt-dnote').value = kept[id].note;
+    });
+    if (focusSel) {
+      var el = main.querySelector('.lt-dform[data-id="' + focusSel.id + '"] .' + focusSel.cls);
+      if (el) { el.focus(); try { el.setSelectionRange(focusSel.at, focusSel.at); } catch (e){} }
+    }
     // letters.html#ask (the masthead's + menu) opens the form, on As applicant.
     var ask = BOLD.takeLinkAction('ask', '#applicant');
     showTab();
@@ -197,37 +280,46 @@
     var tabs = document.getElementById('ltTabs');
     if (!tabs) return;
     var h = location.hash, m = /^#l=([A-Za-z0-9]+)/.exec(h), want;
-    if (h === '#referee' || h === '#applicant') want = h.slice(1);
-    else if (m) want = ofMe.some(function(q){ return q.id === m[1]; }) ? 'referee' : 'applicant';
-    else want = ofMe.length ? 'referee' : 'applicant';
-    ['referee', 'applicant'].forEach(function(t){ document.getElementById(t).hidden = t !== want; });
+    var has = function(list){ return list.some(function(q){ return q.id === m[1]; }); };
+    if (h === '#referee' || h === '#applicant' || (h === '#drafter' && forMe.length)) want = h.slice(1);
+    else if (m) want = has(ofMe) ? 'referee' : has(byMe) ? 'applicant' : has(forMe) ? 'drafter' : 'applicant';
+    else want = ofMe.length ? 'referee' : forMe.some(function(q){ return q.open && !q.draftAt; }) ? 'drafter' : 'applicant';
+    ['referee', 'applicant', 'drafter'].forEach(function(t){ var el = document.getElementById(t); if (el) el.hidden = t !== want; });
     Array.prototype.forEach.call(tabs.querySelectorAll('.guide-tab'), function(a){
       var on = a.getAttribute('href') === '#' + want;
       a.classList.toggle('is-current', on);
       if (on) a.setAttribute('aria-current', 'page'); else a.removeAttribute('aria-current');
     });
   }
-  window.addEventListener('hashchange', function(){ if (byMe && ofMe) { if (location.hash === '#ask') render(); else showTab(); } });
+  window.addEventListener('hashchange', function(){ if (byMe && ofMe && forMe) { if (location.hash === '#ask') render(); else showTab(); } });
 
   // ---------- choosing the writer: a list of the BOLD.OS users, filtered by typing ----------
-  function mountWho(wrap, form){
-    var chosen = form.writer;
+  // key: 'writer' (the referee) or 'drafter' (the first drafter, optional: it can be removed).
+  function mountWho(wrap, form, key){
+    key = key || 'writer';
+    var other = key === 'writer' ? 'drafter' : 'writer';
+    var chosen = form[key];
     if (chosen) {
       wrap.innerHTML = '<span class="spk-chosen">' + esc(chosen.name) + ' <span class="detail-muted">' + esc(chosen.email) + '</span>' +
-        '<button type="button" class="btn-text lt-who-change">Change</button></span>';
-      wrap.querySelector('.lt-who-change').addEventListener('click', function(){ form.writer = null; mountWho(wrap, form); wrap.querySelector('input').focus(); });
+        '<button type="button" class="btn-text lt-who-change">Change</button>' +
+        (key === 'drafter' ? '<button type="button" class="btn-text danger lt-who-remove">Remove</button>' : '') + '</span>';
+      wrap.querySelector('.lt-who-change').addEventListener('click', function(){ form[key] = null; mountWho(wrap, form, key); wrap.querySelector('input').focus(); });
+      var rm = wrap.querySelector('.lt-who-remove');
+      if (rm) rm.addEventListener('click', function(){ form[key] = null; mountWho(wrap, form, key); });
       return;
     }
-    wrap.innerHTML = '<div class="spk-search"><input type="text" class="lt-who-q" placeholder="Choose, or type a name…" autocomplete="off" role="combobox" aria-expanded="false" aria-label="Referee">' +
+    wrap.innerHTML = '<div class="spk-search"><input type="text" class="lt-who-q" placeholder="' + (key === 'drafter' ? 'Nobody; or choose, or type a name…' : 'Choose, or type a name…') +
+      '" autocomplete="off" role="combobox" aria-expanded="false" aria-label="' + (key === 'drafter' ? 'First drafter' : 'Referee') + '">' +
       '<ul class="spk-results" role="listbox" hidden></ul></div>';
     var input = wrap.querySelector('input'), list = wrap.querySelector('ul'), found = [], active = 0;
     var fold = function(s){ return String(s || '').toLowerCase().normalize('NFKD').replace(/[̀-ͯ]/g, ''); };
-    function pick(k){ if (!found[k]) return; form.writer = { name: found[k].name || found[k].email, email: found[k].email }; mountWho(wrap, form); }
+    function pick(k){ if (!found[k]) return; form[key] = { name: found[k].name || found[k].email, email: found[k].email }; mountWho(wrap, form, key); }
     function show(){
       var words = fold(input.value).split(/\s+/).filter(Boolean);
+      var not = form[other] && form[other].email;
       found = (writers || []).filter(function(p){
         var hay = fold(p.name) + ' ' + fold(p.email);
-        return p.email !== me.email && words.every(function(w){ return hay.indexOf(w) >= 0; });
+        return p.email !== me.email && p.email !== not && words.every(function(w){ return hay.indexOf(w) >= 0; });
       });
       active = 0;
       list.innerHTML = found.length ? found.map(function(p, k){
@@ -259,26 +351,37 @@
     });
   }
 
-  var newForm = null; // { writer } while asking
+  // The open form's people: { writer, drafter, was } (was: the drafter's email before editing).
+  var newForm = null;
+
+  function loadWriters(){
+    if (writers) return;
+    firebase.app().functions('europe-west2').httpsCallable('letterWriters')().then(function(r){
+      writers = (r.data && r.data.writers) || [];
+      var q = document.activeElement;
+      if (q && q.classList.contains('lt-who-q')) q.dispatchEvent(new Event('input'));
+    }).catch(function(err){ console.error('[BOLD Letters] loading the BOLD.OS users failed', err); writers = []; });
+  }
 
   function openForm(id){
     editing = id;
     if (id === 'new') {
-      newForm = { writer: null };
+      newForm = { writer: null, drafter: null, was: '' };
       var wrap = main.querySelector('.lt-new');
       wrap.innerHTML = formHtml(null);
-      mountWho(wrap.querySelector('.lt-who'), newForm);
-      if (!writers) firebase.app().functions('europe-west2').httpsCallable('letterWriters')().then(function(r){
-        writers = (r.data && r.data.writers) || [];
-        var q = main.querySelector('.lt-who-q');
-        if (q && q === document.activeElement) q.dispatchEvent(new Event('input'));
-      }).catch(function(err){ console.error('[BOLD Letters] loading the BOLD.OS users failed', err); writers = []; });
+      mountWho(wrap.querySelector('.lt-who'), newForm, 'writer');
+      mountWho(wrap.querySelector('.lt-drafter'), newForm, 'drafter');
+      loadWriters();
       wrap.querySelector('.lt-who-q').focus();
       return;
     }
     var q = byMe.filter(function(x){ return x.id === id; })[0], li = document.getElementById('l-' + id);
     if (!q || !li) { editing = null; return; }
+    newForm = { writer: { name: q.writerName, email: q.writerEmail },
+      drafter: q.drafterEmail ? { name: q.drafterName || q.drafterEmail, email: q.drafterEmail } : null, was: q.drafterEmail || '' };
     li.insertAdjacentHTML('beforeend', formHtml(q));
+    var dw = li.querySelector('.lt-drafter');
+    if (dw) { mountWho(dw, newForm, 'drafter'); loadWriters(); }
     li.querySelector('.lt-purpose').focus();
   }
 
@@ -289,6 +392,7 @@
     return {
       purpose: v('.lt-purpose'), cv: v('.lt-cv'), statement: v('.lt-statement'),
       howWorked: v('[data-key="howWorked"]'), best: v('[data-key="best"]'), extra: v('[data-key="extra"]'),
+      drafterEmail: newForm && newForm.drafter ? newForm.drafter.email : '',
       recipients: Array.prototype.map.call(f.querySelectorAll('.lt-rrow'), function(row){
         return { id: row.getAttribute('data-rid') || undefined, name: row.querySelector('.lt-rn').value.trim(), url: row.querySelector('.lt-ru').value.trim(),
           deadline: row.querySelector('.lt-rd').value, sentBy: row.querySelector('.lt-rs').value };
@@ -315,10 +419,22 @@
     var id = f.getAttribute('data-id'), d = readForm(f), err = f.querySelector('.ev-error');
     var p = problem(d, !id);
     if (p) { err.textContent = p; err.hidden = false; return; }
-    if (id) return send(f, btn, id, d, err);
+    var dr = newForm.drafter, changed = (dr ? dr.email : '') !== newForm.was;
+    if (id && !changed) return send(f, btn, id, d, err);
+    if (id) {
+      var was = (byMe.filter(function(x){ return x.id === id; })[0] || {}).drafterName || 'your first drafter';
+      BOLD.confirmAction({ title: dr ? 'Ask ' + dr.name + ' for the first draft?' : 'Nobody writes a first draft?', go: 'Save',
+        effects: ['Send ' + newForm.writer.name + ' a Slack message from BOLD.OS that you updated your request']
+          .concat(dr ? ['Send ' + dr.name + ' a Slack message asking for a first draft, and let them see this request'] : [])
+          .concat(newForm.was ? ['Tell ' + was + ' on Slack that their draft isn’t needed, and stop them seeing this request'] : []) })
+        .then(function(ok){ if (ok) send(f, btn, id, d, err); });
+      return;
+    }
     var late = d.recipients.some(function(r){ return r.deadline && r.deadline < today(); });
     BOLD.confirmAction({ title: late ? 'A deadline has passed already. Ask anyway?' : 'Ask ' + newForm.writer.name + ' for the letter?', go: 'Ask',
-      effects: ['Send ' + newForm.writer.name + ' a Slack message from BOLD.OS with your request'] }).then(function(ok){ if (ok) send(f, btn, id, d, err); });
+      effects: ['Send ' + newForm.writer.name + ' a Slack message from BOLD.OS with your request']
+        .concat(dr ? ['Send ' + dr.name + ' a Slack message asking for a first draft, and let them see this request'] : []) })
+      .then(function(ok){ if (ok) send(f, btn, id, d, err); });
   }
   function send(f, btn, id, d, err){
     btn.disabled = true; err.hidden = true;
@@ -340,9 +456,30 @@
 
   // A message about the form goes once it's changed.
   main.addEventListener('input', function(e){
-    var err = e.target.closest('.lt-form') && e.target.closest('.lt-form').querySelector('.ev-error');
+    var f = e.target.closest('.lt-form, .lt-dform'), err = f && f.querySelector('.ev-error');
     if (err) err.hidden = true;
+    if (f && f.classList.contains('lt-dform')) typed[f.getAttribute('data-id')] = true;
   });
+
+  function sendDraft(f, btn){
+    var id = f.getAttribute('data-id'), err = f.querySelector('.ev-error');
+    var q = (forMe || []).filter(function(x){ return x.id === id; })[0];
+    if (!q) return;
+    var d = { action: 'draft', id: id, text: f.querySelector('.lt-dtext').value.trim(), url: f.querySelector('.lt-durl').value.trim(), note: f.querySelector('.lt-dnote').value.trim() };
+    if (!d.text && !d.url) { err.textContent = 'Paste the draft, or give a link to it.'; err.hidden = false; return; }
+    if (d.url && !/^https?:\/\/\S+$/.test(d.url)) { err.textContent = 'The link to the draft starts with https://.'; err.hidden = false; return; }
+    BOLD.confirmAction({ title: q.draftAt ? 'Update the first draft?' : 'Send ' + q.writerName + ' the first draft?', go: q.draftAt ? 'Update' : 'Send',
+      effects: ['Send ' + q.writerName + ' a Slack message from BOLD.OS that the ' + (q.draftAt ? 'draft was updated' : 'first draft is in')]
+        .concat(q.draftAt ? [] : ['Tell ' + q.requesterName + ' on Slack that their referee has it (not what it says)']) }).then(function(ok){
+      if (!ok) return;
+      btn.disabled = true; err.hidden = true;
+      call(d).then(function(){ delete typed[id]; render(); }).catch(function(e){
+        console.error('[BOLD Letters] sending the draft failed', e);
+        err.textContent = e && e.message && e.code !== 'functions/internal' ? e.message : 'Couldn’t send it — try again.';
+        err.hidden = false; btn.disabled = false;
+      });
+    });
+  }
 
   main.addEventListener('click', function(e){
     var t = e.target.closest('button');
@@ -353,6 +490,7 @@
     if (t.classList.contains('lt-edit')) { if (!editing) openForm(t.getAttribute('data-id')); return; }
     if (t.classList.contains('lt-cancel')) { closeForm(); return; }
     if (t.classList.contains('lt-save')) { save(f, t); return; }
+    if (t.classList.contains('lt-dsave')) { sendDraft(t.closest('.lt-dform'), t); return; }
     if (t.classList.contains('lt-radd')) { f.querySelector('.lt-rows').insertAdjacentHTML('beforeend', rowHtml(null)); f.querySelector('.lt-rrow:last-child .lt-rn').focus(); return; }
     if (t.classList.contains('lt-rremove')) {
       var row = t.closest('.lt-rrow');
@@ -379,7 +517,7 @@
   BOLD.onUser(function(user){
     unsubs.forEach(function(u){ u(); }); unsubs = [];
     me = user ? { email: (user.email || '').toLowerCase() } : null;
-    byMe = null; ofMe = null; editing = null;
+    byMe = null; ofMe = null; forMe = null; editing = null; drafts = {}; draftsAs = { writer: {}, drafter: {} };
     if (!user) return;
     render();
     var listen = function(field, set){
@@ -390,5 +528,16 @@
     };
     listen('requesterEmail', function(v){ byMe = v; });
     listen('writerEmail', function(v){ ofMe = v; });
+    listen('drafterEmail', function(v){ forMe = v; });
+    // The first drafts: those sent to the viewer as referee, and those they wrote.
+    ['writer', 'drafter'].forEach(function(as){
+      unsubs.push(db.collection('letterDrafts').where(as + 'Email', '==', me.email).onSnapshot(function(snap){
+        var got = {};
+        snap.docs.forEach(function(d){ got[d.id] = d.data(); });
+        draftsAs[as] = got;
+        drafts = Object.assign({}, draftsAs.drafter, draftsAs.writer);
+        render();
+      }, function(err){ console.error('[BOLD Letters] loading first drafts failed', err); }));
+    });
   });
 })();

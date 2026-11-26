@@ -541,22 +541,28 @@ module.exports = function(ctx){
   async function letters(who, a){
     const fields = (x) => ({ purpose: x.purpose, cv: x.cv, howWorked: x.how_worked, statement: x.statement, best: x.best, extra: x.extra });
     const recipients = (list) => (list || []).map((r) => ({ id: r.id, name: r.name, url: r.url || '', deadline: r.deadline || '', sentBy: r.sent_by === 'requester' ? 'requester' : 'writer' }));
+    // The first drafter: a name, '' (or "nobody") for none; left out, unchanged.
+    const people = async () => (await lab.people()).map((p) => ({ email: p.email, name: p.name || '' }));
+    const drafter = async (v) => v === undefined ? undefined : (!String(v).trim() || /^(nobody|none)$/i.test(String(v).trim())) ? '' : resolve(await people(), v, 'people in BOLD');
     if (a.action === 'ask') {
-      const pool = (await lab.people()).map((p) => ({ email: p.email, name: p.name || '' }));
+      const pool = await people();
       return act(who, 'letterRequest', Object.assign({ action: 'create', writerEmail: resolve(pool, a.referee, 'people in BOLD'), recipients: recipients(a.recipients) },
-        { purpose: a.purpose, cv: a.cv, howWorked: a.how_worked, statement: a.statement || '', best: a.best || '', extra: a.extra || '' }));
+        { purpose: a.purpose, cv: a.cv, howWorked: a.how_worked, statement: a.statement || '', best: a.best || '', extra: a.extra || '', drafterEmail: (await drafter(a.first_drafter)) || '' }));
     }
     const id = need(a.request_id, 'the request_id');
     const s = await db.collection('letterRequests').doc(id).get();
     const x = s.exists ? s.data() : null;
-    if (!x || (x.requesterEmail !== who.email && x.writerEmail !== who.email)) throw httpError(404, 'No such request.');
+    if (!x || (x.requesterEmail !== who.email && x.writerEmail !== who.email && !(x.drafterEmail && x.drafterEmail === who.email))) throw httpError(404, 'No such request.');
     switch (a.action) {
       case 'update': {
         // The whole request, as the page sends it: what's given replaces what was there.
         const f = fields(a), merged = {};
         Object.keys(f).forEach((k) => { merged[k] = f[k] !== undefined ? f[k] : x[k] || ''; });
+        const dr = await drafter(a.first_drafter);
+        if (dr !== undefined) merged.drafterEmail = dr;
         return act(who, 'letterRequest', Object.assign({ action: 'update', id, recipients: a.recipients ? recipients(a.recipients) : x.recipients }, merged));
       }
+      case 'send_draft': return act(who, 'letterRequest', { action: 'draft', id, text: a.draft_text || '', url: a.draft_url || '', note: a.draft_note || '' });
       case 'withdraw': case 'acknowledge': return act(who, 'letterRequest', { action: a.action, id });
       case 'mark_submitted': case 'unmark_submitted': {
         const rs = x.recipients || [], want = need(a.recipient, 'the recipient (its name)');
@@ -869,8 +875,9 @@ module.exports = function(ctx){
       inputSchema: S({ action: ACTIONS(['offer', 'edit_offer', 'withdraw_offer', 'ask', 'accept', 'decline', 'done', 'withdraw_request']), organisation: str(''), area: str(''),
         offer_id: str('list_introduction_offers'), why: str('ask: what you’d like and why'), request_id: str('my_items'), note: str('accept, decline: a note for them') }) },
     { name: 'letters', run: letters,
-      description: 'Recommendation letters (Service desk): ask someone in BOLD for one, update or withdraw your request; as a referee, acknowledge it and mark each recipient submitted (or not). Only the two of you see a request; the other gets a Slack message.',
-      inputSchema: S({ action: ACTIONS(['ask', 'update', 'withdraw', 'acknowledge', 'mark_submitted', 'unmark_submitted']), request_id: str('my_items'), referee: str('ask: their name'),
+      description: 'Recommendation letters (Service desk): ask someone in BOLD for one (optionally naming a first drafter, such as the PhD student you worked with, who writes a first draft for the referee), update or withdraw your request; as a referee, acknowledge it and mark each recipient submitted (or not); as a first drafter, send the draft (only the referee reads it). Only the people on a request see it; the others get a Slack message.',
+      inputSchema: S({ action: ACTIONS(['ask', 'update', 'withdraw', 'acknowledge', 'mark_submitted', 'unmark_submitted', 'send_draft']), request_id: str('my_items'), referee: str('ask: their name'),
+        first_drafter: str('ask, update: their name ("nobody" for none)'), draft_text: str('send_draft: the draft'), draft_url: str('send_draft: https://… link to it (text, link or both)'), draft_note: str('send_draft: a note for the referee (optional)'),
         purpose: str(''), cv: str('https://… link to your CV'), how_worked: str('How you have worked together, and what you did yourself.'), statement: str('https://… (optional)'), best: str('(optional)'), extra: str('(optional)'),
         recipients: { type: 'array', items: { type: 'object', properties: { name: str(''), url: str(''), deadline: str('YYYY-MM-DD'), sent_by: ACTIONS(['writer', 'requester']) }, required: ['name'] } },
         recipient: str('mark_submitted: the recipient’s name'), letter_url: str('mark_submitted, when you send it yourself') }) },

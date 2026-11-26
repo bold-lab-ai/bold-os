@@ -205,10 +205,17 @@ service cloud.firestore {
       allow delete: if false;
     }
     // Recommendation letters (letters.html; functions/index.js "Service desk"):
-    // only whoever asked and whoever writes it read a request; every write goes
-    // through letterRequest, which tells the other one on Slack.
+    // only whoever asked, whoever writes it and its first drafter (if the applicant named
+    // one) read a request; every write goes through letterRequest, which tells the others on Slack.
     match /letterRequests/{id} {
-      allow read: if may('service-desk', 'view') && (resource.data.requesterEmail == email().lower() || resource.data.writerEmail == email().lower());
+      allow read: if may('service-desk', 'view') && (resource.data.requesterEmail == email().lower() || resource.data.writerEmail == email().lower()
+        || resource.data.get('drafterEmail', '') == email().lower());
+      allow write: if false;
+    }
+    // A letter's first draft: the referee and its drafter only, never the applicant;
+    // written through letterRequest's `draft`.
+    match /letterDrafts/{id} {
+      allow read: if may('service-desk', 'view') && (resource.data.writerEmail == email().lower() || resource.data.drafterEmail == email().lower());
       allow write: if false;
     }
     // Introductions (introductions.html): offers, by anyone, read by the lab, changed
