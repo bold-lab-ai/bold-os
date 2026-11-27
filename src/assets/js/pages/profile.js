@@ -428,13 +428,11 @@
     });
   }
 
-  function renderProject(p, member){
+  function renderProject(p){
     var li = document.createElement('li');
     var a = document.createElement('a');
     a.className = 'proj-title';
-    // A paper on a venue opens on the board; a project with no venue (or one you're only a member of), its project page.
-    a.href = p.boardId && !member ? 'audit-board.html#board=' + encodeURIComponent(p.boardId) + '&card=' + encodeURIComponent(p.cardId)
-      : 'project.html#id=' + encodeURIComponent(p.cardId) + (p.boardId ? '&board=' + encodeURIComponent(p.boardId) : '');
+    a.href = 'project.html#id=' + encodeURIComponent(p.cardId) + (p.boardId ? '&board=' + encodeURIComponent(p.boardId) : '');
     a.textContent = p.title;
     var meta = document.createElement('span');
     meta.className = 'proj-meta';
@@ -466,7 +464,7 @@
         li.innerHTML = '<p class="proj-empty">None</p>';
         ul.appendChild(li);
       }
-      items.forEach(function(p){ ul.appendChild(renderProject(p, g[0] === 'projMember')); });
+      items.forEach(function(p){ ul.appendChild(renderProject(p)); });
     });
     el('projMsg').hidden = true;
     el('projGroups').hidden = false;
