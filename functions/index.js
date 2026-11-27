@@ -1944,7 +1944,7 @@ function newTags(before, after){
 // nobody here: bookkeeping and private collections, and guides and the
 // BOLDiquette (their comments and proposed changes tell, above). Pure.
 const TAG_SILENT = ['problemBank', 'benchmarks', 'benchmarkReceipts', 'benchmarkSources', 'roles', 'people', 'meta', 'settings', 'readPoints', 'changelog', 'commentQueue', 'venueCalls', 'githubLinks', 'googleLinks',
-  'letterRequests', 'introRequests', 'joinRequests', 'members', 'hackathonJoins', 'projectWorkspaces', 'guides', 'handbook', 'interactions', 'privateInteractions',
+  'letterRequests', 'letterDrafts', 'introRequests', 'joinRequests', 'members', 'hackathonJoins', 'projectWorkspaces', 'guides', 'handbook', 'interactions', 'privateInteractions',
   // Conversations (Experimental, 2026-11-04): no Slack messages from it while it's an experiment.
   'conversations', 'conversationImports', 'cardImageImports', 'notifications'];
 // An event's page: its own (d.page: Collaboration Week, the Festival) or event.html.
@@ -5821,10 +5821,10 @@ async function requestWork(email, full, person){
   const q = function(c, field){ return db.collection(c).where(field, '==', email).get().then(function(s){ return s.docs; }); };
   const all = function(c){ return db.collection(c).get().then(function(s){ return s.docs; }); };
   const uniq = function(lists){ const seen = {}; return [].concat.apply([], lists).filter(function(d){ if (seen[d.ref.path]) return false; seen[d.ref.path] = true; return true; }); };
-  const [joins, groups, lettersA, lettersB, introsA, introsB, studyA, studyB, tokens, boards] = await Promise.all([
+  const [joins, groups, lettersA, lettersB, lettersC, introsA, introsB, studyA, studyB, tokens, boards] = await Promise.all([
     full ? all('joinRequests') : q('joinRequests', 'invitedBy.email'),
     full ? all('groupRequests') : q('groupRequests', 'email'),   // PIs and admins decide them (groupRequest)
-    q('letterRequests', 'requesterEmail'), q('letterRequests', 'writerEmail'),
+    q('letterRequests', 'requesterEmail'), q('letterRequests', 'writerEmail'), q('letterRequests', 'drafterEmail'),
     q('introRequests', 'requesterEmail'), q('introRequests', 'offererEmail'),
     access.can(email, 'calendar', 'view').then(function(ok){ return ok ? q('studyRequests', 'email') : []; }),
     access.can(email, 'calendar', 'view').then(function(ok){ return ok ? q('studyRequests', 'student') : []; }),
@@ -5873,12 +5873,13 @@ async function requestWork(email, full, person){
       waiting: r.status === 'open' ? PIS_ADMINS : '', state: r.status },
     requestColumn(r.status === 'open', false, r.decidedAt, r.at, now));
   });
-  uniq([lettersA, lettersB]).forEach(function(d){
+  uniq([lettersA, lettersB, lettersC]).forEach(function(d){
     const r = d.data(), recips = r.recipients || [];
     const done = r.open === false || (recips.length && recips.every(function(x){ return x.submittedAt; }));
     const settled = r.open === false ? (r.updatedAt || 0) : Math.max.apply(null, [0].concat(recips.map(function(x){ return x.submittedAt || 0; })));
     add({ kind: 'letter', ref: d.ref.path, title: 'Recommendation letter: ' + (r.purpose || ''), url: letterUrl(d.id),
-      by: person(r.requesterEmail, r.requesterName), on: [person(r.writerEmail, r.writerName)], state: done ? 'done' : r.acknowledgedAt ? 'writing' : 'asked' },
+      by: person(r.requesterEmail, r.requesterName), on: [person(r.writerEmail, r.writerName)].concat(r.drafterEmail ? [person(r.drafterEmail, r.drafterName)] : []),
+      state: done ? 'done' : r.acknowledgedAt ? 'writing' : 'asked' },
     requestColumn(!done, !!r.acknowledgedAt, settled, r.acknowledgedAt || r.at, now));
   });
   uniq([introsA, introsB]).forEach(function(d){
@@ -8879,7 +8880,8 @@ exports.remindJoinInvite = onSchedule(
 // writerEmail, writerName, purpose, cv, statement, howWorked, best, extra,
 // recipients: [{ id, name, url,
 // deadline, sentBy: 'writer' | 'requester', submittedAt, letterUrl, reminded }],
-// acknowledgedAt, open, at, updatedAt }. Only the two of them read it; every
+// acknowledgedAt, open, at, updatedAt, drafterEmail, drafterName, draftAt }. Only
+// they read it (and the first drafter, if there is one); every
 // write goes through letterRequest, which DMs the other one on Slack. The letter
 // itself stays out of BOLD.OS: the writer marks each recipient submitted, and
 // shares the letter (letterUrl) only where the requester has to send it on.
@@ -8941,6 +8943,41 @@ function normalizeLetterRequest(d, was){
   return { request: out };
 }
 
+// The first draft: an applicant (often a Master student) may name someone they worked
+// with closely, such as the PhD student who supervised their project, to write a first
+// draft for the referee. The drafter reads the request (letterRequests' drafterEmail)
+// and sends the draft through letterRequest's `draft`; it's kept apart, in
+// letterDrafts/{request id} { writerEmail, drafterEmail, drafterName, text, url, note,
+// at, updatedAt }, read only by the referee and the drafter: the applicant sees only
+// that it's in (draftAt). Who drafts it can't change once it's in.
+const LETTER_DRAFT = { text: 20000, url: 1000, note: 2000 };
+
+// Pure: who drafts it → { drafter: { email, name } | null } or { error }. `raw`: the
+// email letters.html sent ('' for nobody); `writers`: letterWriters().
+function letterDrafterOf(raw, writers, requesterEmail, writerEmail){
+  const e = String(raw == null ? '' : raw).trim().toLowerCase();
+  if (!e) return { drafter: null };
+  if (e === requesterEmail) return { error: 'Your first drafter is someone else: the person you worked with.' };
+  if (e === writerEmail) return { error: 'Your referee can’t also write the first draft: choose someone else, or nobody.' };
+  const w = (writers || []).filter((x) => x.email === e)[0];
+  if (!w) return { error: 'Your first drafter hasn’t signed in to BOLD.OS yet.' };
+  return { drafter: { email: w.email, name: w.name } };
+}
+
+// Pure: the first draft as sent → { draft: { text, url, note } } or { error }: the text,
+// a link to it, or both.
+function normalizeLetterDraft(d){
+  d = d && typeof d === 'object' ? d : {};
+  const out = {};
+  for (const k of Object.keys(LETTER_DRAFT)) {
+    out[k] = String(d[k] == null ? '' : d[k]).trim();
+    if (out[k].length > LETTER_DRAFT[k]) return { error: 'That’s too long: the draft’s ' + k + '.' };
+  }
+  if (!out.text && !out.url) return { error: 'Paste the draft, or give a link to it.' };
+  if (out.url && !/^https?:\/\/\S+$/.test(out.url)) return { error: 'The link to the draft starts with https://.' };
+  return { draft: out };
+}
+
 const letterOpen = (recipients) => recipients.some((r) => !r.submittedAt);
 
 // Pure: the reminders due today → [{ id, recipientId, days }]. `requests`: [{ id, recipients }].
@@ -8961,12 +8998,21 @@ function letterDeadlines(recipients){
   return recipients.map((r) => slackText(r.name) + ' (' + (r.deadline || 'no deadline') + ')').join(', ');
 }
 
+// The DM asking someone for a first draft (on create, or when an update names them).
+function letterDrafterAsk(tag, requesterName, writerName, title, recipients){
+  return '📝 ' + (tag || '') + slackText(requesterName) + ' asked you to write a first draft of the recommendation letter ' +
+    slackText(writerName) + ' is writing for them: ' + title + '. Deadlines: ' + letterDeadlines(recipients) + '.\n' +
+    'Their materials are on the request; send the draft there, under "First draft", and ' + slackText(writerName) + ' gets it.';
+}
+
 // data: { action, … } → { id? }. Actions:
 //   create { writerEmail, purpose, links, notes, recipients }   anyone, for themselves
 //   update { id, purpose, links, notes, recipients }              the requester
 //   withdraw { id }                                               the requester (deletes it)
 //   acknowledge { id }                                            the writer
 //   submit { id, recipientId, letterUrl? }, unsubmit { id, recipientId }   the writer
+//   draft { id, text?, url?, note? }                              the first drafter
+// create and update take drafterEmail ('' for nobody; update without it keeps who it is).
 exports.letterRequest = onCall(
   { secrets: [SLACK_BOT_TOKEN] },
   async (request) => {
@@ -8981,21 +9027,28 @@ exports.letterRequest = onCall(
       const writerEmail = String(d.writerEmail || '').trim().toLowerCase();
       if (!writerEmail) throw new HttpsError('invalid-argument', 'Choose your referee.');
       if (writerEmail === email) throw new HttpsError('invalid-argument', 'Choose someone else as your referee.');
-      const writer = (await letterWriters()).filter((w) => w.email === writerEmail)[0];
+      const writers = await letterWriters();
+      const writer = writers.filter((w) => w.email === writerEmail)[0];
       if (!writer) throw new HttpsError('invalid-argument', 'They haven’t signed in to BOLD.OS yet.');
       const n = normalizeLetterRequest(d, []);
       if (n.error) throw new HttpsError('invalid-argument', n.error);
+      const dr = letterDrafterOf(d.drafterEmail, writers, email, writerEmail);
+      if (dr.error) throw new HttpsError('invalid-argument', dr.error);
       const open = await db.collection('letterRequests').where('requesterEmail', '==', email).where('open', '==', true).count().get();
       if (open.data().count >= 50) throw new HttpsError('resource-exhausted', 'You have fifty requests open: withdraw some first.');
       const now = Date.now();
       const ref = await db.collection('letterRequests').add(Object.assign(n.request, {
         requesterEmail: email, requesterName: myName, writerEmail, writerName: writer.name,
+        drafterEmail: dr.drafter ? dr.drafter.email : '', drafterName: dr.drafter ? dr.drafter.name : '', draftAt: null,
         acknowledgedAt: null, open: true, at: now, updatedAt: now,
       }));
-      await tell(writerEmail, '✉️ ' + await numberTag(ref.path) + slackText(myName) + ' asked you for a recommendation letter: ' +
-        linkedTitle(slackText(n.request.purpose), letterUrl(ref.id)) + '. Deadlines: ' + letterDeadlines(n.request.recipients) + '.\n' +
+      const tag = await numberTag(ref.path), title = linkedTitle(slackText(n.request.purpose), letterUrl(ref.id));
+      await tell(writerEmail, '✉️ ' + tag + slackText(myName) + ' asked you for a recommendation letter: ' +
+        title + '. Deadlines: ' + letterDeadlines(n.request.recipients) + '.\n' +
+        (dr.drafter ? '📝 ' + slackText(dr.drafter.name) + ' will send you a first draft through BOLD.OS; you’ll hear when it’s in.\n' : '') +
         '💡 To draft it, copy the prompt under "For your agent" on the request into Claude Code: it uses the <' +
         SITE_URL + 'skill.html?skill=bold-recommendation-letter|bold-recommendation-letter> skill.');
+      if (dr.drafter) await tell(dr.drafter.email, letterDrafterAsk(tag, myName, writer.name, title, n.request.recipients));
       return { id: ref.id };
     }
 
@@ -9006,7 +9059,12 @@ exports.letterRequest = onCall(
       const isRequester = q.requesterEmail === email, isWriter = q.writerEmail === email;
       if (['update', 'withdraw'].indexOf(d.action) !== -1 && !isRequester) throw new HttpsError('permission-denied', 'Only the applicant can do this.');
       if (['acknowledge', 'submit', 'unsubmit'].indexOf(d.action) !== -1 && !isWriter) throw new HttpsError('permission-denied', 'Only the referee can do this.');
+      if (d.action === 'draft' && !(q.drafterEmail && q.drafterEmail === email)) throw new HttpsError('permission-denied', 'Only the first drafter can do this.');
     };
+    // The drafter, when an update names one (read before the transaction: listing users isn't Firestore).
+    const writers = d.action === 'update' && d.drafterEmail !== undefined && String(d.drafterEmail || '').trim() ? await letterWriters() : [];
+    const draftRef = db.collection('letterDrafts').doc(id);
+    const notes = [];
     let note = null;
     await db.runTransaction(async (tx) => {
       const snap = await tx.get(ref);
@@ -9017,12 +9075,38 @@ exports.letterRequest = onCall(
       if (d.action === 'update') {
         const n = normalizeLetterRequest(d, q.recipients);
         if (n.error) throw new HttpsError('invalid-argument', n.error);
-        tx.update(ref, Object.assign(n.request, { open: letterOpen(n.request.recipients), updatedAt: Date.now() }));
+        const was = q.drafterEmail || '';
+        let drafter = was ? { email: was, name: q.drafterName || was } : null;
+        if (d.drafterEmail !== undefined && String(d.drafterEmail || '').trim().toLowerCase() !== was) {
+          if (q.draftAt) throw new HttpsError('failed-precondition', 'The first draft is in already: who wrote it can’t change.');
+          const dr = letterDrafterOf(d.drafterEmail, writers, q.requesterEmail, q.writerEmail);
+          if (dr.error) throw new HttpsError('invalid-argument', dr.error);
+          drafter = dr.drafter;
+        }
+        tx.update(ref, Object.assign(n.request, { drafterEmail: drafter ? drafter.email : '', drafterName: drafter ? drafter.name : '',
+          open: letterOpen(n.request.recipients), updatedAt: Date.now() }));
+        const newTitle = linkedTitle(slackText(n.request.purpose), letterUrl(id));
+        const changed = (drafter ? drafter.email : '') !== was;
         note = { to: q.writerEmail, text: '✏️ ' + slackText(q.requesterName) + ' updated their letter request: ' +
-          linkedTitle(slackText(n.request.purpose), letterUrl(id)) + '. Deadlines: ' + letterDeadlines(n.request.recipients) + '.' };
+          newTitle + '. Deadlines: ' + letterDeadlines(n.request.recipients) + '.' +
+          (changed ? (drafter ? '\n📝 ' + slackText(drafter.name) + ' will send you a first draft through BOLD.OS.' : '\nNobody is writing a first draft now.') : '') };
+        if (changed && was) notes.push({ to: was, text: '↩️ ' + slackText(q.requesterName) + ' no longer needs a first draft from you: *' + slackText(q.purpose) + '*. Nothing more to do.' });
+        if (changed && drafter) notes.push({ to: drafter.email, text: letterDrafterAsk('', q.requesterName, q.writerName, newTitle, n.request.recipients) });
       } else if (d.action === 'withdraw') {
         tx.delete(ref);
+        tx.delete(draftRef);
         if (q.open) note = { to: q.writerEmail, text: '↩️ ' + slackText(q.requesterName) + ' withdrew their request for a letter: *' + slackText(q.purpose) + '*. Nothing more to do.' };
+        if (q.open && q.drafterEmail && !q.draftAt) notes.push({ to: q.drafterEmail, text: '↩️ ' + slackText(q.requesterName) + ' withdrew their request for a letter, so no first draft is needed: *' + slackText(q.purpose) + '*.' });
+      } else if (d.action === 'draft') {
+        const n = normalizeLetterDraft(d);
+        if (n.error) throw new HttpsError('invalid-argument', n.error);
+        const now = Date.now(), again = !!q.draftAt;
+        tx.set(draftRef, Object.assign(n.draft, { writerEmail: q.writerEmail, drafterEmail: q.drafterEmail, drafterName: q.drafterName || q.drafterEmail,
+          at: q.draftAt || now, updatedAt: now }));
+        tx.update(ref, { draftAt: q.draftAt || now, updatedAt: now });
+        note = { to: q.writerEmail, text: '📝 ' + slackText(q.drafterName || email) + (again ? ' updated the first draft of ' : ' sent you the first draft of ') +
+          slackText(q.requesterName) + '’s letter: ' + title + '.' };
+        if (!again) notes.push({ to: q.requesterEmail, text: '📝 ' + slackText(q.drafterName || email) + ' sent ' + slackText(q.writerName) + ' the first draft of your letter: ' + title + '.' });
       } else if (d.action === 'acknowledge') {
         if (q.acknowledgedAt) return;
         tx.update(ref, { acknowledgedAt: Date.now() });
@@ -9051,6 +9135,7 @@ exports.letterRequest = onCall(
       }
     });
     if (note) await tell(note.to, note.text);
+    for (const x of notes) await tell(x.to, x.text);
     return { id };
   }
 );
@@ -9093,6 +9178,9 @@ exports.remindLetterWriters = onSchedule(
       const sent = await dmByEmail(SLACK_BOT_TOKEN.value(), q.writerEmail, '⏰ ' + slackText(q.requesterName) + '’s letter for ' + slackText(r.name) +
         ' is due ' + when + ' (' + r.deadline + '): ' + linkedTitle(slackText(q.purpose), letterUrl(x.id)) + '.', 'letters');
       if (!sent) continue;
+      // The first draft not in yet: its drafter hears too.
+      if (q.drafterEmail && !q.draftAt) await dmByEmail(SLACK_BOT_TOKEN.value(), q.drafterEmail, '⏰ ' + slackText(q.requesterName) + '’s letter for ' + slackText(r.name) +
+        ' is due ' + when + ' (' + r.deadline + '), and ' + slackText(q.writerName) + ' is waiting for your first draft: ' + linkedTitle(slackText(q.purpose), letterUrl(x.id)) + '.', 'letters');
       // Marks every reminder up to this one sent, so a missed one doesn't follow.
       await db.runTransaction(async (tx) => {
         const s = await tx.get(db.collection('letterRequests').doc(x.id));
@@ -9376,6 +9464,7 @@ async function interactionsFor(path, d, lookup){
     if (d.status === 'accepted' || d.status === 'done') add('introduced', d.offererEmail, d.requesterEmail, d.updatedAt || d.at, 'An introduction at ' + (d.org || 'an organisation'), introUrl(seg[1]));
   } else if (n === 2 && top === 'letterRequests'){
     add('letter', d.requesterEmail, d.writerEmail, d.at, 'A recommendation letter', letterUrl(seg[1]));
+    if (d.drafterEmail) add('letter', d.requesterEmail, d.drafterEmail, d.at, 'A first draft of a recommendation letter', letterUrl(seg[1]));
   } else if (n === 2 && ['skills', 'guides', 'events', 'collabWeekSessions'].indexOf(top) >= 0){
     const href = top === 'skills' ? SITE_URL + 'skill.html?skill=' + encodeURIComponent(seg[1]) : top === 'guides' ? guideUrl(seg[1])
       : top === 'events' ? eventUrl(seg[1], d) : SITE_URL + 'session.html?session=' + encodeURIComponent(seg[1]);
@@ -9793,7 +9882,7 @@ exports._internal = { ownDocs, proposalRoute, proposalHours, asksForMore, replac
   projectsFromDashboard, badgesForCard, skillMd, skillZip, versionContent, stableJson,
   normalizeMeeting, firstMeetingTimes, meetingRecurrence, projectMembers, normalizeRepo, projectRepoName,
   projectIdOf, projectGroupForCards, workspaceStarted, normalizeJoinRequest, welcomeEmail, mimeMessage, joinChangesRefusal, joinChangesKeyRefusal, joinChangesEmail, joinChangesView, joinChangesProposed, joinChangesLines, keyHash,
-  onboardingSteps, inviteRefusal, normalizeLetterRequest, letterRemindersDue, normalizeStudies, groupOf, channelGroupsFor, seriesStart, normalizeSupervisionChannel, supervisionChannelFor, inviteReminderStage, taggedIds, proposalNewTags, newTags, tagPlace, tagExcerpt, tagMessageId, venueCallsToCheck, venueCallMessage, interactionsFor, isInteractionSource, thingOf, slackExternal, groupMoveOf, currentGroupMove, groupMoveTitle, normalizeGpuHours, proposalPending, inviteChoices, validInviteTo, projectChannelChange, alignmentPlan, alignmentMessage, groupChannelsFor, allGroupChannels, alignmentNow, runAlignment
+  onboardingSteps, inviteRefusal, normalizeLetterRequest, letterRemindersDue, letterDrafterOf, normalizeLetterDraft, normalizeStudies, groupOf, channelGroupsFor, seriesStart, normalizeSupervisionChannel, supervisionChannelFor, inviteReminderStage, taggedIds, proposalNewTags, newTags, tagPlace, tagExcerpt, tagMessageId, venueCallsToCheck, venueCallMessage, interactionsFor, isInteractionSource, thingOf, slackExternal, groupMoveOf, currentGroupMove, groupMoveTitle, normalizeGpuHours, proposalPending, inviteChoices, validInviteTo, projectChannelChange, alignmentPlan, alignmentMessage, groupChannelsFor, allGroupChannels, alignmentNow, runAlignment
 };
 
 // For tests and the test copy: the home letter's inputs as someone (functions/bold-llm.js).

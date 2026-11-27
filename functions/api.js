@@ -479,7 +479,7 @@ module.exports = function(deps){
     },
     {
       name: 'my_items',
-      description: 'Your own things on BOLD.OS, with their ids: the projects you are on, your studies, recommendation letters you asked for or write, introductions (asked, asked of you, your offers), requests to join supervision meetings, and an open request to change group.',
+      description: 'Your own things on BOLD.OS, with their ids: the projects you are on, your studies, recommendation letters you asked for, write or write a first draft of, introductions (asked, asked of you, your offers), requests to join supervision meetings, and an open request to change group.',
       inputSchema: { type: 'object', properties: {} },
       run: myItems,
     },
@@ -872,8 +872,8 @@ module.exports = function(deps){
   async function myItems(who){
     const e = who.email;
     const q = (col, field) => db.collection(col).where(field, '==', e).get().then((s) => s.docs.map((d) => Object.assign({ id: d.id }, d.data())));
-    const [lettersAsked, lettersToWrite, introsAsked, introsOfMe, me, name, studyAsked, studyOfMe, offers, groupReqs] = await Promise.all([
-      q('letterRequests', 'requesterEmail'), q('letterRequests', 'writerEmail'), q('introRequests', 'requesterEmail'), q('introRequests', 'offererEmail'),
+    const [lettersAsked, lettersToWrite, lettersToDraft, introsAsked, introsOfMe, me, name, studyAsked, studyOfMe, offers, groupReqs] = await Promise.all([
+      q('letterRequests', 'requesterEmail'), q('letterRequests', 'writerEmail'), q('letterRequests', 'drafterEmail'), q('introRequests', 'requesterEmail'), q('introRequests', 'offererEmail'),
       getPerson(who, { _email: e }), nameOf(), q('studyRequests', 'email'), q('studyRequests', 'student'), q('introOffers', 'by.email'), q('groupRequests', 'email'),
     ]);
     const study = (x, asStudent) => ({ id: x.id, with: asStudent ? x.name : x.studentName, note: x.note || '', status: x.status });
@@ -881,13 +881,15 @@ module.exports = function(deps){
       with: asWriter ? x.requesterName || name(x.requesterEmail) : x.writerName || name(x.writerEmail),
       id: x.id, purpose: x.purpose || '', open: x.open !== false,
       recipients: (x.recipients || []).map((r) => ({ name: r.name || '', deadline: r.deadline || '', submitted: !!r.submittedAt })),
+      first_drafter: x.drafterEmail ? x.drafterName || name(x.drafterEmail) : '', first_draft_in: !!x.draftAt,
       url: url('letters.html#l=' + x.id),
     });
     const intro = (x, asOfferer) => ({ id: x.id, organisation: x.org, with: asOfferer ? x.requesterName : x.offererName, status: x.status, url: url('introductions.html#i=' + x.id) });
     return {
       you: { name: me.name, profile: me.profile, group: me.group || '' },
       projects: me.projects, studies: me.studies,
-      letters: { you_asked: lettersAsked.map((x) => letter(x, false)), you_write: lettersToWrite.map((x) => letter(x, true)) },
+      letters: { you_asked: lettersAsked.map((x) => letter(x, false)), you_write: lettersToWrite.map((x) => letter(x, true)),
+        you_draft: lettersToDraft.map((x) => Object.assign(letter(x, true), { referee: x.writerName || name(x.writerEmail) })) },
       introductions: { you_asked: introsAsked.map((x) => intro(x, false)), asked_of_you: introsOfMe.map((x) => intro(x, true)),
         your_offers: offers.map((x) => ({ id: x.id, organisation: x.org, area: x.area || '' })) },
       supervision_requests: { you_asked: studyAsked.map((x) => study(x, false)), asked_of_you: studyOfMe.map((x) => study(x, true)) },
