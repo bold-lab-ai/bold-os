@@ -36,7 +36,7 @@
 
 module.exports = function series(deps){
   const { db, onCall, onDocumentWritten, HttpsError, logger, callerEmail, isFullWrite, access, rolesEmails,
-    googleFetch, syncMoves, CAL, calendarUpdates, isCalendarLimit, CALENDAR_LIMIT_MSG, eventConference, eventTimes, conferenceChange, ensureMeetOpen, meetingRecurrence, sameMeetingTimes, seriesStart,
+    googleFetch, syncMoves, CAL, calendarUpdates, isCalendarLimit, CALENDAR_LIMIT_MSG, eventConference, eventTimes, conferenceChange, openMeetOnce, meetingRecurrence, sameMeetingTimes, seriesStart,
     normalizeMeeting, googleAddressesFor, groupOf, tellStaff, slackText, linkedTitle, SITE_URL,
     GOOGLE_OAUTH, SLACK_BOT_TOKEN, FieldValue, crypto, onSchedule, tellPeople } = deps;
   const { rank, VISIBILITY, VIS_RANK, VISIBILITY_NAMES } = require('./access');
@@ -166,12 +166,14 @@ module.exports = function series(deps){
         Object.assign(patch, { eventId: ev.id, eventLink: ev.htmlLink, meetUrl: s.meeting.link || ev.hangoutLink || '', eventMeeting: s.meeting,
           eventPausedAt: s.pausedAt || FieldValue.delete(), eventStart: seriesStart(ev), guests });
         if (!s.meeting.link){
-          ev = await ensureMeetOpen(ev, ev.id);
+          const o = await openMeetOnce(ev, ev.id, '', 'series ' + id);
+          ev = o.ev;
           patch.meetUrl = ev.hangoutLink || patch.meetUrl;
+          if (o.code) patch.meetOpenCode = o.code;
         }
       } else if (!want && s.eventId) {
         await googleFetch('DELETE', CAL + '/' + s.eventId + '?sendUpdates=all').catch((err) => { if (err.status !== 410 && err.status !== 404) throw err; });
-        ['eventId', 'eventLink', 'meetUrl', 'eventMeeting', 'eventPausedAt', 'eventStart', 'guests'].forEach((k) => { patch[k] = FieldValue.delete(); });
+        ['eventId', 'eventLink', 'meetUrl', 'eventMeeting', 'eventPausedAt', 'eventStart', 'guests', 'meetOpenCode'].forEach((k) => { patch[k] = FieldValue.delete(); });
       } else if (s.eventId) {
         const ev = await googleFetch('GET', CAL + '/' + s.eventId);
         const change = {}, timesChanged = !sameMeetingTimes(s.eventMeeting, s.meeting);
@@ -188,7 +190,11 @@ module.exports = function series(deps){
           now = await googleFetch('PATCH', CAL + '/' + s.eventId + '?conferenceDataVersion=1&sendUpdates=' + calendarUpdates(change), change) || ev;
           Object.assign(patch, { eventMeeting: s.meeting, eventPausedAt: s.pausedAt || FieldValue.delete(), eventStart: seriesStart(now) });
         }
-        if (!s.meeting.link) now = await ensureMeetOpen(now, s.eventId);
+        if (!s.meeting.link) {
+          const o = await openMeetOnce(now, s.eventId, s.meetOpenCode || '', 'series ' + id);
+          now = o.ev;
+          if (o.code && o.code !== s.meetOpenCode) patch.meetOpenCode = o.code;
+        }
         const url = s.meeting.link || now.hangoutLink || '';
         if (url !== (s.meetUrl || '')) patch.meetUrl = url;
         patch.guests = guests;

@@ -4246,6 +4246,23 @@ async function ensureMeetOpen(ev, eventId, options){
   return now;
 }
 
+// In a sync: each Meet is made Open once (`opened`: the code made Open last time,
+// kept as meetOpenCode), and a failure never stops the sync (the Meet API not enabled
+// yet, the scope not granted, or a Meet a guest made, which the lab's account can't
+// change): it's logged and tried again next time. → { ev, code }: the latest event and
+// the code now Open ('' if none).
+async function openMeetOnce(ev, eventId, opened, where, options){
+  const code = meetCodeOf(ev);
+  if (code && code === opened) return { ev: ev, code: code };
+  try {
+    const now = await ensureMeetOpen(ev, eventId, options);
+    return { ev: now, code: meetCodeOf(now) };
+  } catch (err){
+    ((options && options.logger) || logger).warn('A Google Meet couldn\u2019t be made open', { where: where, eventId: eventId, error: String(err && err.message || err) });
+    return { ev: ev, code: '' };
+  }
+}
+
 // Google caps how many events and invitation emails the lab's (Gmail) account sends; past it,
 // Calendar writes fail for a few hours (2026-11-05). So guests are emailed only for what they
 // need to know (an invitation, a new time, who's on it; a cancellation), not for a new title,
@@ -4303,21 +4320,22 @@ exports.onOneOffMeeting = onDocumentCreated({ document: 'oneOffMeetings/{id}', s
   const who = await meetingInvitees(token, d.channel);
   const emails = ((who && who.emails) || []).concat(d.by.email).filter((e, i, a) => a.indexOf(e) === i).slice(0, slackMeeting.MAX_GUESTS + 1);
   const footer = 'Set up by ' + d.by.name + ' for ' + (d.channelName === 'this conversation' ? 'a Slack conversation' : '#' + d.channelName) + ', with /meeting on BOLD.OS.';
-  let created = null, opening = false;
+  let created = null;
   try {
     let ev = await googleFetch('POST', CAL + '?conferenceDataVersion=1&sendUpdates=all', slackMeeting.eventOf(d, emails, 'bold-meeting-' + event.params.id, footer));
     created = ev;
     await event.data.ref.set({ eventId: ev.id, eventLink: ev.htmlLink || '', meetUrl: d.link || ev.hangoutLink || '', invited: emails.length }, { merge: true });
-    if (!d.link){ opening = true; ev = await ensureMeetOpen(ev, ev.id); opening = false; }
+    let notOpen = false;
+    if (!d.link){ const o = await openMeetOnce(ev, ev.id, '', 'meeting ' + event.params.id); ev = o.ev; notOpen = !o.code; }
     const meet = d.link || ev.hangoutLink || '';
     await event.data.ref.set({ doneAt: Date.now(), meetUrl: meet }, { merge: true });
     await tell('📅 Invited ' + (emails.length === 1 ? 'you' : emails.length + ' people') + ' to ' + (ev.htmlLink ? linkedTitle(slackText(d.title), ev.htmlLink) : '*' + slackText(d.title) + '*') +
-      ', ' + slackMeeting.whenText(d.start, d.minutes) + (meet ? ' · ' + linkedTitle('join', meet) : '') + '. The invitations come from the lab’s Google account.');
+      ', ' + slackMeeting.whenText(d.start, d.minutes) + (meet ? ' · ' + linkedTitle('join', meet) : '') + '. The invitations come from the lab’s Google account.' +
+      (notOpen ? ' BOLD.OS couldn’t make its Google Meet open to everyone, so people outside the lab’s account knock first: open its Calendar event and set Meeting access to Open.' : ''));
   } catch (err){
     logger.warn('A meeting from /meeting failed', { id: event.params.id, error: String(err && err.message || err) });
     await event.data.ref.set({ doneAt: Date.now(), error: String(err && err.message || err).slice(0, 300) }, { merge: true });
-    await tell(opening ? 'The invitations for ' + slackText(d.title) + ' were sent, but BOLD.OS couldn’t make its Google Meet open to everyone. Open its Calendar event and set Meeting access to Open.'
-      : created ? 'The invitations for ' + slackText(d.title) + ' were sent, but BOLD.OS couldn’t finish setting it up.'
+    await tell(created ? 'The invitations for ' + slackText(d.title) + ' were sent, but BOLD.OS couldn’t finish setting it up.'
       : isCalendarLimit(err) ? 'Couldn’t send the invites for ' + slackText(d.title) + ': Google’s limit for the lab’s calendar was reached. Try again in a few hours.'
       : 'Couldn’t send the invites for ' + slackText(d.title) + ' — try again.');
   }
@@ -4816,17 +4834,19 @@ async function syncWorkspace(id, changes){
         patch.eventMeeting = ws.meeting; patch.eventStart = seriesStart(ev);
         await save();
         if (!ws.meeting.link){
-          ev = await ensureMeetOpen(ev, ev.id);
-          const url = ev.hangoutLink || '';
-          if (url !== (ws.meetUrl || '')){ patch.meetUrl = url; await save(); }
+          const o = await openMeetOnce(ev, ev.id, '', 'project ' + id);
+          ev = o.ev;
+          if (o.code) patch.meetOpenCode = o.code;
+          if (ev.hangoutLink) patch.meetUrl = ev.hangoutLink;
+          await save();
         }
       } else if (!wantEvent && ws.eventId){
         await googleFetch('DELETE', CAL + '/' + ws.eventId + '?sendUpdates=all').catch(function(err){ if (err.status !== 410 && err.status !== 404) throw err; });
         patch.eventId = FieldValue.delete(); patch.eventLink = FieldValue.delete();
         patch.meetUrl = FieldValue.delete(); patch.eventMeeting = FieldValue.delete(); patch.eventPausedAt = FieldValue.delete();
-        patch.eventStart = FieldValue.delete();
+        patch.eventStart = FieldValue.delete(); patch.meetOpenCode = FieldValue.delete();
         await save();
-        ['eventId', 'eventLink', 'meetUrl', 'eventMeeting', 'eventPausedAt', 'eventStart'].forEach(function(k){ delete ws[k]; });
+        ['eventId', 'eventLink', 'meetUrl', 'eventMeeting', 'eventPausedAt', 'eventStart', 'meetOpenCode'].forEach(function(k){ delete ws[k]; });
       } else if (ws.eventId){
         const ev = await googleFetch('GET', CAL + '/' + ws.eventId);
         const change = {}, timesChanged = !sameMeetingTimes(ws.eventMeeting, ws.meeting);
@@ -4845,7 +4865,11 @@ async function syncWorkspace(id, changes){
           now = await googleFetch('PATCH', CAL + '/' + ws.eventId + '?conferenceDataVersion=1&sendUpdates=' + calendarUpdates(change), change) || ev;
           patch.eventMeeting = ws.meeting; patch.eventPausedAt = ws.pausedAt || FieldValue.delete(); patch.eventStart = seriesStart(now); await save();
         } else if (!ws.eventStart && seriesStart(ev)){ patch.eventStart = seriesStart(ev); await save(); }
-        if (!ws.meeting.link) now = await ensureMeetOpen(now, ws.eventId);
+        if (!ws.meeting.link){
+          const o = await openMeetOnce(now, ws.eventId, ws.meetOpenCode || '', 'project ' + id);
+          now = o.ev;
+          if (o.code && o.code !== ws.meetOpenCode) patch.meetOpenCode = o.code;
+        }
         const url = ws.meeting.link || now.hangoutLink || '';
         if (url !== (ws.meetUrl || '')){ patch.meetUrl = url; await save(); }
         // Its dates moved one by one (a new time for all of them leaves none moved).
@@ -6656,12 +6680,14 @@ async function syncStudyMeeting(email){
       }, eventConference(s.meeting, 'bold-study-' + crypto.randomBytes(6).toString('hex')), eventTimes(s.meeting)));
       Object.assign(patch, { eventId: ev.id, eventLink: ev.htmlLink, meetUrl: s.meeting.link || ev.hangoutLink || '', eventMeeting: s.meeting, eventStart: seriesStart(ev) });
       if (!s.meeting.link){
-        ev = await ensureMeetOpen(ev, ev.id);
+        const o = await openMeetOnce(ev, ev.id, '', 'study');
+        ev = o.ev;
         patch.meetUrl = ev.hangoutLink || patch.meetUrl;
+        if (o.code) patch.meetOpenCode = o.code;
       }
     } else if (!want && s.eventId){
       await googleFetch('DELETE', CAL + '/' + s.eventId + '?sendUpdates=all').catch(function(err){ if (err.status !== 410 && err.status !== 404) throw err; });
-      ['eventId', 'eventLink', 'meetUrl', 'eventMeeting', 'eventPausedAt', 'eventStart'].forEach(function(k){ patch[k] = FieldValue.delete(); });
+      ['eventId', 'eventLink', 'meetUrl', 'eventMeeting', 'eventPausedAt', 'eventStart', 'meetOpenCode'].forEach(function(k){ patch[k] = FieldValue.delete(); });
     } else if (s.eventId){
       const ev = await googleFetch('GET', CAL + '/' + s.eventId);
       const change = {}, timesChanged = !sameMeetingTimes(s.eventMeeting, s.meeting);
@@ -6678,7 +6704,11 @@ async function syncStudyMeeting(email){
         now = await googleFetch('PATCH', CAL + '/' + s.eventId + '?conferenceDataVersion=1&sendUpdates=' + calendarUpdates(change), change) || ev;
         patch.eventMeeting = s.meeting; patch.eventPausedAt = s.pausedAt || FieldValue.delete(); patch.eventStart = seriesStart(now);
       } else if (!s.eventStart && seriesStart(ev)) patch.eventStart = seriesStart(ev);
-      if (!s.meeting.link) now = await ensureMeetOpen(now, s.eventId);
+      if (!s.meeting.link){
+        const o = await openMeetOnce(now, s.eventId, s.meetOpenCode || '', 'study');
+        now = o.ev;
+        if (o.code && o.code !== s.meetOpenCode) patch.meetOpenCode = o.code;
+      }
       const url = s.meeting.link || now.hangoutLink || '';
       if (url !== (s.meetUrl || '')) patch.meetUrl = url;
       if (!s.pausedAt){
@@ -9815,7 +9845,7 @@ exports.boldApi = agentApi.boldApi;
 exports.calendarFeed = agentApi.calendarFeed;
 // Recurring lab meetings (series.html, Events): functions/series.js.
 const labSeries = require('./series')({ db, onCall, onDocumentWritten, HttpsError, logger, callerEmail, isFullWrite, access, rolesEmails,
-  googleFetch, syncMoves, CAL, calendarUpdates, isCalendarLimit, CALENDAR_LIMIT_MSG, eventConference, eventTimes, conferenceChange, ensureMeetOpen, meetingRecurrence, sameMeetingTimes, seriesStart,
+  googleFetch, syncMoves, CAL, calendarUpdates, isCalendarLimit, CALENDAR_LIMIT_MSG, eventConference, eventTimes, conferenceChange, openMeetOnce, meetingRecurrence, sameMeetingTimes, seriesStart,
   normalizeMeeting, googleAddressesFor, groupOf, tellStaff, slackText, linkedTitle, SITE_URL, GOOGLE_OAUTH, SLACK_BOT_TOKEN, FieldValue, crypto,
   onSchedule, tellPeople: (emails, text, key) => sendEvent(SLACK_BOT_TOKEN.value(), { key, emails, headline: text }) });
 exports.eventSeries = labSeries.eventSeries;
@@ -9931,7 +9961,7 @@ exports.problemInterview = onCall({ secrets: [BOLD_LLM_KEY], timeoutSeconds: 120
   }
 });
 
-exports._internal = { ownDocs, proposalRoute, proposalHours, asksForMore, replaceEmail, accountEmailsBySlackId, calendarUpdates, isCalendarLimit, meetCodeOf, ensureMeetOpen,
+exports._internal = { ownDocs, proposalRoute, proposalHours, asksForMore, replaceEmail, accountEmailsBySlackId, calendarUpdates, isCalendarLimit, meetCodeOf, ensureMeetOpen, openMeetOnce,
   slackImagesOf, slackToPlain, pingText, bugReportOf, bugNotes, bugTitle,
   channelsToJoin, setupMissing, setupMissingText, workspaceStarted, normalizeRepo, setupNudgeText, projectHealth,
   trialAction, trialTexts, stepsLeft, addedTo, eligibleSteps, eligibleText, onOthers,
