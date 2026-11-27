@@ -11,6 +11,7 @@ test('shared topic names have stable ids and a suggested icon', async () => {
   assert.equal(topics.topicId(' - '), '');
   assert.equal(topics.suggestIcon('Reading group'), '📖');
   assert.ok(topics.suggestIcon('Other'));
+  assert.equal(topics.topicId('BOLD Outer Loop'), topics.topicId('About BOLD'));
   for (const topic of topics.starters) {
     assert.equal(topics.topicId(topic.name), topic.id);
     assert.equal(topics.suggestIcon(topic.name), topic.icon);
@@ -49,7 +50,9 @@ test('creating a topic selects it without submitting or resetting the draft', as
   const input = (s, value) => { q(s).value = value; q(s).dispatchEvent(new window.Event('input')); };
   assert.equal(picker.required(), false);
   input('[type=search]', ' A ');
-  assert.deepEqual(Array.from(q('.bs-topic-options').querySelectorAll('[data-topic]'), b => b.dataset.topic), ['about-bold', 'advice']);
+  assert.deepEqual(Array.from(q('.bs-topic-options').querySelectorAll('[data-topic]'), b => b.dataset.topic), ['advice']);
+  input('[type=search]', 'bold outer');
+  assert.equal(q('[data-topic=about-bold]').textContent, '🦋 BOLD Outer Loop');
   input('[type=search]', '');
   assert.equal(q('.bs-topic-options').children.length, topics.starters.length);
   input('[type=search]', 'adv');

@@ -40,7 +40,15 @@ async function migrate(db, assignments, apply, log) {
   function record(status) { totals[status] = (totals[status] || 0) + 1; }
   for (const { id, name, icon } of starters) {
     const topic = db.collection('conversationTopics').doc(id);
-    if ((await topic.get()).exists) continue;
+    const existing = await topic.get();
+    if (existing.exists) {
+      if (id === 'about-bold' && existing.get('name') === 'About BOLD') {
+        log('Rename About BOLD to ' + name);
+        if (apply) await topic.update({ name }, { lastUpdateTime: existing.updateTime });
+        record('rename topic');
+      }
+      continue;
+    }
     log('Create topic ' + name);
     if (apply) {
       try { await topic.create({ name, icon }); }

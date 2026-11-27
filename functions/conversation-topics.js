@@ -2,15 +2,17 @@
 // installed by the migration. This module is also served as a classic script.
 const ConversationTopics = (function(){
   const starters = [
-    { id: 'about-bold', name: 'About BOLD', icon: '🦋' },
+    { id: 'about-bold', name: 'BOLD Outer Loop', icon: '🦋' },
     { id: 'bold-os-feedback', name: 'BOLD.OS feedback', icon: '⚙️' },
     { id: 'research-brainstorms', name: 'Research brainstorms', icon: '🧠' },
     { id: 'project-proposals', name: 'Project proposals', icon: '📄' },
     { id: 'advice', name: 'Advice', icon: '☎️' },
   ];
   function topicId(name){
-    return String(name).trim().normalize('NFKD').replace(/\p{M}/gu, '').toLowerCase()
+    const slug = String(name).trim().normalize('NFKD').replace(/\p{M}/gu, '').toLowerCase()
       .replace(/[^\p{L}\p{N}]+/gu, '-').replace(/^-|-$/g, '');
+    // Keep the original document ID in existing assignments, drafts and shared links.
+    return slug === 'bold-outer-loop' ? 'about-bold' : slug;
   }
   // Lab vocabulary supplements the site's named emoji. Match whole words so "planet" doesn't match "plan".
   const keywords = new Map();

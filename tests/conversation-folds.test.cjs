@@ -137,7 +137,7 @@ test('the connector and its minus button fold their own branch and share the hea
 test('topic previews are capped and searching within a topic links to a reply in another topic', async () => {
   const forum = openThread(new Map(), 'sam', '');
   forum.publish('conversationTopics', [
-    { id: 'advice', name: 'Advice', icon: '☎️' }, { id: 'about-bold', name: 'About BOLD', icon: '🦋' }
+    { id: 'advice', name: 'Advice', icon: '☎️' }, { id: 'about-bold', name: 'BOLD Outer Loop', icon: '🦋' }
   ]);
   const rows = ['first', 'second', 'third', 'fourth', 'old'].map((id, i) => ({
     ...post, id, title: id, topicId: id === 'old' ? 'advice' : 'about-bold', at: i, pinned: id === 'first'

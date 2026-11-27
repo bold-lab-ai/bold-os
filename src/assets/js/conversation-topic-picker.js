@@ -1,7 +1,7 @@
 // The first choices include the lab's icons. Searching also uses the site's emoji catalogue.
 function conversationIconChooser(editor){
   var featured = [
-    ['🦋', 'Butterfly', 'about bold'], ['☎️', 'Telephone', 'advice help phone'], ['⚙️', 'Gear', 'feedback settings'],
+    ['🦋', 'Butterfly', 'bold outer loop'], ['☎️', 'Telephone', 'advice help phone'], ['⚙️', 'Gear', 'feedback settings'],
     ['📄', 'Document', 'file page proposal project plan'], ['🧠', 'Brain', 'research brainstorm'],
     ['📖', 'Book', 'paper reading'], ['🕒', 'Clock', 'meeting event'], ['💬', 'Speech bubble', 'general conversation chat'],
     ['💡', 'Light bulb', 'idea'], ['🔬', 'Microscope', 'science'], ['🌱', 'Seedling', 'growth'], ['⭐', 'Star', 'favourite']
