@@ -21,6 +21,9 @@ async function setup(search = '', stored = {}, opts = {}){
   window.HTMLElement.prototype.scrollIntoView = function(){};
   window.HTMLElement.prototype.focus = function(){};
   window.HTMLElement.prototype.reportValidity = function(){ return true; };
+  // Not in linkedom: a select's value.
+  let category = '';
+  Object.defineProperty(document.getElementById('pbCategory'), 'value', {get: () => category, set: (v) => { category = String(v); }, configurable: true});
   const reply = (r) => Promise.resolve({data: r});
   const callable = (name) => (data) => {
     calls.push({name, data: JSON.parse(JSON.stringify(data))});
@@ -51,6 +54,8 @@ async function setup(search = '', stored = {}, opts = {}){
       confirmAction: async () => ({skip: {}})}};
   ctx.window.matchMedia = ctx.matchMedia;
   vm.createContext(ctx);
+  vm.runInContext(fs.readFileSync(require.resolve('../functions/problem-category.js'), 'utf8'), ctx);
+  ctx.BoldProblemCategory = ctx.BoldProblemCategory || window.BoldProblemCategory;
   for (const f of ['assets/js/problem-projects.js', 'assets/js/problem-family-picker.js']) vm.runInContext(read(f), ctx);
   // The shared modules hang themselves on window; the page reads them as globals.
   ctx.BoldProblemProjects = ctx.BoldProblemProjects || window.BoldProblemProjects;
@@ -133,10 +138,12 @@ test('the form way: the fields at once, no conversation, saved with the person a
   assert.equal(f.$('pbReviewHead').textContent, 'Describe the problem');
   assert.equal(f.$('pbSwitch').textContent, 'Talk it through with Sofya instead');
   f.$('pbTitle').value = 'T'; f.$('pbWhy').value = 'W'; f.$('pbDifficulties').value = 'D'; f.$('pbExisting').value = 'E';
+  f.$('pbCategory').value = 'method';
   f.$('pbReview').dispatchEvent(new f.window.Event('submit', {cancelable: true}));
   for (let i = 0; i < 6; i++) await new Promise((r) => setTimeout(r, 0));
   const create = f.calls.find((c) => c.data.action === 'create').data;
   assert.equal(create.title, 'T'); assert.equal(create.owner_id, 'UME');
+  assert.equal(create.category, 'method'); assert.equal(create.builds_benchmark, false); assert.equal(create.reminders, true);
   const events = trial(f.calls).map((e) => e.event);
   assert.deepEqual(events, ['start', 'saved']);
   assert.equal(trial(f.calls)[1].bold, null);
@@ -164,4 +171,44 @@ test('a conversation records its turns, and what was saved against BOLD\'s last 
   assert.deepEqual(events.map((e) => e.event), ['start', 'turn', 'turn', 'saved']);
   assert.equal(events[3].bold.title, 'Divergence');
   assert.equal(events[3].saved.title, 'Divergence');
+});
+
+test('an open question asks only for what inspired it, and is saved with no verifier step', async () => {
+  const f = await setup('', {}, {variant: 'form'});
+  const described = [...f.document.querySelectorAll('#pbReview [data-described]')];
+  assert.equal(described.length, 3);
+  assert.equal(f.$('pbInspirationField').hidden, true);
+  f.$('pbCategory').value = 'open_question';
+  f.$('pbReview').dispatchEvent(new f.window.Event('change'));
+  assert.equal(f.$('pbInspirationField').hidden, false);
+  assert.ok(described.every((field) => field.hidden && !field.querySelector('textarea').required));
+  assert.equal(f.$('pbInspiration').required, true);
+  assert.equal(f.$('pbVerifierStep').textContent, 'Verifier not required');
+  assert.deepEqual([...f.document.querySelectorAll('#pbChecks li')].map((li) => li.textContent), ['A title', 'Its category', 'What inspired it', 'What it’s part of (optional)']);
+  f.$('pbTitle').value = 'Second descent'; f.$('pbInspiration').value = ' Loss falls twice. ';
+  f.$('pbReview').dispatchEvent(new f.window.Event('submit', {cancelable: true}));
+  for (let i = 0; i < 6; i++) await new Promise((r) => setTimeout(r, 0));
+  const create = f.calls.find((c) => c.data.action === 'create').data;
+  assert.equal(create.category, 'open_question'); assert.equal(create.inspiration, 'Loss falls twice.');
+  assert.equal(create.builds_benchmark, false); assert.equal(create.reminders, false);
+  assert.equal(f.visits.length, 1);
+  // Back to a method: the three descriptions are asked for again.
+  const g = await setup('', {}, {variant: 'form'});
+  g.$('pbCategory').value = 'open_question'; g.$('pbReview').dispatchEvent(new g.window.Event('change'));
+  g.$('pbCategory').value = 'method'; g.$('pbReview').dispatchEvent(new g.window.Event('change'));
+  assert.ok([...g.document.querySelectorAll('#pbReview [data-described]')].every((field) => !field.hidden && field.querySelector('textarea').required));
+  assert.equal(g.$('pbVerifierStep').textContent, 'Add a verifier');
+});
+
+test('a benchmark is saved as its category, and as the older benchmark choice', async () => {
+  const f = await setup('', {}, {variant: 'form'});
+  f.$('pbTitle').value = 'T'; f.$('pbWhy').value = 'W'; f.$('pbDifficulties').value = 'D'; f.$('pbExisting').value = 'E';
+  f.$('pbCategory').value = 'benchmark';
+  f.$('pbReview').dispatchEvent(new f.window.Event('change'));
+  assert.equal(f.$('pbVerifierStep').textContent, 'Verifier not required');
+  f.$('pbReview').dispatchEvent(new f.window.Event('submit', {cancelable: true}));
+  for (let i = 0; i < 6; i++) await new Promise((r) => setTimeout(r, 0));
+  const create = f.calls.find((c) => c.data.action === 'create').data;
+  assert.equal(create.category, 'benchmark'); assert.equal(create.builds_benchmark, true); assert.equal(create.reminders, false);
+  assert.equal('inspiration' in create, false);
 });

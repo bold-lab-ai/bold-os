@@ -7,17 +7,24 @@
   var el = function(id){ return document.getElementById(id); };
   var esc = BOLD.escapeHtml;
   var OPENING = 'Describe the problem you’d like to add: what you want to solve, and why it matters to you.';
-  // What the Problem Bank needs, in the order Sofya asks for it.
-  var NEEDS = [
-    ['title', 'A title'],
-    ['significance', 'Why it matters'],
-    ['difficulties', 'What makes it hard'],
-    ['existing_solutions', 'Where the frontier is'],
-    ['benchmark', 'Whether it builds a benchmark'],
-    ['links', 'What it’s part of <small>(optional)</small>']
-  ];
-  var EMPTY = { title: '', significance: '', difficulties: '', existing_solutions: '', builds_benchmark: false, benchmark_known: false,
+  var categories = BoldProblemCategory;
+  // What the Problem Bank needs, in the order Sofya asks for it: by the problem's category (problem-category.js).
+  // An open question is defined by what inspired it alone.
+  var DESCRIBED = [['significance', 'Why it matters'], ['difficulties', 'What makes it hard'], ['existing_solutions', 'Where the frontier is']];
+  function needs(){
+    return [['title', 'A title'], ['category', 'Its category']].concat(draft.category === 'open_question' ? [['inspiration', 'What inspired it']] : DESCRIBED)
+      .concat([['links', 'What it’s part of <small>(optional)</small>']]);
+  }
+  var EMPTY = { category: '', title: '', significance: '', difficulties: '', existing_solutions: '', inspiration: '',
     collaborators: '', project_ids: [], parent_ids: [], related_ids: [] };
+  // A draft as this page keeps it. One from before categories (a saved draft, or a server not yet updated) says only
+  // whether it builds a benchmark, once known.
+  function shaped(d){
+    var out = Object.assign({}, EMPTY, d || {});
+    if (categories.LIST.indexOf(out.category) < 0) out.category = out.benchmark_known ? (out.builds_benchmark ? 'benchmark' : 'method') : '';
+    delete out.builds_benchmark; delete out.benchmark_known;
+    return out;
+  }
   var log = el('pbLog'), form = el('pbChatForm'), input = el('pbChatInput'), send = el('pbSend'), status = el('pbStatus');
   var review = el('pbReview'), save = el('pbReviewSave'), familyGraph = null, familySelection = null;
   var still = window.matchMedia && matchMedia('(prefers-reduced-motion: reduce)').matches;
@@ -54,19 +61,31 @@
 
   // What it has so far, ticked; Save problem once Sofya says it's complete.
   function has(k){
-    if (k === 'benchmark') return draft.benchmark_known;
     if (k === 'links') return !!(draft.parent_ids.length || draft.related_ids.length || draft.project_ids.length);
     return !!draft[k];
   }
   // Everything the Problem Bank needs is there (as the server's problem-interview.js complete()).
-  function complete(d){ return !!(d.title && d.significance && d.difficulties && d.existing_solutions && d.benchmark_known); }
+  function complete(d){
+    return !!(d.category && d.title && (d.category === 'open_question' ? d.inspiration : d.significance && d.difficulties && d.existing_solutions));
+  }
+  // Only a method gets a verifier; until its category is known, the step stays.
+  function skipsVerifier(){ return !!draft.category && draft.category !== 'method'; }
   function drawNeeds(){
-    el('pbChecks').innerHTML = NEEDS.map(function(n){
+    el('pbChecks').innerHTML = needs().map(function(n){
       return '<li class="' + (has(n[0]) ? 'is-done' : '') + '"><span>' + n[1] + '</span></li>';
     }).join('');
-    el('pbVerifierStep').textContent = draft.builds_benchmark ? 'Verifier not required' : 'Add a verifier';
-    el('pbBaselineStep').hidden = draft.builds_benchmark;
+    el('pbVerifierStep').textContent = skipsVerifier() ? 'Verifier not required' : 'Add a verifier';
+    el('pbBaselineStep').hidden = skipsVerifier();
     el('pbToReview').hidden = review.hidden;
+  }
+  // The fields of its category: an open question shows its inspiration in place of the three descriptions.
+  function showCategory(){
+    var category = el('pbCategory').value, openQuestion = category === 'open_question';
+    el('pbCategoryHint').textContent = categories.HINTS[category] || 'Method: its solutions are scored by a verifier. Benchmark: the benchmark is the goal. Open question: an observation or an idea to follow.';
+    el('pbInspirationField').hidden = !openQuestion; el('pbInspiration').required = openQuestion;
+    Array.prototype.forEach.call(review.querySelectorAll('[data-described]'), function(field){
+      field.hidden = openQuestion; field.querySelector('textarea').required = !openQuestion;
+    });
   }
 
   /* ---------- Check and edit: what Sofya gathered, as fields ---------- */
@@ -78,7 +97,7 @@
   function showReview(first){
     el('pbTitle').value = draft.title; el('pbWhy').value = draft.significance; el('pbDifficulties').value = draft.difficulties;
     el('pbExisting').value = draft.existing_solutions; el('pbCollaborators').value = draft.collaborators;
-    el('pbBuildsBenchmark').checked = draft.builds_benchmark;
+    el('pbCategory').value = draft.category; el('pbInspiration').value = draft.inspiration; showCategory();
     var chosen = stones().filter(function(p){ return draft.project_ids.indexOf(p.id) >= 0; });
     el('pbProjects').innerHTML = BoldProblemProjects.fields(stones(), chosen) || 'No projects yet.';
     el('pbProjectsBox').open = chosen.length > 0;
@@ -91,13 +110,13 @@
   function readReview(){
     var family = familySelection ? familySelection() : { parents: draft.parent_ids, related: draft.related_ids };
     return { title: el('pbTitle').value.trim(), significance: el('pbWhy').value.trim(), difficulties: el('pbDifficulties').value.trim(),
-      existing_solutions: el('pbExisting').value.trim(), builds_benchmark: el('pbBuildsBenchmark').checked, benchmark_known: true,
+      existing_solutions: el('pbExisting').value.trim(), category: el('pbCategory').value, inspiration: el('pbInspiration').value.trim(),
       collaborators: el('pbCollaborators').value.trim(),
       project_ids: BoldProblemProjects.selected(el('pbProjects'), stones()).map(function(p){ return p.id; }),
       parent_ids: family.parents.slice(), related_ids: family.related.slice() };
   }
   review.addEventListener('input', function(){ draft = readReview(); drawNeeds(); persistSoon(); });
-  review.addEventListener('change', function(){ draft = readReview(); drawNeeds(); persistSoon(); });
+  review.addEventListener('change', function(){ showCategory(); draft = readReview(); drawNeeds(); persistSoon(); });
   el('pbToReview').addEventListener('click', function(){ review.scrollIntoView({ behavior: still ? 'auto' : 'smooth', block: 'start' }); el('pbTitle').focus({ preventScroll: true }); });
   // The way they're on: the conversation with its checklist, or the fields alone.
   function applyMode(){
@@ -198,7 +217,7 @@
     if (!d || talking || saving) return;
     start();
     if (mode !== 'chat') switchTo('chat', 'choice');
-    draftId = d.id; turns = (d.turns || []).slice(); draft = Object.assign({}, EMPTY, d.draft || {}); done = !!d.done || complete(draft); me = d.me || me;
+    draftId = d.id; turns = (d.turns || []).slice(); draft = shaped(d.draft); done = !!d.done || complete(draft); me = d.me || me;
     log.innerHTML = turns.map(function(t){ return item(t.role === 'user' ? 'you' : 'bold', t.content); }).join('');
     el('pbSavedNote').hidden = false; setAddress();
     drawNeeds(); controls(); drawDrafts();
@@ -233,9 +252,10 @@
     firebase.app().functions('europe-west2').httpsCallable('problemInterview', { timeout: SOFYA_WAIT })({ turns: turns, draft: draft }).then(function(x){ return x.data; }).then(function(r){
       if (generation !== epoch) return;
       if (r.me) me = r.me;
-      lastBold = r.draft; trial({ event: 'turn' });
-      var now = !!r.ready || complete(r.draft), first = !done && now;
-      draft = r.draft; done = done || now;
+      lastBold = shaped(r.draft); trial({ event: 'turn' });
+      draft = shaped(r.draft);
+      var now = !!r.ready || complete(draft), first = !done && now;
+      done = done || now;
       turns.push({ role: 'assistant', content: r.reply });
       var p = log.querySelector('.ha-pending'); if (p) p.remove();
       stream(r.reply); drawNeeds();
@@ -266,17 +286,21 @@
     if (!review.reportValidity()) return;
     draft = readReview();
     var generation = epoch;
-    var data = { action: 'create', builds_benchmark: draft.builds_benchmark, title: draft.title, owner_id: me.id, collaborators: draft.collaborators,
+    // builds_benchmark too: a server from before categories reads only that.
+    var method = draft.category === 'method', openQuestion = draft.category === 'open_question';
+    var data = { action: 'create', category: draft.category, builds_benchmark: draft.category === 'benchmark', title: draft.title, owner_id: me.id, collaborators: draft.collaborators,
       significance: draft.significance, difficulties: draft.difficulties, existing_solutions: draft.existing_solutions,
       projects: projects.filter(function(p){ return draft.project_ids.indexOf(p.id) >= 0; }).map(function(p){ return { id: p.id, board: p.board || '' }; }) };
+    if (openQuestion) data.inspiration = draft.inspiration;
     if (draft.parent_ids.length || draft.related_ids.length) data.family = { parents: draft.parent_ids.slice(), related: draft.related_ids.slice() };
     saving = true; controls();
     try {
       var choice = await BOLD.confirmAction({ title: 'Save “' + draft.title + '”?', go: 'Save problem', always: true,
-        effects: ['Add it to the Problem Bank, with you as its definer.'].concat(data.builds_benchmark ? ['It builds a benchmark, so it needs no separate verifier.'] :
+        effects: ['Add it to the Problem Bank, with you as its definer.'].concat(openQuestion ? ['It is an open question, so it needs no verifier.'] :
+          !method ? ['It builds a benchmark, so it needs no separate verifier.'] :
           [{ key: 'reminders', text: 'Remind me on Slack now and every week until this problem has a registered verifier. My notification settings apply.' }]) });
       if (!choice || generation !== epoch) return;
-      data.reminders = !data.builds_benchmark && !(choice.skip && choice.skip.reminders);
+      data.reminders = method && !(choice.skip && choice.skip.reminders);
       var signature = JSON.stringify(data);
       if (!submission || submission.signature !== signature) submission = { signature: signature, id: crypto.randomUUID() };
       status.textContent = 'Saving…';

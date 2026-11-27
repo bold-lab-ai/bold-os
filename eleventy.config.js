@@ -11,6 +11,8 @@ export default function (eleventyConfig) {
   // The three-way merge proposals use: one file for the server and the pages (#177).
   eleventyConfig.addPassthroughCopy({ 'functions/merge.js': 'assets/js/merge.js' });
   eleventyConfig.addPassthroughCopy({ 'functions/research-map.js': 'assets/js/research-map.js' });
+  // A problem's category (method, benchmark, open_question): the server's and the pages'.
+  eleventyConfig.addPassthroughCopy({ 'functions/problem-category.js': 'assets/js/problem-category.js' });
   // When the home letters are due, and which is current: the server's and the home page's (letter-due.js).
   eleventyConfig.addPassthroughCopy({ 'functions/letter-due.js': 'assets/js/letter-due.js' });
 

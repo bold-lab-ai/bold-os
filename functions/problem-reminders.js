@@ -1,5 +1,6 @@
 // Claim each due notice before contacting Slack. A crashed worker releases its claim after
 // ten minutes. A confirmed refusal can retry; an uncertain Slack reply waits until next week.
+const {needsVerifier} = require('./problem-category');
 const WEEK = 7 * 24 * 60 * 60 * 1000;
 const RETRY = 60 * 60 * 1000;
 const LEASE = 10 * 60 * 1000;
@@ -10,7 +11,7 @@ async function sendDue(db, ref, send, now = Date.now()) {
     const snap = await tx.get(ref);
     if (!snap.exists) return;
     const p = snap.data();
-    if (!p.reminders || p.builds_benchmark === true || p.archived || p.evaluator || !Number.isFinite(p.verifierNoticeDue) || p.verifierNoticeDue > now) return;
+    if (!p.reminders || !needsVerifier(p) || p.archived || p.evaluator || !Number.isFinite(p.verifierNoticeDue) || p.verifierNoticeDue > now) return;
     const cycle = p.verifierNoticeCycle ?? p.verifierNoticeDue;
     tx.update(ref, { verifierNoticeDue: claimedUntil, verifierNoticeCycle: cycle });
     return { id: ref.id, title: p.title, email: p.createdBy, cycle };

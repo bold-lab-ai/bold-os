@@ -36,7 +36,8 @@ test('the draft keeps only known fields and ids it was given', () => {
 
 test('the prompt names what it can link to', () => {
   const p = I.systemPrompt(lab);
-  for (const s of ['XY problem', 'A problem is not a method', 'ns-hcld: Human-Centric (northstar)', 'ms-co: Co-scientist (moonshot)', 'Diverging runs', 'existing_solutions', 'builds_benchmark']) assert.ok(p.includes(s), s);
+  for (const s of ['XY problem', 'A problem is not a method', 'ns-hcld: Human-Centric (northstar)', 'ms-co: Co-scientist (moonshot)', 'Diverging runs', 'existing_solutions', '"method", "benchmark" or "open_question"', 'inspiration: what inspired it', 'the problem itself is still not a method']) assert.ok(p.includes(s), s);
+  assert.ok(!p.includes('builds_benchmark') && !p.includes('benchmark_known'));
 });
 
 test('one turn, thinking off, with the current draft; ready only once the required fields are there', async () => {
@@ -66,4 +67,20 @@ test('an answer it can\u2019t read is asked again, once', async () => {
   let m = 0;
   await assert.rejects(I.interview([{role: 'user', content: 'x'}], lab, async () => { m++; return {message: {content: '{'}}; }, said, jsonOf));
   assert.equal(m, 2);
+});
+
+test('a draft has a category: an open question is complete with its title and inspiration alone', () => {
+  const known = {projects: new Set(), problems: new Set(), parents: new Set()};
+  const d = I.cleanDraft({category: 'open_question', title: 'Second descent', inspiration: ' Loss falls twice. ', significance: '', builds_benchmark: true}, known);
+  assert.equal(d.category, 'open_question'); assert.equal(d.inspiration, 'Loss falls twice.');
+  assert.equal(d.builds_benchmark, false); assert.equal(d.benchmark_known, true); // As a page from before categories reads it.
+  assert.equal(I.complete(d), true);
+  assert.equal(I.complete({...d, inspiration: ''}), false);
+  assert.equal(I.complete({...d, category: 'method'}), false); // A method needs the other three.
+  assert.equal(I.cleanDraft({category: 'idea', title: 'T'}, known).category, '');
+  assert.equal(I.complete(I.cleanDraft({title: 'T', significance: 'S', difficulties: 'D', existing_solutions: 'E'}, known)), false); // Its category isn't known yet.
+  // Drafts from before categories: the benchmark decision, once known.
+  assert.equal(I.cleanDraft({builds_benchmark: true, benchmark_known: true}, known).category, 'benchmark');
+  assert.equal(I.cleanDraft({builds_benchmark: false, benchmark_known: true}, known).category, 'method');
+  assert.equal(I.cleanDraft({builds_benchmark: false, benchmark_known: false}, known).category, '');
 });

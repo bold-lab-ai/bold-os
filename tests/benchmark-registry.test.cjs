@@ -557,3 +557,88 @@ test('required handoffs distinguish incomplete deployment from insufficient proj
     for (const [k,v] of Object.entries(previous)) {if(v===undefined) delete process.env[k]; else process.env[k]=v;}
   }
 });
+
+test('an open question is defined by its inspiration and skips the verifier, its registration and its reminders', async () => {
+  const h = harness();
+  const create = {action:'create', category:'open_question', title:'Second descent in small models', owner_id:'UDEFINER', projects:[{id:'diverging-runs'}],
+    inspiration:'Loss curves of small models fall a second time, and nobody has explained it.', request_id:'22222222-3333-4444-5555-666666666666'};
+  await assert.rejects(h.call({...create,inspiration:''}),{code:'invalid-argument'});
+  await assert.rejects(h.call({...create,category:'idea'}),{code:'invalid-argument'});
+  await assert.rejects(h.call({...create,builds_benchmark:true}),{code:'invalid-argument'});
+  const saved = await h.call(create), id = saved.problem_id;
+  assert.deepEqual(await h.call(create),saved);
+  await assert.rejects(h.call({...create,inspiration:'Another idea.'}),{code:'already-exists'});
+  await assert.rejects(h.call({...create,category:'method',significance:'x',difficulties:'y',existing_solutions:'z',reminders:false}),{code:'already-exists'});
+  const detail = await h.call({action:'get',problem_id:id});
+  assert.equal(detail.problem.category,'open_question');
+  assert.equal(detail.problem.builds_benchmark,false);
+  assert.equal(detail.problem.inspiration,create.inspiration);
+  assert.equal(detail.problem.reminders,false);
+  assert.equal(detail.can_manage_reminders,false);
+  assert.equal(h.data.get('problemBank/'+id).verifierNoticeDue,null);
+  for (const data of [(await h.call({action:'open_choices'})).items,(await h.call({action:'list'})).items,(await h.call({action:'family'})).problems])
+    assert.equal(data.find(p=>p.id===id).category,'open_question');
+  await assert.rejects(h.call({action:'reminders',problem_id:id,reminders:true}),{code:'failed-precondition'});
+  Object.assign(h.data.get('problemBank/'+id),{reminders:true,verifierNoticeDue:1});
+  const {sendDue} = require('../functions/problem-reminders');
+  assert.equal(await sendDue(h.db,h.db.collection('problemBank').doc(id),()=>assert.fail('unexpected reminder'),2),false);
+  await assert.rejects(h.call({action:'register',registration:{...record(),problem_id:id}}),e=>e.code==='failed-precondition' && /open question/.test(e.message));
+  assert.ok([...h.data.keys()].every(path=>!path.startsWith('benchmark')));
+});
+
+test('a method problem states its category, and a problem saved before categories keeps its meaning', async () => {
+  const h = harness();
+  const {problem_id} = await h.call({...openProblem, category:'method'});
+  assert.deepEqual(await h.call(openProblem),{problem_id}); // The same request from an older page: no category, the same problem.
+  const view = await h.call({action:'get',problem_id});
+  assert.equal(view.problem.category,'method'); assert.equal(view.problem.builds_benchmark,false);
+  assert.equal(view.can_manage_reminders,true);
+  const benchmark = await h.call({...openProblem, category:'benchmark', request_id:'33333333-4444-5555-6666-777777777777'});
+  assert.equal((await h.call({action:'get',problem_id:benchmark.problem_id})).problem.builds_benchmark,true);
+  // Saved before categories: only builds_benchmark, or neither.
+  const old = 'ak-'+'e'.repeat(24), older = 'ak-'+'f'.repeat(24);
+  h.data.set('problemBank/'+old,{title:'Old benchmark',builds_benchmark:true,projects:[]});
+  h.data.set('problemBank/'+older,{title:'Older problem',projects:[]});
+  assert.equal((await h.call({action:'get',problem_id:old})).problem.category,'benchmark');
+  assert.equal((await h.call({action:'get',problem_id:older})).problem.category,'method');
+});
+
+test('the category of a problem can change, and an open question always keeps an inspiration', async () => {
+  const h = harness(), {problem_id} = await h.call(openProblem), path = 'problemBank/'+problem_id;
+  const edit = changes=>({action:'update',problem_id,changes});
+  assert.ok(h.data.get(path).verifierNoticeDue);
+  await assert.rejects(h.call(edit({category:'open_question'})),{code:'invalid-argument'});
+  await assert.rejects(h.call(edit({category:'idea'})),{code:'invalid-argument'});
+  await assert.rejects(h.call(edit({category:'benchmark',builds_benchmark:false})),{code:'invalid-argument'});
+  await assert.rejects(h.call(edit({category:'open_question',inspiration:'An idea.'}),'other@example.invalid'),{code:'permission-denied'});
+  await h.call(edit({category:'open_question',inspiration:'An observation about decay.'}));
+  let saved = h.data.get(path);
+  assert.equal(saved.category,'open_question'); assert.equal(saved.builds_benchmark,false); assert.equal(saved.inspiration,'An observation about decay.');
+  assert.equal(saved.reminders,false); assert.equal(saved.verifierNoticeDue,null);
+  await assert.rejects(h.call({action:'register',registration:{...record(),problem_id}}),{code:'failed-precondition'});
+  await h.call(edit({inspiration:'A sharper observation.'}));
+  await h.call(edit({builds_benchmark:true})); // An older page still sends the benchmark choice.
+  saved = h.data.get(path);
+  assert.equal(saved.category,'benchmark'); assert.equal(saved.builds_benchmark,true);
+  await h.call(edit({category:'method'}));
+  saved = h.data.get(path);
+  assert.equal(saved.category,'method'); assert.equal(saved.builds_benchmark,false); assert.equal(saved.inspiration,'A sharper observation.');
+  // Its history names each change of category, and what it does to the verifier requirement.
+  const notes = [...h.data.keys()].filter(k=>k.startsWith(path+'/versions/')).map(k=>h.data.get(k).changeNote);
+  for (const note of ['Changed the category from Method to Open question: it no longer needs a verifier','Changed the category from Open question to Benchmark',
+      'Changed the category from Benchmark to Method: it now needs a verifier','Updated the problem definition']) assert.ok(notes.includes(note),note);
+  assert.equal((await h.call({action:'register',registration:{...record(),problem_id}})).problem_id,problem_id);
+});
+
+test('a verifier handoff is issued only for a method problem', async () => {
+  const old = {...process.env};
+  process.env.BOLD_LINKED_VERIFIER_HANDOFF_ENABLED = 'true'; process.env.BOLD_LINKED_VERIFIER_SERVICE_TOKEN_SHA256 = 'a'.repeat(64);
+  try {
+    const h = harness(), {problem_id} = await h.call(openProblem);
+    assert.match((await h.call({action:'issue_verifier_handoff',problem_id})).handoff,/^[a-f0-9]{64}$/);
+    assert.equal((await h.call({action:'get',problem_id})).problem.handoff_enabled,true);
+    await h.call({action:'update',problem_id,changes:{category:'open_question',inspiration:'An observation.'}});
+    await assert.rejects(h.call({action:'issue_verifier_handoff',problem_id}),{code:'failed-precondition'});
+    assert.equal((await h.call({action:'get',problem_id})).problem.handoff_enabled,false);
+  } finally { process.env = old; }
+});

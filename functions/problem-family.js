@@ -56,7 +56,7 @@ module.exports = function problemFamily(db, error){
   });
   async function list(full){
     const [goals, nodes, links] = await Promise.all([
-      objectives.select('title','level','parents').get(), problems.select('title','stage','archived','builds_benchmark').get(), relations.select('from','to','kind').get()
+      objectives.select('title','level','parents').get(), problems.select('title','stage','archived','builds_benchmark','category').get(), relations.select('from','to','kind').get()
     ]);
     const goalRows = goals.docs.filter(doc => OBJECTIVE_LEVELS.includes(research.levelOf(doc.data())));
     const northstars = new Set(goalRows.filter(doc => research.levelOf(doc.data()) === 'northstar').map(doc => doc.id));
@@ -66,7 +66,7 @@ module.exports = function problemFamily(db, error){
     return {
       // Northstars and moonshots (#248).
       objectives: goalRows.map(doc => ({id:doc.id,kind:research.levelOf(doc.data()),title:doc.data().title || doc.id,archived:false})),
-      problems: nodes.docs.map(doc => ({id:doc.id,title:doc.data().title,stage:doc.data().stage || 'open',builds_benchmark:doc.data().builds_benchmark === true,archived:!!doc.data().archived})),
+      problems: nodes.docs.map(doc => ({id:doc.id,title:doc.data().title,stage:doc.data().stage || 'open',builds_benchmark:doc.data().builds_benchmark === true,category:require('./problem-category').of(doc.data()),archived:!!doc.data().archived})),
       edges: publicEdges(links).concat(partOf), can_manage_objectives: false
     };
   }

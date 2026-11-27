@@ -5,7 +5,8 @@
 'use strict';
 
 const MAX_TURNS = 40, MAX_CHARS = 4000;
-const TEXT = { title: 180, significance: 8000, difficulties: 8000, existing_solutions: 8000, collaborators: 8000 };
+const TEXT = { title: 180, significance: 8000, difficulties: 8000, existing_solutions: 8000, inspiration: 4000, collaborators: 8000 };
+const categories = require('./problem-category');
 
 // The draft's shape, as the model answers it (strict JSON schema).
 const SCHEMA = {
@@ -16,10 +17,10 @@ const SCHEMA = {
     ready: { type: 'boolean' },
     draft: {
       type: 'object', additionalProperties: false,
-      required: ['title', 'significance', 'difficulties', 'existing_solutions', 'builds_benchmark', 'benchmark_known', 'collaborators', 'project_ids', 'parent_ids', 'related_ids'],
+      required: ['category', 'title', 'significance', 'difficulties', 'existing_solutions', 'inspiration', 'collaborators', 'project_ids', 'parent_ids', 'related_ids'],
       properties: {
         title: { type: 'string' }, significance: { type: 'string' }, difficulties: { type: 'string' }, existing_solutions: { type: 'string' },
-        builds_benchmark: { type: 'boolean' }, benchmark_known: { type: 'boolean' }, collaborators: { type: 'string' },
+        category: { type: 'string', enum: ['', 'method', 'benchmark', 'open_question'] }, inspiration: { type: 'string' }, collaborators: { type: 'string' },
         project_ids: { type: 'array', items: { type: 'string' } }, parent_ids: { type: 'array', items: { type: 'string' } }, related_ids: { type: 'array', items: { type: 'string' } }
       }
     }
@@ -38,11 +39,14 @@ function systemPrompt({ objectives, problems, projects }){
     'Write the title and the other fields about the problem, never about the method: "Training runs diverge without warning", not "A divergence detector based on gradient statistics". If the person insists the method itself is the goal, it may be a benchmark or a project rather than a problem: ask which.',
     '',
     'The Problem Bank needs, for each problem:',
+    '- category: "method", "benchmark" or "open_question". method: a problem whose solutions can be scored and compared, so it will get a verifier (the name is about what competes on it: the problem itself is still not a method). benchmark: the goal is to build a benchmark itself, so it needs no separate verifier (a problem that uses a benchmark to measure another result is a method, not a benchmark). open_question: they start from an observation or a high-level idea and there is nothing to score yet, so it needs no verifier. Ask which it is early, when it’s unclear; use "" until you know.',
     '- title: a short, specific name for the problem (at most 180 characters). Propose one yourself once you understand it.',
+    'For a method or a benchmark, also:',
     '- significance: why it matters, who benefits if it’s solved.',
     '- difficulties: what makes it hard.',
     '- existing_solutions: where the frontier is: what current methods can do, and what remains open.',
-    '- builds_benchmark: true only if the goal is to build a benchmark itself (then it needs no separate verifier). Ask if it’s unclear. benchmark_known: true once you know either way.',
+    'For an open question, only:',
+    '- inspiration: what inspired it, usually an observation or a high-level idea, in their words. Ask for nothing else that is required: propose the title from it, and leave significance, difficulties and existing_solutions as "" unless they offer them.',
     'Optional: once the required fields are there, suggest these when they fit (one question for all of them), and confirm with the person:',
     '- parent_ids: the northstars, moonshots or broader problems it contributes to (ids from the lists below).',
     '- related_ids: related problems (ids from the problem list).',
@@ -50,8 +54,8 @@ function systemPrompt({ objectives, problems, projects }){
     '- collaborators: names of people working on it with them.',
     '',
     'Write each text field in the researcher’s voice, from what they said, concise and concrete (a few sentences). Keep every field you already have unless they change it; use "" or [] for what you don’t know yet.',
-    'Set ready to true once title, significance, difficulties and existing_solutions are filled and benchmark_known is true; then sum up the problem in two or three sentences, and tell them it’s ready to check in Check and edit, under the conversation, where they can change any field and save it, or that they can keep talking to change anything.',
-    'Answer with JSON only, exactly this shape: { "reply": what you say to them next, "ready": true or false, "draft": { "title": "", "significance": "", "difficulties": "", "existing_solutions": "", "builds_benchmark": false, "benchmark_known": false, "collaborators": "", "project_ids": [], "parent_ids": [], "related_ids": [] } }.',
+    'Set ready to true once the category is known and its fields are filled (an open question: title and inspiration; a method or a benchmark: title, significance, difficulties and existing_solutions); then sum up the problem in two or three sentences, and tell them it’s ready to check in Check and edit, under the conversation, where they can change any field and save it, or that they can keep talking to change anything.',
+    'Answer with JSON only, exactly this shape: { "reply": what you say to them next, "ready": true or false, "draft": { "category": "", "title": "", "significance": "", "difficulties": "", "existing_solutions": "", "inspiration": "", "collaborators": "", "project_ids": [], "parent_ids": [], "related_ids": [] } }.',
     '',
     'Northstars and moonshots (id: title):', list(objectives, (o) => o.id + ': ' + o.title + ' (' + o.kind + ')'),
     '',
@@ -78,8 +82,11 @@ function cleanDraft(d, known){
   d = d && typeof d === 'object' ? d : {};
   const out = {};
   Object.keys(TEXT).forEach((k) => { out[k] = typeof d[k] === 'string' ? d[k].trim().slice(0, TEXT[k]) : ''; });
-  out.builds_benchmark = d.builds_benchmark === true;
-  out.benchmark_known = d.benchmark_known === true;
+  // A draft from before categories said only whether it builds a benchmark, once known.
+  out.category = categories.LIST.indexOf(d.category) >= 0 ? d.category : d.benchmark_known === true ? (d.builds_benchmark === true ? 'benchmark' : 'method') : '';
+  // For a page from before categories: the same decision as it reads it.
+  out.builds_benchmark = out.category === 'benchmark';
+  out.benchmark_known = !!out.category;
   const ids = (list, allowed) => Array.from(new Set((Array.isArray(list) ? list : []).map(String).filter((id) => allowed.has(id)))).slice(0, 20);
   out.project_ids = ids(d.project_ids, known.projects);
   out.parent_ids = ids(d.parent_ids, known.parents);
@@ -87,7 +94,9 @@ function cleanDraft(d, known){
   return out;
 }
 // Pure: whether the required fields are there.
-function complete(d){ return !!(d.title && d.significance && d.difficulties && d.existing_solutions && d.benchmark_known); }
+function complete(d){
+  return !!(d.category && d.title && (d.category === 'open_question' ? d.inspiration : d.significance && d.difficulties && d.existing_solutions));
+}
 
 // One turn: `turns` [{ role, content }], what the lab has (`lab`: { objectives, problems, projects }), Sofya's
 // `complete`, and the draft as it stands on the page (`current`) → { reply, ready, draft }.
@@ -108,4 +117,4 @@ async function interview(turns, lab, sofyaComplete, said, jsonOf, current){
   return { reply, draft, ready: complete(draft) };
 }
 
-module.exports = { interview, systemPrompt, turnsOf, cleanDraft, SCHEMA, MAX_TURNS };
+module.exports = { interview, systemPrompt, turnsOf, cleanDraft, complete, SCHEMA, MAX_TURNS };

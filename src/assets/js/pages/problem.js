@@ -15,6 +15,8 @@
   var CONTRACT = 'It’s the evaluator’s contract: change it in AutoKaggle and register a new version';
   var STAGES = { open: 'Open problem', implemented: 'Implemented', checked: 'Checked', validated: 'Validated' };
   var urls = BOLDRegistryLinks.defaults;
+  // Its category (problem-category.js): only a method needs a verifier.
+  var categories = BoldProblemCategory;
 
   var p = null, releases = [], history = [], canApprove = false, canRemind = false, projects = [], projectsLoaded = false, editing = false, busy = false;
   var handoffRequired = false, launching = false;
@@ -41,7 +43,8 @@
     if (!base) return '';
     var url = new URL(base);
     url.pathname = (url.pathname.replace(/\/$/, '') || '/lite') + '/from-problem';
-    var fields = new URLSearchParams({ problem: p.id, builds_benchmark: '0',
+    // Lite reads the category; one from before categories reads builds_benchmark.
+    var fields = new URLSearchParams({ problem: p.id, category: 'method', builds_benchmark: '0',
       title: p.title, question: [p.objective || p.title, p.significance && 'Why it matters: ' + p.significance, p.difficulties && 'Difficulties: ' + p.difficulties, p.existing_solutions && 'Frontier: ' + p.existing_solutions].filter(Boolean).join('\n').slice(0,4000) });
     if (project) { fields.set('project', project.id); if (project.board) fields.set('board', project.board); }
     url.hash = fields.toString();
@@ -54,7 +57,7 @@
     return BOLD.can('projects','edit') ? '' : BOLD.cannotReason('projects','edit');
   }
   async function openVerifier(){
-    if (launching || !p || p.builds_benchmark || this.disabled || verifierUnavailable()) return;
+    if (launching || !p || !categories.needsVerifier(p) || this.disabled || verifierUnavailable()) return;
     var picker = el('verifierProject');
     var project = picker && picker.value !== '' ? p.projects[Number(picker.value)] : null;
     var url = verifierLink(project);
@@ -124,10 +127,17 @@
     overview: function(){
       var d = p.details || {};
       var html = '<dl class="detail-grid">';
-      html += editableRow('builds_benchmark','Problem type',p.builds_benchmark ? 'Benchmark' : 'Research problem',
-        '<label class="pb-purpose"><input id="fieldInput" type="checkbox"' + (p.builds_benchmark ? ' checked' : '') + '> This problem is building a benchmark</label>' +
-        '<p class="detail-muted">This skips the verifier step and turns off verifier reminders.</p>',
-        p.archived ? 'Restore this problem to change its type.' : '');
+      var category = categories.of(p);
+      html += editableRow('category','Category',esc(categories.LABELS[category]) + ' <span class="detail-muted">' + esc(categories.HINTS[category]) + '</span>',
+        '<select id="fieldInput" aria-label="Category">' + categories.LIST.map(function(c){
+          return '<option value="' + c + '"' + (c === category ? ' selected' : '') + '>' + esc(categories.LABELS[c]) + '</option>';
+        }).join('') + '</select>' +
+        '<textarea id="fieldInspiration" aria-label="What inspired it" maxlength="4000" placeholder="What inspired it: an observation or a high-level idea"' + (category === 'open_question' ? '' : ' hidden') + '>' + esc(p.inspiration || '') + '</textarea>' +
+        '<p class="detail-muted">Only a method needs a verifier. A benchmark or an open question skips the verifier step and its reminders.</p>',
+        p.archived ? 'Restore this problem to change its category.' : '');
+      // An open question is defined by what inspired it.
+      if (category === 'open_question' || p.inspiration) html += editableRow('inspiration','What inspired it',text(p.inspiration),
+        '<textarea id="fieldInput" aria-label="What inspired it" maxlength="4000">' + esc(p.inspiration || '') + '</textarea>');
       html += editableRow('owner','Problem definer', d.owner ? (p.owner_id ? '<a href="person.html?id=' + encodeURIComponent(p.owner_id) + '">' + esc(d.owner) + '</a>' : esc(d.owner)) : missing(),
         '<select id="fieldInput" aria-label="Problem definer"></select>');
       [['significance','Why it matters'],['difficulties','What are the difficulties?'],['existing_solutions','Where is the frontier?']].forEach(function(f){
@@ -144,7 +154,7 @@
       return p.papers.length ? BoldProblemPapers.list(p.papers) : '<p class="detail-muted">No papers registered for this problem.</p>';
     },
     releases: function(){
-      if (!releases.length) return '<p class="detail-muted">' + (p.builds_benchmark ? 'This problem is building a benchmark. A separate verifier is not required.' : 'Registered verifiers and their checks will appear here.') + '</p>';
+      if (!releases.length) return '<p class="detail-muted">' + (categories.of(p) === 'open_question' ? 'This problem is an open question. A verifier is not required.' : categories.of(p) === 'benchmark' ? 'This problem is building a benchmark. A separate verifier is not required.' : 'Registered verifiers and their checks will appear here.') + '</p>';
       return '<ul class="talk-list">' + releases.map(function(r){
         var e = r.evaluator, a = r.approval, ra = r.reported_approval, v = r.research;
         var details = r.details || (p.latest_benchmark === r.id && !p.has_linked_verifiers ? p.details : {}) || {};
@@ -186,7 +196,7 @@
     var html = '<div class="detail-head">' + (editing === 'title'
       ? '<div class="detail-title-edit"><input type="text" id="fieldInput" maxlength="180" value="' + esc(p.title || '') + '" aria-label="Title">' + saveCancelHtml() + '</div>'
       : '<h2>' + esc(p.title) + editButton('title', editableDefinition() ? '' : CONTRACT) + '</h2>');
-    if (p.builds_benchmark) html += '<span class="badge">Benchmark</span>';
+    if (!categories.needsVerifier(p)) html += '<span class="badge">' + esc(categories.label(p)) + '</span>';
     else if (!p.evaluator) html += '<span class="badge pb-missing">No verifier</span>';
     html += '<div class="detail-badges">';
     if (!isOpen()) html += '<span class="badge badge-stage">' + esc(STAGES[p.stage] || p.stage) + '</span>';
@@ -199,7 +209,7 @@
     var links=p.projects;
     // Its steps: defined; then its verifier (the current step until it has one), or none needed for a benchmark.
     html += '<ol class="pb-steps" aria-label="Problem onboarding"><li class="is-done">Problem defined</li>';
-    if (p.builds_benchmark) {
+    if (!categories.needsVerifier(p)) {
       html += '<li class="is-done">Verifier not required</li></ol>';
     } else {
       html += p.evaluator ? '<li class="is-done"><span>Verifier added</span>' : '<li aria-current="step"><span>Add a verifier</span>';
@@ -217,7 +227,7 @@
         (x.project_id ? ', for ' + esc(project ? project.title : x.project_id) : '') +
         (x.can_unlink ? ' <button type="button" class="btn-text" data-unlink="' + esc(x.session_id) + '">Unlink</button>' : '') + '</li>';
     }).join('') + '</ul></div>';
-    if (canRemind && !p.archived && !p.evaluator && !p.builds_benchmark) html += '<p><button type="button" class="btn-text" id="toggleReminder">' +
+    if (canRemind && !p.archived && !p.evaluator && categories.needsVerifier(p)) html += '<p><button type="button" class="btn-text" id="toggleReminder">' +
       (p.reminders ? 'Turn off my weekly reminders' : 'Remind me to add a verifier') + '</button></p>';
     html += '<div class="tabs" role="tablist" aria-label="Problem">' + TABS.map(function(t){
       var on = t[0] === tab;
@@ -337,15 +347,24 @@
     if (editing === 'family') { wireFamilyEditor(); return; }
     if (editing === 'owner') BoldPeopleSelect.load().then(function(list){input.innerHTML=BoldPeopleSelect.options(list,p.owner_id,'Choose the problem definer');}).catch(function(e){fail(e.message);});
     if (input && input.focus) input.focus();
+    // Choosing Open question asks for what inspired it, there and then.
+    if (editing === 'category') input.addEventListener('change', function(){ el('fieldInspiration').hidden = input.value !== 'open_question'; });
     el('fieldSave').addEventListener('click', function(){
       var v = input.value, patch = {};
       if (editing === 'projects') patch.projects=BoldProblemProjects.selected(input,projects);
       else if (editing === 'owner') { if (!v) return fail('Choose the problem definer.'); patch.owner_id=v; }
-      else if (editing === 'builds_benchmark') patch.builds_benchmark = input.checked;
+      else if (editing === 'category') {
+        patch.category = v;
+        if (v === 'open_question') {
+          var inspired = el('fieldInspiration').value.trim();
+          if (!inspired) return fail('Say what inspired it: an observation or a high-level idea.');
+          patch.inspiration = inspired;
+        }
+      }
       else { if (!v.trim() && editing!=='collaborators') return fail('Enter a value.'); patch[editing]=v.trim(); }
       el('fieldSave').disabled = true;
       save(patch).then(function(){
-        if ('builds_benchmark' in patch) {
+        if ('category' in patch) {
           try { localStorage.setItem('boldOpenProblemsChanged', crypto.randomUUID()); } catch (ignored) {}
         }
         editing = false; render();

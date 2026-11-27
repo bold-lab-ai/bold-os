@@ -53,3 +53,6 @@
 .pb-sessions h3{margin:0 0 6px; font:600 14px var(--sans);}
 .pb-sessions ul{margin:0; padding-left:18px;}
 .pb-sessions li{margin:2px 0;}
+/* Changing a problem's category (problem.html): choosing Open question asks for what inspired it, under the choice. */
+#fieldInspiration{display:block; box-sizing:border-box; width:100%; max-width:36em; min-height:5.5em; margin-top:8px; padding:6px 8px; font:inherit;}
+#fieldInspiration[hidden]{display:none;}
