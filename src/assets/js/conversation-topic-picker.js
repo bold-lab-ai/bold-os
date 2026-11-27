@@ -92,7 +92,7 @@ function conversationTopicPicker(host){
     '<p class="bs-icon-caption">Featured icons</p><div class="bs-icon-grid" role="group" aria-label="Icons"></div><button type="button" class="btn-text bs-icon-restore" hidden>Use suggested icon</button></div>' +
     '<p class="bs-topic-hint">You can remove the topic from your draft before posting. It’s saved when you post.</p><button type="button" class="btn-box bs-topic-save">Create topic</button></div>' +
     '<p class="field-error" role="alert" hidden></p></div></details>' +
-    '<button type="button" class="btn-text bs-topic-discard" hidden>Remove from draft</button>';
+    '<button type="button" class="btn-text bs-topic-discard" hidden>Remove topic</button>';
   var details = host.querySelector('details'), summary = host.querySelector('summary'), search = host.querySelector('[type=search]');
   var options = host.querySelector('.bs-topic-options'), add = host.querySelector('.bs-topic-new'), editor = host.querySelector('.bs-topic-create');
   var name = host.querySelector('.bs-topic-name'), icon = conversationIconChooser(editor), save = host.querySelector('.bs-topic-save');
