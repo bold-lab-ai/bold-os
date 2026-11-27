@@ -113,7 +113,7 @@ module.exports = function({ db, onCall, HttpsError, signedInEmail, access, Field
     const from = { kind: 'card', on: 'card/' + c.pid + '/' + c.card, page: String(ws.title || 'A project').slice(0, 200), part: cardTitle,
       url: projectPageUrl(ws.cardId || c.pid, ws.boardId) + '&tab=work&card=' + encodeURIComponent(c.card) };
     const batch = db.batch();
-    batch.create(ref, Object.assign({ title, body: String(first.text || ''), at: first.at || Date.now(), source: 'comment', from, project: c.pid,
+    batch.create(ref, Object.assign({ title, body: String(first.text || ''), at: first.at || Date.now(), source: 'comment', topicId: 'about-bold', from, project: c.pid,
       private: false, readers: [], votes: {}, replies: rest.length, commentReplies: rest.length, opened: !text,
       broughtBy: { email, name: await nameOf(email) }, broughtAt: FieldValue.serverTimestamp() }, by(first)));
     // In order, each answering the one before (a Slack thread's way: conversations-forum.js parentOf).
@@ -155,7 +155,7 @@ module.exports = function({ db, onCall, HttpsError, signedInEmail, access, Field
       url: SITE_URL + page.href + '#proposal-' + encodeURIComponent(c.proposal) };
     const batch = db.batch();
     // The post: whoever proposed it, with their note on it; what was said is its replies, in order.
-    batch.create(ref, Object.assign({ title, body: String(q.note || 'Proposes a change' + (what ? ' to “' + what + '”' : '') + ' on ' + pageTitle + '.'), at: q.at || Date.now(), source: 'comment', from,
+    batch.create(ref, Object.assign({ title, body: String(q.note || 'Proposes a change' + (what ? ' to “' + what + '”' : '') + ' on ' + pageTitle + '.'), at: q.at || Date.now(), source: 'comment', topicId: 'about-bold', from,
       private: false, readers: [], votes: {}, replies: old.length, commentReplies: old.length, broughtBy: { email, name: await nameOf(email) }, broughtAt: FieldValue.serverTimestamp() },
       by({ by: q.by || {} })));
     old.forEach((r, i) => batch.set(ref.collection('messages').doc('cm-' + i), Object.assign({ parent: c.id, body: String(r.text || ''), at: r.at || Date.now(), source: 'comment', votes: {} }, by(r))));
@@ -183,7 +183,7 @@ module.exports = function({ db, onCall, HttpsError, signedInEmail, access, Field
     const title = ('Proposed change: ' + String(b.title || '')).slice(0, 200);
     const from = { kind: 'branch', on: 'branch/' + c.branch, page: 'Proposed change', part: String(b.title || '').slice(0, 200), url: SITE_URL + 'proposal.html?b=' + encodeURIComponent(c.branch) };
     const batch = db.batch();
-    batch.create(ref, Object.assign({ title, body: String(b.description || b.title || 'Proposes a change.'), at: b.at || Date.now(), source: 'comment', from,
+    batch.create(ref, Object.assign({ title, body: String(b.description || b.title || 'Proposes a change.'), at: b.at || Date.now(), source: 'comment', topicId: 'about-bold', from,
       private: false, readers: [], votes: {}, replies: text ? 1 : 0, commentReplies: 0, broughtBy: { email, name: await nameOf(email) }, broughtAt: FieldValue.serverTimestamp() },
       by({ by: b.by || {} })));
     if (text) batch.set(ref.collection('messages').doc('cm-0'), Object.assign({ parent: c.id, body: text, at: Date.now(), source: 'site', votes: {} }, by({ by: { email, name: await nameOf(email) } })));
@@ -210,7 +210,7 @@ module.exports = function({ db, onCall, HttpsError, signedInEmail, access, Field
     const from = { kind: 'review', on: 'review/' + c.board + '/' + c.card, page: 'Internal Review', part: String(card.title || '').slice(0, 200),
       url: SITE_URL + 'audit-board.html#board=' + encodeURIComponent(c.board) + '&card=' + encodeURIComponent(c.card) };
     const first = old[0], rest = old.slice(1), batch = db.batch();
-    batch.create(ref, Object.assign({ title, body: first.text, at: first.at || Date.now(), source: 'comment', from, private: false, readers: [], votes: {},
+    batch.create(ref, Object.assign({ title, body: first.text, at: first.at || Date.now(), source: 'comment', topicId: 'about-bold', from, private: false, readers: [], votes: {},
       replies: rest.length, commentReplies: rest.length, broughtBy: { email, name: await nameOf(email) }, broughtAt: FieldValue.serverTimestamp() },
       card.projectId ? { project: String(card.projectId), projectTitle: String(card.title || '').slice(0, 300) } : {}, by(first)));
     rest.forEach((r, i) => batch.set(ref.collection('messages').doc('cm-' + i), Object.assign({ parent: c.id, body: r.text, at: r.at || Date.now(), source: 'comment', votes: {} }, by(r))));
@@ -248,6 +248,7 @@ module.exports = function({ db, onCall, HttpsError, signedInEmail, access, Field
       const had = await ref.get();
       if (had.exists) return { id, title: had.data().title, existed: true };
     }
+    if (!(await require('./conversation-topics').exists(db, data.topicId))) throw new HttpsError('invalid-argument', 'Choose a conversation topic.');
     const replies = (await comments.where('parent', '==', cid).get()).docs.map((d) => d.data()).sort((a, b) => (a.at || 0) - (b.at || 0));
     const doc = docSnap.exists ? docSnap.data() : {};
     const part = (doc.parts || []).filter((p) => p.id === root.partId)[0];
@@ -256,7 +257,7 @@ module.exports = function({ db, onCall, HttpsError, signedInEmail, access, Field
       page: String(doc.title || (page.collection === 'handbook' ? 'BOLDiquette' : page.slug)).slice(0, 200), part: String((part && part.title) || '').slice(0, 200),
       url: SITE_URL + page.href + '#c=' + encodeURIComponent(cid) };
     const batch = db.batch();
-    batch.create(ref, Object.assign({ title, body: bodyOf(root.quote, root.text), at: root.at || Date.now(), source: 'comment', from,
+    batch.create(ref, Object.assign({ title, body: bodyOf(root.quote, root.text), at: root.at || Date.now(), source: 'comment', topicId: data.topicId, from,
       private: false, readers: [], votes: {}, replies: replies.length, commentReplies: replies.length,
       broughtBy: { email, name: await nameOf(email) }, broughtAt: FieldValue.serverTimestamp() }, by(root)));
     // In order, each answering the one before (conversations.js parentOf), as a Slack thread's.

@@ -82,9 +82,10 @@ const DEMO_JOIN_KEY = 'dec0de0c0ffee';
   set('people/UTESTTA', { name: 'Pat PI (test)', email: 'pat.test@example.com', slackId: 'UTESTTA' });
   set('members/pat.test@example.com', { name: 'Pat PI (test)', email: 'pat.test@example.com', test: true, testOf: 'pi@example.com', category: 'pan', categoryBy: 'pi@example.com', categoryAt: t0,
     invitedBy: { email: 'pi@example.com', name: 'Pat PI', status: 'confirmed' } });
+  require('../functions/conversation-topics').starters.forEach(({ id, name, icon }) => set('conversationTopics/' + id, { name, icon }));
   // A conversation that runs on, then branches (Conversations' blocks).
   const msg = (id, parent, who, name, body, mins) => set('conversations/seed-chat/messages/' + id, { parent, body, name, createdBy: who, at: Date.now() - mins * 60000, source: 'bold', viaAgent: false, votes: {}, private: false });
-  set('conversations/seed-chat', { title: 'Should we pool compute for the Q1 runs?', body: 'Three projects need big runs in January. One booking, or each their own?', name: 'Ines Internal', createdBy: 'internal@example.com',
+  set('conversations/seed-chat', { topicId: 'about-bold', title: 'Should we pool compute for the Q1 runs?', body: 'Three projects need big runs in January. One booking, or each their own?', name: 'Ines Internal', createdBy: 'internal@example.com',
     at: Date.now() - 300 * 60000, source: 'bold', viaAgent: false, votes: {}, replies: 6, private: false });
   msg('m1', 'seed-chat', 'pi@example.com', 'Pat PI', 'One booking: it’s cheaper, and we can share the queue.', 290);
   msg('m2', 'm1', 'associate@example.com', 'Ari Associate', 'Who decides the order of the runs, then?', 280);

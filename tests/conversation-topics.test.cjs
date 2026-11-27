@@ -1,0 +1,52 @@
+const { test } = require('node:test');
+const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const vm = require('node:vm');
+const { parseHTML } = require('linkedom');
+const topics = require('../functions/conversation-topics');
+
+test('shared topic names have stable ids and a suggested icon', async () => {
+  assert.equal(topics.topicId(' Café Reading! '), 'cafe-reading');
+  assert.equal(topics.topicId('話題'), '話題');
+  assert.equal(topics.topicId(' - '), '');
+  assert.equal(topics.suggestIcon('Reading group'), '▤');
+  assert.ok(topics.suggestIcon('Other'));
+  for (const topic of topics.starters) assert.equal(topics.topicId(topic.name), topic.id);
+  const db = { collection: () => ({ doc: id => ({ get: async () => ({ exists: id === 'advice' }) }) }) };
+  assert.equal(await topics.exists(db, 'advice'), true);
+  for (const id of [null, {}, 'unknown-topic', 'a/b', '_other']) assert.equal(await topics.exists(db, id), false);
+});
+
+test('creating a topic selects it without submitting or resetting the draft', async () => {
+  const { document, window } = parseHTML('<form><input name="title" value="My draft"><div class="slot"></div><textarea>Unfinished text</textarea></form>');
+  const ctx = { document, BOLD: { escapeHtml: String }, ConversationTopics: topics };
+  vm.runInNewContext(fs.readFileSync(require.resolve('../src/assets/js/conversation-topic-picker.js'), 'utf8'), ctx);
+  const saved = [];
+  ctx.conversationTopicPicker.create = async (id, name, icon) => { const topic = { id, name, icon }; saved.push(topic); return topic; };
+  const picker = ctx.conversationTopicPicker(document.querySelector('.slot'));
+  picker.update(topics.starters);
+  const q = s => document.querySelector(s);
+  const input = (s, value) => { q(s).value = value; q(s).dispatchEvent(new window.Event('input')); };
+  assert.equal(picker.required(), false);
+  input('[type=search]', 'adv');
+  assert.equal(q('.bs-topic-options').children.length, 1);
+  q('[data-topic=advice]').click();
+  assert.equal(picker.value(), 'advice');
+  picker.reset();
+  input('[type=search]', 'Reading group');
+  q('.bs-topic-new').click();
+  assert.equal(q('.bs-topic-icon').value, '▤');
+  input('.bs-topic-icon', '★');
+  input('.bs-topic-name', 'Reading circle');
+  assert.equal(q('.bs-topic-icon').value, '★');
+  q('.bs-topic-save').click(); await new Promise(setImmediate);
+  assert.deepEqual(saved[0], { id: 'reading-circle', name: 'Reading circle', icon: '★' });
+  assert.equal(picker.value(), 'reading-circle');
+  assert.equal(q('[name=title]').value, 'My draft');
+  assert.equal(q('textarea').value, 'Unfinished text');
+  q('.bs-topic-new').click();
+  input('.bs-topic-name', 'Paper club'); input('.bs-topic-icon', '');
+  q('.bs-topic-save').click(); await new Promise(setImmediate);
+  assert.equal(saved[1].icon, topics.suggestIcon('Paper club'));
+  assert.equal(picker.required(), true);
+});

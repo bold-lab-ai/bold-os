@@ -489,6 +489,11 @@ module.exports = function(deps){
       inputSchema: { type: 'object', properties: { query: { type: 'string', description: 'Words in the organisation, area or who offers.' } } },
       run: listOffers,
     },
+    { name: 'list_conversation_topics', description: 'Topics available when posting in Conversations, with their id, name and icon.',
+      inputSchema: { type: 'object', properties: {} }, run: async () => {
+        const snap = await db.collection('conversationTopics').orderBy('name').get();
+        return snap.docs.map((d) => ({ id: d.id, name: d.data().name, icon: d.data().icon }));
+      } },
     // Acting, and what it needs to read: functions/api-actions.js.
     ...actions.READ,
     ...actions.WRITE,
@@ -498,7 +503,7 @@ module.exports = function(deps){
   // Who can see what (functions/access.js): each reading tool reads one page, and answers
   // only if its person may view that page. Acting goes through the rules and callables,
   // which check it themselves.
-  const TOOL_PAGE = { list_benchmarks: 'projects', register_benchmark: 'projects', create_open_problem: 'projects', edit_problem: 'projects', search: 'search', list_group_rota: 'events', list_projects: 'projects', get_project: 'projects', find_people: 'people', get_person: 'people',
+  const TOOL_PAGE = { list_conversation_topics: 'conversations', list_benchmarks: 'projects', register_benchmark: 'projects', create_open_problem: 'projects', edit_problem: 'projects', search: 'search', list_group_rota: 'events', list_projects: 'projects', get_project: 'projects', find_people: 'people', get_person: 'people',
     calendar: 'calendar', my_items: 'profile', list_introduction_offers: 'service-desk', list_tools: 'tools', list_skills: 'skills', get_skill: 'skills' };
   const pageOfTool = (name, args) => { const p = String((args || {}).page || '').trim().toLowerCase();
     return name === 'read_page' ? (p === 'boldiquette' ? 'boldiquette' : require('./access').guideArea(p)) : TOOL_PAGE[name]; };

@@ -268,3 +268,19 @@ body.bs-agent-open .bs-cols{padding-bottom:min(46vh, 420px);}
 @media (max-width:600px){ .bs-top{--avatar:28px; --branch-indent:24px; --author-gap:6px; padding:0 4px;} }
 @media (pointer:coarse){ .bs-top{--head-size:44px;} }
 .bs-answer .bs-answer-to{margin-right:auto; font-size:13px; color:var(--muted);}
+
+/* Topic selection in a conversation draft. */
+.bs-topic-picker {max-width:28rem; font:14px/1.4 var(--sans); color:var(--ink);}
+.bs-topic-picker summary {cursor:pointer; padding:8px 10px; border:1px solid var(--line); background:var(--surface);}
+.bs-topic-picker[open] summary {border-bottom:0;}
+.bs-topic-menu {border:1px solid var(--line); padding:10px; background:var(--surface);}
+.bs-topic-menu input {box-sizing:border-box; width:100%; color:var(--ink); background:var(--paper); border:1px solid var(--line); padding:6px 8px;}
+.bs-topic-options {display:grid; max-height:13rem; overflow:auto; margin-block:6px;}
+.bs-topic-options button {text-align:left; padding:6px; color:var(--ink);}
+.bs-topic-options button:hover, .bs-topic-options button:focus-visible {background:var(--paper); text-decoration:underline;}
+.bs-topic-new {padding:6px;}
+.bs-topic-create {display:grid; grid-template-columns:minmax(0, 1fr) 5rem; gap:8px; margin-top:8px;}
+.bs-topic-create label {min-width:0;}
+.bs-topic-create .bs-topic-save {grid-column:1/-1; justify-self:start;}
+.bs-topic-create[hidden] {display:none;}
+.bs-topic-menu [role=alert]:not([hidden]) {margin:8px 0 0; color:var(--ink); font-weight:600;}

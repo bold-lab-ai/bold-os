@@ -78,7 +78,7 @@ window.BoldConversations = (function(){
           '<button type="button" class="bs-sortbtn" data-sort="top" aria-pressed="true">Top</button>' +
           '<button type="button" class="bs-sortbtn" data-sort="new" aria-pressed="false">New</button>' +
           '<button type="button" class="btn bs-import">Import from Slack</button>' +
-          '<button type="button" class="btn btn-primary bs-write">New chat</button></div>' +
+          '<button type="button" class="btn btn-primary bs-write">Start a conversation</button></div>' +
         // Filters (filtering()): who started it, who's in it, its project, open or private; with the search box.
         (peek ? '' : '<div class="bs-filters" role="group" aria-label="Filter conversations" hidden>' +
           '<select class="bs-filter" data-f="author" aria-label="Started by"></select>' +
@@ -87,7 +87,7 @@ window.BoldConversations = (function(){
           '<select class="bs-filter" data-f="vis" aria-label="Who can read it"></select>' +
           '<button type="button" class="btn-text bs-filter-clear" hidden>Clear</button></div>') +
         '<form class="event-form bs-import-form bs-write-form" hidden>' +
-          '<label>Title<input type="text" maxlength="200" required></label>' +
+          '<label>Title<input type="text" maxlength="200" required></label><div class="bs-topic-slot"></div>' +
           '<label>Text (optional)<textarea class="md-field" data-md-breaks="true" data-preview-class="bs-text md-desc" rows="6" maxlength="10000"></textarea></label>' +
           // Who can read it (newWho): open, only you, or you and the people chosen (the picker, pickHtml).
           '<fieldset class="bs-new-who"><legend>Who can read it</legend>' +
@@ -98,7 +98,7 @@ window.BoldConversations = (function(){
           '<div class="event-form-actions"><button type="submit" class="ev-save">Post</button><button type="button" class="bs-write-cancel">Cancel</button>' +
             '<button type="button" class="btn-text bs-new">or reason it through with your agent first</button></div></form>' +
         '<form class="event-form bs-import-form bs-slack-form" hidden>' +
-          '<label>Link to a Slack thread (in Slack: the message’s ⋯ menu → Copy link)<input type="url" placeholder="https://….slack.com/archives/…" required></label>' +
+          '<label>Link to a Slack thread (in Slack: the message’s ⋯ menu → Copy link)<input type="url" placeholder="https://….slack.com/archives/…" required></label><div class="bs-topic-slot"></div>' +
           '<p class="event-form-hint">Only a thread you can read in Slack: a public channel, or a private one you’re in. Its first message becomes the post, the rest its replies. In Slack, a message’s ⋯ menu → Take it to the BOLD OS does the same.</p>' +
           '<p class="ev-error" hidden></p>' +
           '<div class="event-form-actions"><button type="submit" class="ev-save">Bring it in</button><button type="button" class="bs-import-cancel">Cancel</button></div></form>' +
@@ -128,6 +128,13 @@ window.BoldConversations = (function(){
     var md = function(t){ return '<div class="bs-text md-desc">' + BoldMarkdown.render(t, { breaks: true }) + '</div>'; };
     var me = { email: '', name: 'You', uid: '', slackId: '' }, canPost = false, canStart = false, full = false;
     var posts = null, messages = {}, openId = '', stopMsgs = null;
+    var topics = [];
+    function topicLabel(p){
+      var topic = topics.find(function(t){ return t.id === p.topicId; });
+      return topic ? '<span class="bs-by">' + esc(topic.icon + ' ' + topic.name) + '</span> ' : '';
+    }
+    var postPicker = conversationTopicPicker(writeEl.querySelector('.bs-topic-slot'));
+    var slackPicker = conversationTopicPicker(importEl.querySelector('.bs-topic-slot'));
     var find = '';   // the search box's text: the list shows only the posts it finds, best first (search-rank.js)
     var replyText = {};   // each post's replies as one text, fetched the first time the box or a filter is used
     var replyNames = {};  // and who wrote them, { pid: [name] }
@@ -678,7 +685,7 @@ window.BoldConversations = (function(){
         threadEl.innerHTML = (opts.thread ? '' : '<a class="back-link" href="' + esc(listHref()) + '">&larr; All posts</a>') +
           (opts.title === false ? '' : '<h2 class="bs-title bs-thread-title">' + esc(p.title) + '</h2>') +
           // Who can read it, and Invite right after it, on one line (readersHtml).
-          '<div class="bs-meta">' + readersHtml(p) + '</div>' + inviteHtml(p) + head + '<div class="bs-join"></div>' +
+          '<div class="bs-meta">' + topicLabel(p) + readersHtml(p) + '</div>' + inviteHtml(p) + head + '<div class="bs-join"></div>' +
           (top.length ? '<ol class="bs-run bs-top">' + top.map(function(m){ return subtreeHtml(m, p.id, 1); }).join('') + '</ol>' : '');
         BOLD.photo.mountMany(threadEl.querySelectorAll('.bs-avatar'));
         clampLong();
@@ -741,14 +748,15 @@ window.BoldConversations = (function(){
     // ---------- writing ----------
     // readers: private to them (Slack ids, you among them), else open.
     function newPost(title, body, viaAgent, readers){
-      var o = { title: title, body: body, name: me.name, createdBy: me.email, at: FV().serverTimestamp(), source: 'site', viaAgent: !!viaAgent, votes: {}, private: !!readers };
+      if (!postPicker.required()) return Promise.reject(new Error('Choose a topic.'));
+      var o = { topicId: postPicker.value(), title: title, body: body, name: me.name, createdBy: me.email, at: FV().serverTimestamp(), source: 'site', viaAgent: !!viaAgent, votes: {}, private: !!readers };
       if (readers) o.readers = readers;
       // In a project: about it (firestore.rules: one its poster sees).
       if (project) { o.project = project.id; o.projectTitle = String((project.title && project.title()) || '').slice(0, 300); }
       o.votes[me.uid] = 1;
       return col().add(o);
     }
-    // A reply answers `parent`, shown nested under it (`branch: true`; see under(), above).
+    // A reply answers `parent`, shown nested under it (`branch: true`; also read by older clients).
     function newReply(pid, parent, body, viaAgent){
       var o = { parent: parent, body: body, name: me.name, createdBy: me.email, at: FV().serverTimestamp(), source: 'site', viaAgent: !!viaAgent, votes: {}, branch: true };
       o.votes[me.uid] = 1;
@@ -818,6 +826,7 @@ window.BoldConversations = (function(){
           box.innerHTML = '<span class="bs-done">' + (d.reply ? 'Replied.' : 'Posted.') + '</span>';
           add('Your agent', d.reply ? 'Replied. I’ll tell you if anyone picks it up.' : 'Posted. I’ll tell you when someone replies with something that bears on it.');
           said = [];
+          if (!d.reply) postPicker.reset();
           var pid = d.reply ? d.reply.pid : ref.id;
           if (d.reply) setAbout(null);
           show(pid, d.reply ? ref.id : '');
@@ -840,6 +849,7 @@ window.BoldConversations = (function(){
     document.addEventListener('keydown', function(e){ if (e.key === 'Escape' && !agentEl.hidden) closeAgent(); });
     writeEl.querySelector('.bs-new').hidden = !AGENT;
     writeEl.querySelector('.bs-new').addEventListener('click', function(){
+      if (!postPicker.required()) return;
       writeEl.hidden = true;
       if (about) { setAbout(null); render(); }
       add('Your agent', 'A new chat. What are you thinking about?');
@@ -865,14 +875,14 @@ window.BoldConversations = (function(){
     writeEl.addEventListener('submit', function(e){
       e.preventDefault();
       var t = writeEl.querySelector('input').value.trim(), b = writeEl.querySelector('textarea').value.trim(), go = writeEl.querySelector('button[type=submit]');
-      if (!t) return;
+      if (!t || !postPicker.required()) return;
       var mode = (writeEl.querySelector('input[name=bs-new-who]:checked') || {}).value || 'open';
       var others = mode === 'people' && picks.new ? picks.new.ids.filter(function(id){ return id !== me.slackId; }) : [];
       var readers = mode === 'open' ? null : [me.slackId].concat(others);
       var post = function(tell){
         go.disabled = true;
         return newPost(t, b || t, false, readers).then(function(ref){
-          writeEl.reset(); writeEl.hidden = true; picks.new = { ids: [] }; syncNewWho(); show(ref.id);
+          writeEl.reset(); postPicker.reset(); writeEl.hidden = true; picks.new = { ids: [] }; syncNewWho(); show(ref.id);
           if (tell && others.length) return invite(ref.id, others);
         }, oops('Posting')).then(function(){ go.disabled = false; });
       };
@@ -898,12 +908,16 @@ window.BoldConversations = (function(){
       writeEl.hidden = true; importEl.hidden = !importEl.hidden;
       if (!importEl.hidden) importEl.querySelector('input').focus();
     });
+    // A Slack shortcut opens this same import form with its message link filled in.
+    var importLink = !project && !opts.thread && !opts.peek && new URLSearchParams(location.hash.slice(1)).get('import');
+    if (importLink) { importEl.querySelector('input[type=url]').value = importLink; importEl.hidden = false; }
     importEl.addEventListener('submit', function(e){
       e.preventDefault();
       var input = importEl.querySelector('input'), err = importEl.querySelector('.ev-error'), go = importEl.querySelector('button[type=submit]');
+      if (!slackPicker.required()) return;
       err.hidden = true; go.disabled = true; go.textContent = 'Bringing it in…';
-      firebase.app().functions('europe-west2').httpsCallable('slackThread')(Object.assign({ url: input.value.trim() }, project ? { project: project.id } : {})).then(function(res){
-        input.value = ''; importEl.hidden = true;
+      firebase.app().functions('europe-west2').httpsCallable('slackThread')(Object.assign({ url: input.value.trim(), topicId: slackPicker.value() }, project ? { project: project.id } : {})).then(function(res){
+        input.value = ''; slackPicker.reset(); importEl.hidden = true;
         show(res.data.id);
       }, function(x){
         err.textContent = (x && x.message) || 'Couldn’t bring it in.'; err.hidden = false;
@@ -1087,6 +1101,12 @@ window.BoldConversations = (function(){
     // ---------- who, and what's there ----------
     BOLD.onUser(function(u){ me.name = (u && u.displayName) || 'You'; me.uid = (u && u.uid) || ''; loadFolds(); });
     BOLD.onAccess(function(a){
+      unwatch.splice(0).forEach(function(stop){ stop(); });
+      if (stopMsgs) { stopMsgs(); stopMsgs = null; }
+      openId = ''; posts = null; messages = {}; replyText = {}; replyNames = {}; topics = [];
+      threadEl.replaceChildren(); postsEl.replaceChildren();
+      postPicker.update(topics); slackPicker.update(topics);
+
       me.email = String((a && a.e) || '').toLowerCase();
       canPost = BOLD.can('conversations', 'edit'); full = BOLD.isFullWrite();
       // Starting a chat (New chat, Import from Slack), replying and voting: all Conversations' Edit.
@@ -1112,7 +1132,10 @@ window.BoldConversations = (function(){
         unwatch.push(qy.onSnapshot(function(snap){ parts[key] = snap.docs.map(function(d){ return Object.assign({ id: d.id }, d.data()); }); merge(); }, fail));
       };
       // In a project: the open ones about it (never private: started there, or from its cards).
-      if (unwatch.length) { unwatch.forEach(function(f){ f(); }); unwatch = []; }
+      unwatch.push(conversationTopicPicker.watch(function(items){
+        topics = items;
+        postPicker.update(topics); slackPicker.update(topics); render();
+      }, function(err){ oops('Loading topics')(err); }));
       // In a project: the open ones about it, and the private ones about it the viewer reads (Who can read it › Change).
       if (project) {
         watch(col().where('project', '==', project.id).where('private', '==', false), 'open');
