@@ -35,7 +35,7 @@
       esc(E.when(x.startDate, x.endDate)) + (x.place ? ' · ' + esc(x.place) : ''), x.hidden ? badge('Hidden') : '');
   }
   function seriesRow(x){
-    var meta = x.kind === 'editions' ? cadenceText(x.cadence) : meetingText(x.meeting) + ' · London time';
+    var meta = x.kind === 'editions' ? cadenceText(x.cadence) : meetingTextLocal(x.meeting, ' · London time');
     if (x.kind === 'editions') {
       var eds = events.filter(function(e){ return e.series === x.id && (x.page !== 'group-meetings.html' || e.status !== 'skipped'); }).sort(function(a, b){ return a.startDate < b.startDate ? -1 : 1; });
       var next = eds.filter(function(e){ return !E.isPast(e); })[0], last = eds[eds.length - 1];

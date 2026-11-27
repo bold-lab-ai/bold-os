@@ -13,6 +13,8 @@ export default function (eleventyConfig) {
   eleventyConfig.addPassthroughCopy({ 'functions/research-map.js': 'assets/js/research-map.js' });
   // When the home letters are due, and which is current: the server's and the home page's (letter-due.js).
   eleventyConfig.addPassthroughCopy({ 'functions/letter-due.js': 'assets/js/letter-due.js' });
+  // Each person's timezone (their Slack profile's): the server's reminders and the pages' meeting times (local-time.js).
+  eleventyConfig.addPassthroughCopy({ 'functions/local-time.js': 'assets/js/local-time.js' });
 
   // The theme tool (tools/theme, at /theme/): the ground truth for the site's colours, live but
   // not in the sidebar. It reads the CSS and JS it finds uses of each colour in from this list.

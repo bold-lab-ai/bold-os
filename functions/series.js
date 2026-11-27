@@ -38,7 +38,7 @@ module.exports = function series(deps){
   const { db, onCall, onDocumentWritten, HttpsError, logger, callerEmail, isFullWrite, access, rolesEmails,
     googleFetch, syncMoves, CAL, calendarUpdates, isCalendarLimit, CALENDAR_LIMIT_MSG, eventConference, eventTimes, conferenceChange, openMeetOnce, meetingRecurrence, sameMeetingTimes, seriesStart,
     normalizeMeeting, googleAddressesFor, groupOf, tellStaff, slackText, linkedTitle, SITE_URL,
-    GOOGLE_OAUTH, SLACK_BOT_TOKEN, FieldValue, crypto, onSchedule, tellPeople } = deps;
+    GOOGLE_OAUTH, SLACK_BOT_TOKEN, FieldValue, crypto, onSchedule, tellPeople, atLocalHour, timeZones, remindOnce, REMINDER_HOUR } = deps;
   const { rank, VISIBILITY, VIS_RANK, VISIBILITY_NAMES } = require('./access');
   const INVITE_GROUPS = ['everyone', 'associate', 'internal', 'staff', 'exec'];
   const seriesUrl = (id) => SITE_URL + 'series.html?series=' + encodeURIComponent(id);
@@ -410,24 +410,30 @@ module.exports = function series(deps){
     }
   });
 
-  // Every morning: a recurring event whose next edition is due within six weeks (or past
-  // due) and not scheduled: tell the PIs, admins and its organisers, once for each due date.
-  const seriesNudges = onSchedule({ schedule: '0 9 * * *', timeZone: 'Europe/London', secrets: [SLACK_BOT_TOKEN] }, async () => {
+  // Every hour: a recurring event whose next edition is due within six weeks (or past
+  // due) and not scheduled: tell the PIs, admins and its organisers, each once for each due date,
+  // at 09:00 where they are (atLocalHour, remindOnce in index.js).
+  const seriesNudges = onSchedule({ schedule: '0 * * * *', timeZone: 'Europe/London', secrets: [SLACK_BOT_TOKEN] }, async () => {
     const today = todayLondon(), soon = addMonths(today, 0);
     const snap = await db.collection('eventSeries').where('kind', '==', 'editions').get();
+    if (snap.empty) return;
     const staff = (await rolesEmails('pis')).concat(await rolesEmails('admins')).map(lower);
+    const zones = await timeZones(), now = Date.now();
     for (const doc of snap.docs) {
       const s = doc.data();
       if (s.hidden) continue;
+      const morning = atLocalHour(staff.concat((s.organisers || []).map(lower)), zones, REMINDER_HOUR, now);
+      if (!morning.length) continue;
       const due = nextDue(s, await editionsOf(doc.id), today);
+      // `nudgedFor`: from when it went to everyone at once, at 09:00 London; one sent then isn't sent again.
       if (!due || s.nudgedFor === due) continue;
       const sixWeeks = new Date(Date.parse(soon + 'T00:00:00Z') + 42 * 86400000).toISOString().slice(0, 10);
       if (due > sixWeeks) continue;
       const when = new Date(due + 'T00:00:00Z').toLocaleDateString('en-GB', { month: 'long', year: 'numeric', timeZone: 'UTC' });
-      const to = staff.concat((s.organisers || []).map(lower)).filter((e, i, a) => e && a.indexOf(e) === i);
-      await tellPeople(to, '🗓️ The next ' + slackText(s.title) + ' is due around ' + when + ' and isn’t scheduled yet. ' +
+      const to = [];
+      for (const e of morning) if (await remindOnce('series-due:' + doc.id + ':' + due, e)) to.push(e);
+      if (to.length) await tellPeople(to, '🗓️ The next ' + slackText(s.title) + ' is due around ' + when + ' and isn’t scheduled yet. ' +
         linkedTitle('Schedule it', seriesUrl(doc.id)) + ', or tell its organisers.', 'series-due').catch((err) => logger.warn('Nudging about a series failed', { id: doc.id, error: String(err.message) }));
-      await doc.ref.set({ nudgedFor: due }, { merge: true });
     }
   });
 

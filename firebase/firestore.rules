@@ -167,6 +167,10 @@ service cloud.firestore {
     match /groupRotaConfig/{id} {
       allow read, write: if false;
     }
+    // Scheduled reminders already sent to someone (functions/index.js remindOnce): server only.
+    match /reminded/{id} {
+      allow read, write: if false;
+    }
     // Joining BOLD (functions/index.js "Joining BOLD"): requests come in through
     // requestToJoin and are decided through decideJoinRequest, so clients write
     // neither; PIs and admins read them (join-requests.html).

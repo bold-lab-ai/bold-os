@@ -68,6 +68,8 @@
     return String(t || '').trim() ? '<div class="hero-note md-desc">' + BoldMarkdown.render(t) + '</div>' : '';
   }
 
+  // Its time is in the reader's timezone (their Slack profile's), once it's known.
+  BOLD.onTimeZone(function(){ if (!editing) render(); });
   function render(){
     if (editing) { body.innerHTML = BACK + formHtml(); return; }
     if (isNew) { body.innerHTML = BACK + '<h1>New event series</h1><p class="hero-note">' + esc(msg || 'Loading…') + '</p>'; return; }
@@ -104,7 +106,7 @@
       (s.hidden ? '<p class="event-hidden-note">Hidden — only its organisers, PIs and admins see it, and nobody is invited, until an organiser releases it.</p>' : '') +
       '<div><span class="eyebrow">Recurring event' + (s.pausedAt ? ' · paused' : '') + '</span></div>' +
       '<h1>' + esc(s.title) + '</h1>' +
-      '<p class="hero-when">' + esc(meetingText(s.meeting)) + ' · London time' + (link ? ' · ' + link : '') + '</p>' +
+      '<p class="hero-when">' + esc(meetingTextLocal(s.meeting, ' · London time')) + (link ? ' · ' + link : '') + '</p>' +
       paragraphs(s.description) +
       '<dl class="sr-facts">' +
         '<div class="fact"><dt>Invited</dt><dd>' + esc(who) + '</dd></div>' +

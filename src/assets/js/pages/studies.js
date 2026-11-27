@@ -56,8 +56,8 @@
     var dates = m.startDate && m.endDate ? m.startDate + ' – ' + m.endDate : m.startDate ? 'From ' + m.startDate : m.endDate ? 'Until ' + m.endDate : '';
     var people = (s.people || []).map(function(p){ return esc(p.name) + (p.name !== p.email ? ' <span class="acct-handle">' + esc(p.email) + '</span>' : ''); }).join('<br>');
     var pause = s.meeting ? ' <button type="button" class="btn-text st-pause" data-action="' + (s.pausedAt ? 'resume' : 'pause') + '"' + (busy ? ' disabled' : '') + '>' + (s.pausedAt ? 'Resume' : 'Pause') + '</button>' : '';
-    var meeting = s.meeting && s.pausedAt ? esc(meetingText(s.meeting)) + ' <span class="acct-handle">· paused</span>' + pause
-      : s.meeting ? esc(meetingText(s.meeting)) + pause +
+    var meeting = s.meeting && s.pausedAt ? esc(meetingTextLocal(s.meeting)) + ' <span class="acct-handle">· paused</span>' + pause
+      : s.meeting ? esc(meetingTextLocal(s.meeting)) + pause +
         (s.eventLink || s.meetUrl ? '<span class="st-links">' + [s.eventLink ? '<a href="' + esc(s.eventLink) + '" target="_blank" rel="noopener">Calendar</a>' : '',
           s.meetUrl ? '<a href="' + esc(s.meetUrl) + '" target="_blank" rel="noopener">' + (s.meeting.link ? 'Own link' : 'Meet') + '</a>' : ''].filter(Boolean).join(' · ') + '</span>' : '') +
         (s.error ? '<span class="st-error">' + esc(s.error) + ' <button type="button" class="btn-text st-retry"' + (busy ? ' disabled' : '') + '>Try again</button></span>' : '')

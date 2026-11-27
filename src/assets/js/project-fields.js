@@ -220,15 +220,30 @@ function readMeetingEntry(){
   return m;
 }
 
-// "Mondays, 14:00–15:00, every 2 weeks, until 18 Dec 2026"
+// "Mondays, 14:00–15:00, every 2 weeks, until 18 Dec 2026": in London time, as it's entered and kept.
 function meetingText(m){
   var day = MEETING_DAYS.filter(function(d){ return d[0] === m.day; })[0];
   var start = m.time.split(':').map(Number), endMin = start[0] * 60 + start[1] + m.minutes;
   var pad = function(n){ return (n < 10 ? '0' : '') + n; };
   var end = pad(Math.floor(endMin / 60) % 24) + ':' + pad(endMin % 60);
+  return (day ? day[1] + 's' : m.day) + ', ' + m.time + '\u2013' + end + meetingRepeats(m);
+}
+// ", every 2 weeks, until 18 Dec 2026" (its end date is London's).
+function meetingRepeats(m){
   var u = /^(\d{4})-(\d{2})-(\d{2})$/.exec(m.until || '');
   var until = u ? ', until ' + Number(u[3]) + ' ' + ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'][u[2] - 1] + ' ' + u[1] : '';
-  return (day ? day[1] + 's' : m.day) + ', ' + m.time + '\u2013' + end + (m.every > 1 ? ', every ' + m.every + ' weeks' : '') + until;
+  return (m.every > 1 ? ', every ' + m.every + ' weeks' : '') + until;
+}
+// The meeting where it's read, for whoever's Slack timezone isn't London's (BOLD.timeZone, local-time.js):
+// "Mondays, 09:00–10:00 your time (14:00 London), every 2 weeks", with London's day too when theirs is another.
+// Where the clocks read the same, meetingText's, followed by `note` (" · London time") if given.
+// What a form asks to confirm stays meetingText: meetings are entered in London time.
+function meetingTextLocal(m, note){
+  var L = typeof BoldLocalTime !== 'undefined' ? BoldLocalTime : null;
+  var x = L && typeof BOLD !== 'undefined' && BOLD.timeZone ? L.meetingIn(m, BOLD.timeZone(), Date.now()) : null;
+  if (!x || !x.differs) return meetingText(m) + (note || '');
+  var name = function(code){ var d = MEETING_DAYS.filter(function(y){ return y[0] === code; })[0]; return d ? d[1] + 's' : code; };
+  return name(x.day) + ', ' + x.time + '\u2013' + x.end + ' your time (' + (x.day !== m.day ? name(m.day) + ' ' : '') + m.time + ' London)' + meetingRepeats(m);
 }
 
 // How the meeting is joined: its own link, or the Google Meet BOLD.OS made.

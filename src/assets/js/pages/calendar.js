@@ -81,6 +81,8 @@
     return m.href ? '<a class="' + cls + '" href="' + esc(m.href) + '">' + esc(m.title) + '</a>' : '<span class="' + cls + '">' + esc(m.title) + '</span>';
   }
 
+  // Meeting times are in the reader's timezone (their Slack profile's), once it's known.
+  BOLD.onTimeZone(function(){ render(); });
   function render(){
     // Not while a meeting is being dragged (live data would redraw the block from under the pointer): after.
     if (drag && drag.on) { drag.redraw = true; return; }
@@ -106,7 +108,7 @@
     var box = el('calPop');
     var m = pop && meetings(true).filter(function(x){ return keyOf(x) === pop.key; })[0];
     if (!m) { box.hidden = true; box.innerHTML = ''; return; }
-    var meta = [esc(meetingText(m.meeting)), m.people + (m.people === 1 ? ' person' : ' people')];
+    var meta = [esc(meetingTextLocal(m.meeting)), m.people + (m.people === 1 ? ' person' : ' people')];
     if (m.mine && m.meetUrl) meta.push('<a href="' + esc(m.meetUrl) + '" target="_blank" rel="noopener">' + meetLabel(m.meeting) + '</a>');
     var o = pop.orig ? occIn(m, addDays(pop.orig, -62), addDays(pop.orig, 62)).filter(function(x){ return x.orig === pop.orig; })[0] : null;
     var html = '<button type="button" class="cal-pop-close" aria-label="Close">&times;</button>' +
@@ -258,7 +260,8 @@
       if (!day.length) return;
       html += '<h2 class="meet-day">' + d[1] + 's</h2><ul class="proj-list">';
       day.forEach(function(m){
-        var when = meetingText(m.meeting).replace(/^[^,]*, /, '');
+        // Under its London day: where the reader is it may fall on another, which its text then says.
+        var full = meetingTextLocal(m.meeting), when = full.indexOf(d[1] + 's, ') === 0 ? full.slice(d[1].length + 3) : full;
         var meta = [esc(when), m.people + (m.people === 1 ? ' person' : ' people')];
         // Its coming dates moved one by one.
         Object.keys(m.moved || {}).sort().filter(function(k){ return k >= today || (!m.moved[k].cancelled && m.moved[k].date >= today); }).slice(0, 3).forEach(function(k){
@@ -416,13 +419,16 @@
           var drag = m.canEdit && !m.paused && !m.hidden && m.start && !o.cancelled;
           html += '<' + tag + ' class="week-block cal-' + m.kind + (m.mine ? ' is-mine' : '') + (greyed(m) || o.cancelled ? ' is-paused' : '') + (o.moved ? ' is-moved' : '') + (o.cancelled ? ' is-cancelled' : '') + (drag ? ' is-draggable' : '') + (pend && pend.m === m && pend.orig === o.orig ? ' is-drag-source' : '') + '" data-key="' + esc(keyOf(m)) + '" data-orig="' + o.orig + '" draggable="false"' + (m.href ? ' href="' + esc(m.href) + '"' : '') +
             ' style="top:' + y(b.s) + 'px;height:' + Math.max(18, y(b.e) - y(b.s) - 2) + 'px;' +
-            'left:calc(' + (b.lane * 100 / n) + '% + 2px);width:calc(' + (100 / n) + '% - 4px)" title="' + esc(m.title + ' · ' + (o.cancelled ? 'This occurrence is cancelled · ' : '') + (o.moved ? dayText(o.date) + ', ' + o.time + '–' + endOf(o.time, o.minutes) + ', moved from ' + dayText(o.orig) + ' · ' : '') + (m.ev ? dayText(o.date) + ', ' + o.time + '–' + endOf(o.time, o.minutes) + (m.ev.place ? ' · ' + m.ev.place : '') : meetingText(m.meeting)) + ' · ' + KIND_LABELS[m.kind] + (m.hidden ? ' · Hidden' : m.paused ? ' · Paused' : '') + (m.meeting.link ? ' · Own link' : '') + (drag ? ' · Drag to move this occurrence' : '')) + '">' +
+            'left:calc(' + (b.lane * 100 / n) + '% + 2px);width:calc(' + (100 / n) + '% - 4px)" title="' + esc(m.title + ' · ' + (o.cancelled ? 'This occurrence is cancelled · ' : '') + (o.moved ? dayText(o.date) + ', ' + o.time + '–' + endOf(o.time, o.minutes) + ', moved from ' + dayText(o.orig) + ' · ' : '') + (m.ev ? dayText(o.date) + ', ' + o.time + '–' + endOf(o.time, o.minutes) + (m.ev.place ? ' · ' + m.ev.place : '') : meetingTextLocal(m.meeting)) + ' · ' + KIND_LABELS[m.kind] + (m.hidden ? ' · Hidden' : m.paused ? ' · Paused' : '') + (m.meeting.link ? ' · Own link' : '') + (drag ? ' · Drag to move this occurrence' : '')) + '">' +
             '<span class="week-time">' + esc(o.time) + '</span> ' + esc(m.title) + (o.cancelled ? ' <span class="badge">Cancelled</span>' : o.moved ? ' <span class="badge">Moved</span>' : '') + (m.w ? ' ' + groupBadge(m.w) : '') + (m.meeting.link ? ' ' + ownBadge(m) : '') + '</' + tag + '>';
         });
       });
       html += '</div>';
     });
+    // The week is laid out in London time, where meetings are entered and moved; a reader elsewhere is told.
+    var L = window.BoldLocalTime, away = L && L.at(BOLD.timeZone(), Date.now()).time !== L.at(L.LONDON, Date.now()).time;
     html += '</div></div>' +
+      (away ? '<p class="week-note">The week is in London time. A meeting\u2019s card gives its time where you are.</p>' : '') +
       '<p class="week-note"><span class="week-key"></span> Yours' +
       (kind === 'all' ? ' <span class="week-key is-outline cal-project"></span> Projects <span class="week-key is-outline cal-study"></span> Supervision <span class="week-key is-outline cal-series"></span> Recurring' : '') +
       (ms.some(function(m){ return m.paused; }) ? ' <span class="week-key is-outline is-paused"></span> Paused' : '') +

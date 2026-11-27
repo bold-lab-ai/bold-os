@@ -368,6 +368,8 @@ function escapeHtml(s){ return BOLD.escapeHtml(s); }
     });
   }
 
+  // Its meeting's time is in the reader's timezone (their Slack profile's), once it's known.
+  BOLD.onTimeZone(function(){ if (card && !editing) render(); });
   function render(){
     if (tab === 'work' && wsLoaded && !hasBoard()) tab = 'overview';
     if (tab === 'work' && !wsLoaded) tab = 'overview', workWanted = true;
@@ -576,9 +578,9 @@ function escapeHtml(s){ return BOLD.escapeHtml(s); }
     var pauseBtn = function(action){
       return act('<button class="btn-text detail-inline-edit" type="button" data-ws="' + action + '"' + (canEdit() && !wsBusy ? '' : ' disabled title="' + NOT_EDITOR + '"') + '>' + (action === 'pause' ? 'Pause' : 'Resume') + '</button>');
     };
-    var meeting = m && ws.pausedAt && ws.group !== 'completed' ? esc(meetingText(m)) + ' <span class="detail-muted">\u00b7 paused</span>' + pauseBtn('resume')
-      : m && !ws.eventId ? esc(meetingText(m)) + ' <span class="detail-muted">\u00b7 ' + (ws.group === 'completed' ? 'ended with the project' : 'not set up yet') + '</span>'
-      : m ? esc(meetingText(m)) + pauseBtn('pause') +
+    var meeting = m && ws.pausedAt && ws.group !== 'completed' ? esc(meetingTextLocal(m)) + ' <span class="detail-muted">\u00b7 paused</span>' + pauseBtn('resume')
+      : m && !ws.eventId ? esc(meetingTextLocal(m)) + ' <span class="detail-muted">\u00b7 ' + (ws.group === 'completed' ? 'ended with the project' : 'not set up yet') + '</span>'
+      : m ? esc(meetingTextLocal(m)) + pauseBtn('pause') +
         (ws.meetUrl ? ' \u00b7 <a href="' + esc(ws.meetUrl) + '" target="_blank" rel="noopener">' + meetLabel(m) + '</a>' : '') +
         (ws.eventLink ? ' \u00b7 <a href="' + esc(ws.eventLink) + '" target="_blank" rel="noopener">Calendar</a>' : '')
       : wsLoaded && !setting ? missing() + skipped('meeting') : state;
