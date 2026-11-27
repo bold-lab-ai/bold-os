@@ -269,7 +269,20 @@ body.bs-agent-open .bs-cols{padding-bottom:min(46vh, 420px);}
 @media (pointer:coarse){ .bs-top{--head-size:44px;} }
 .bs-answer .bs-answer-to{margin-right:auto; font-size:13px; color:var(--muted);}
 
-/* Topic selection in a conversation draft. */
+/* Topics and the shared composer. */
+.bs-topic, .bs-topic-nav {border-top:1px solid var(--line); padding:14px 0;}
+.bs-topic h2 {font:600 19px var(--sans); margin:0 0 8px;}
+.bs-topic h2 a, .bs-topic li a {color:var(--ink); text-decoration:none;}
+.bs-topic a:hover, .bs-topic a:focus-visible {text-decoration:underline;}
+.bs-topic ul {list-style:none; padding:0; margin:0 0 0 1.75em;}
+.bs-topic li {line-height:1.5; padding:3px 0;}
+.bs-pin-label, .bs-result-topic {color:var(--muted); font:500 12px var(--sans);}
+.bs-pin-label {border:1px solid var(--line); padding:1px 4px;}
+.bs-topic-tools {display:flex; align-items:center; flex-wrap:wrap; gap:12px; margin:8px 0; font:500 13px var(--sans);}
+.bs-topic-arrow {margin-inline-start:.45em; color:var(--muted);}
+.bs-matched-replies {list-style:none; padding-inline-start:12px; border-inline-start:2px solid var(--line); margin:8px 0; font-size:14px;}
+.bs-matched-replies a {overflow-wrap:anywhere;}
+.bs-topic-tools a, .bs-topic-nav a {color:var(--link);}
 .bs-import-form > .bs-topic-slot {margin-block-end:20px;}
 .bs-topic-picker {max-width:22rem; font:16px/1.4 var(--sans); color:var(--ink);}
 .bs-topic-picker summary {
@@ -312,5 +325,5 @@ body.bs-agent-open .bs-cols{padding-bottom:min(46vh, 420px);}
 .bs-icon-choice:focus-visible {outline:2px solid var(--accent); outline-offset:-2px;}
 .bs-no-icons {grid-column:1/-1; padding:8px 0; font-size:14px; color:var(--muted);}
 .bs-topic-create .bs-topic-save {grid-column:1/-1; justify-self:start;}
-.bs-topic-create[hidden] {display:none;}
+.bs-topic-create[hidden], .bs-topic-nav[hidden] {display:none;}
 .bs-topic-menu [role=alert]:not([hidden]) {margin:8px 0 0; color:var(--ink); font-weight:600;}

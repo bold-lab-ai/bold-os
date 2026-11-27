@@ -102,7 +102,7 @@ window.BoldConversations = (function(){
           '<p class="event-form-hint">Only a thread you can read in Slack: a public channel, or a private one you’re in. Its first message becomes the post, the rest its replies. In Slack, a message’s ⋯ menu → Take it to the BOLD OS does the same.</p>' +
           '<p class="ev-error" hidden></p>' +
           '<div class="event-form-actions"><button type="submit" class="ev-save">Bring it in</button><button type="button" class="bs-import-cancel">Cancel</button></div></form>' +
-        '<ol class="bs-posts"></ol><article class="bs-thread" hidden></article></section>' +
+        '<nav class="bs-topic-nav" aria-label="Current topic" hidden></nav><ol class="bs-posts"></ol><article class="bs-thread" hidden></article></section>' +
       '<section class="bs-agent" aria-label="Reason with your agent" hidden>' +
         '<div class="bs-agent-head"><h2>Reason with your agent</h2><button type="button" class="bs-close" aria-label="Close" title="Close">&times;</button></div>' +
         '<p class="bs-about" hidden></p><ol class="bs-log" aria-live="polite"></ol>' +
@@ -128,33 +128,45 @@ window.BoldConversations = (function(){
     var md = function(t){ return '<div class="bs-text md-desc">' + BoldMarkdown.render(t, { breaks: true }) + '</div>'; };
     var me = { email: '', name: 'You', uid: '', slackId: '' }, canPost = false, canStart = false, full = false;
     var posts = null, messages = {}, openId = '', stopMsgs = null;
-    var topics = [];
-    function topicLabel(p){
-      var topic = topics.find(function(t){ return t.id === p.topicId; });
-      return topic ? '<span class="bs-by">' + esc(topic.icon + ' ' + topic.name) + '</span> ' : '';
-    }
+    var topics = [], topicsReady = false, topicNav = q('.bs-topic-nav'), topicPage = !project && !opts.thread && !opts.peek;
+    var topicById = function(id){ return topics.find(function(t){ return t.id === id; }); };
+    function currentTopic(){ return topicPage ? new URLSearchParams(location.hash.slice(1)).get('topic') || '' : ''; }
+    function topicHref(id){ return '#topic=' + encodeURIComponent(id); }
     var postPicker = conversationTopicPicker(writeEl.querySelector('.bs-topic-slot'));
     var slackPicker = conversationTopicPicker(importEl.querySelector('.bs-topic-slot'));
     var find = '';   // the search box's text: the list shows only the posts it finds, best first (search-rank.js)
-    var replyText = {};   // each post's replies as one text, fetched the first time the box or a filter is used
-    var replyNames = {};  // and who wrote them, { pid: [name] }
+    // While searching, listen only to replies under threads this reader can see.
+    var replySearch = new Map(), searchFrame = 0;
     var filt = { author: '', with: '', project: '', vis: '' };
     var showFilters = false;   // the filters' row, opened by its icon
     function filtering(){ return !!(filt.author || filt.with || filt.project || filt.vis); }
-    // The replies of every listed post not fetched yet, then the list again; once each.
-    function fetchReplies(){
-      (posts || []).forEach(function(x){
-        if (replyText[x.id] !== undefined) return;
-        replyText[x.id] = ''; replyNames[x.id] = [];
-        col().doc(x.id).collection('messages').get().then(function(m){
-          replyText[x.id] = m.docs.map(function(d){ return [d.data().name, d.data().body].join(' '); }).join(' ');
-          replyNames[x.id] = m.docs.map(function(d){ return d.data().name; }).filter(Boolean);
-          if (find.trim() || filt.with) render(); else fillFilters();
-        }, function(){});
+    function syncReplySearch(){
+      var searching = !route().post && (find.trim() || showFilters || filt.with);
+      var ids = new Set(searching ? (posts || []).map(function(p){ return p.id; }) : []);
+      replySearch.forEach(function(entry, id){
+        if (!ids.has(id)) { entry.stop(); replySearch.delete(id); }
+      });
+      function repaint(){
+        if (!searchFrame) searchFrame = requestAnimationFrame(function(){ searchFrame = 0; if (root.isConnected) render(); });
+      }
+      ids.forEach(function(id){
+        if (replySearch.has(id)) return;
+        var entry = { items: [], ready: false, failed: false };
+        replySearch.set(id, entry);
+        entry.stop = col().doc(id).collection('messages').onSnapshot(function(snapshot){
+          if (replySearch.get(id) !== entry) return;
+          entry.items = snapshot.docs.map(function(doc){
+            var m = doc.data(); return { id: doc.id, where: m.name || '', text: m.body || '' };
+          });
+          entry.ready = true; repaint();
+        }, function(){
+          if (replySearch.get(id) !== entry) return;
+          entry.items = []; entry.ready = true; entry.failed = true; repaint();
+        });
       });
     }
-    // Who's in a conversation: who started it and everyone who replied.
-    function people(x){ return [x.name].concat(replyNames[x.id] || []).filter(Boolean); }
+    function repliesForSearch(id){ var entry = replySearch.get(id); return entry ? entry.items : []; }
+    function people(x){ return [x.name].concat(repliesForSearch(x.id).map(function(r){ return r.where; })).filter(Boolean); }
     // The filters' choices, from the posts there are (a select being used is left alone).
     function fillFilters(){
       if (!posts || !filtersEl) return;
@@ -323,7 +335,7 @@ window.BoldConversations = (function(){
     }
     function invite(pid, to){ return col().doc(pid).collection('invites').add({ to: to, by: me.email, byName: me.name, at: FV().serverTimestamp() }); }
     var sort = 'top', replying = '', editing = '', said = [], draft = null, about = null;   // about: { pid, id }
-    var unwatch = [];   // the lists' listeners, replaced when access changes
+    var accessVersion = 0, unwatch = [];   // the lists' listeners, replaced when access changes
     var db = function(){ return firebase.firestore(BOLD.getApp()); };
     var col = function(){ return db().collection('conversations'); };
     var FV = function(){ return firebase.firestore.FieldValue; };
@@ -623,11 +635,11 @@ window.BoldConversations = (function(){
       return { post: decodeURIComponent((p && p[1]) || ''), msg: decodeURIComponent((m && m[1]) || '') };
     }
     // The address without a post: the list.
-    function base(){ return project ? location.hash.replace(/&(post|msg)=[^&]*/g, '') : ''; }
+    function base(){ return project ? location.hash.replace(/&(post|msg)=[^&]*/g, '') : currentTopic() ? topicHref(currentTopic()) : ''; }
     function postHash(pid, mid){
       // One conversation alone: its messages' links are the page's own address, with &msg=.
       if (opts.thread) return location.hash.replace(/&msg=[^&]*/g, '') + (mid && mid !== pid ? '&msg=' + encodeURIComponent(mid) : '');
-      var b = base();
+      var b = topicPage && find.trim() ? '' : base();
       return (b ? b + '&' : '#') + 'post=' + encodeURIComponent(pid) + (mid && mid !== pid ? '&msg=' + encodeURIComponent(mid) : '');
     }
     var listHref = function(){ return base() || '#'; };
@@ -659,6 +671,39 @@ window.BoldConversations = (function(){
       if (answerPid !== p.id) { answerPid = p.id; answer.reset(); }
       answer.into(slot);
     }
+    var unassigned = { id: '_unassigned', name: 'Awaiting a topic', icon: '🗂️' };
+    function groupOf(post){ return topicById(ConversationTopics.topicOf(post)) || unassigned; }
+    function backLink(){
+      var topic = topicById(currentTopic()) || (currentTopic() === unassigned.id && unassigned);
+      var label = !topicPage ? 'All posts' : find.trim() ? 'Search results' : topic ? topic.name : 'All topics';
+      return '<a class="back-link" href="' + esc(listHref()) + '">&larr; ' + esc(label) + '</a>';
+    }
+    function topicControls(p){
+      var t = groupOf(p);
+      var why = t === unassigned ? 'This conversation is awaiting a topic' : canPost ? '' : BOLD.cannotReason('conversations', 'edit');
+      return '<div class="bs-topic-tools"><a class="bs-open-topic" href="conversations.html' + topicHref(t.id) + '">' + esc(t.icon + ' ' + t.name) + '</a>' +
+        '<button type="button" class="btn-text bs-pin" aria-pressed="' + !!p.pinned + '"' + (why ? ' disabled title="' + esc(why) + '"' : '') + '>' +
+        (p.pinned ? 'Unpin' : 'Pin to topic') + '</button></div>';
+    }
+    function matchingReplies(p, query){
+      var rank = window.BoldSearchRank;
+      if (!query || !rank) return '';
+      var matches = rank.rank(repliesForSearch(p.id), query).filter(function(hit){ return !hit.partial; });
+      if (!matches.length) return '';
+      return '<ul class="bs-matched-replies">' + matches.map(function(hit){
+        var r = hit.item, snippet = rank.snippet(r.text, query, 110);
+        return '<li><a href="' + esc(postHash(p.id, r.id)) + '">' + esc(r.where || 'Reply') + ' · ' + esc(snippet) + '</a></li>';
+      }).join('') + '</ul>';
+    }
+    function topicPreview(topic, list){
+      var rows = list.slice().sort(ConversationTopics.previewOrder).slice(0, 3).map(function(p){
+        var post = topicHref(topic.id) + '&post=' + encodeURIComponent(p.id);
+        return '<li>' + (p.pinned ? '<span class="bs-pin-label">Pinned</span> ' : '') + '<a href="' + esc(post) + '">' + esc(p.title) + '</a>' +
+          (p.private ? ' <span class="bs-private">Private</span>' : '') + '</li>';
+      }).join('');
+      return '<li class="bs-topic"><h2><a href="' + topicHref(topic.id) + '"><span aria-hidden="true">' + esc(topic.icon) + '</span> ' + esc(topic.name) + '<span class="bs-topic-arrow" aria-hidden="true">›</span></a></h2>' +
+        (rows ? '<ul>' + rows + '</ul>' : '<p class="detail-muted">No conversations yet.</p>') + '</li>';
+    }
     function render(){
       var open = route().post;
       // A peek given a conversation (an old index.html#post=… link): it opens on Conversations' page.
@@ -668,11 +713,15 @@ window.BoldConversations = (function(){
       var visibleId = p ? open : '';
       if (visibleId !== openId) watchThread(visibleId);
       postsEl.hidden = !!open; sortEl.hidden = !!open; if (filtersEl) filtersEl.hidden = !!open || !showFilters; threadEl.hidden = !open;
+      syncReplySearch();
+      topicNav.hidden = true;
+      var active = currentTopic(), query = find.trim(), directory = topicPage && !active && !query && !filtering();
+      sortEl.querySelectorAll('.bs-sortbtn').forEach(function(button){ button.hidden = directory; });
       if (open) {
         if (importEl) importEl.hidden = true;
         if (writeEl) writeEl.hidden = true;
         if (posts === null || (p && messages[open] === undefined)) { threadEl.innerHTML = '<p class="proj-msg">Loading&hellip;</p>'; return; }
-        if (!p) { threadEl.innerHTML = '<a class="back-link" href="' + esc(listHref()) + '">&larr; All posts</a><p class="proj-msg">No such post: it may have been removed.</p>'; return; }
+        if (!p) { threadEl.innerHTML = backLink() + '<p class="proj-msg">No such post: it may have been removed.</p>'; return; }
         // An open reply box is carried across the redraw (a reply or a vote arriving), with what's typed in it
         // and its Write | Preview tab.
         var keep = threadEl.querySelector('.bs-replyform') || parkedForm;
@@ -682,10 +731,10 @@ window.BoldConversations = (function(){
         var first = Object.assign({}, p, { body: p.body && p.body.trim() !== p.title ? p.body : '' });
         var head = first.body ? '<ol class="bs-run bs-post-run">' + (function(h){ var i = h.lastIndexOf('</li>'); return h.slice(0, i) + origin(p) + h.slice(i); })(msgHtml(first, p.id)) + '</ol>' : origin(p);
         var top = kids(p.id);
-        threadEl.innerHTML = (opts.thread ? '' : '<a class="back-link" href="' + esc(listHref()) + '">&larr; All posts</a>') +
+        threadEl.innerHTML = (opts.thread ? '' : backLink()) +
           (opts.title === false ? '' : '<h2 class="bs-title bs-thread-title">' + esc(p.title) + '</h2>') +
           // Who can read it, and Invite right after it, on one line (readersHtml).
-          '<div class="bs-meta">' + topicLabel(p) + readersHtml(p) + '</div>' + inviteHtml(p) + head + '<div class="bs-join"></div>' +
+          '<div class="bs-meta">' + readersHtml(p) + '</div>' + inviteHtml(p) + topicControls(p) + head + '<div class="bs-join"></div>' +
           (top.length ? '<ol class="bs-run bs-top">' + top.map(function(m){ return subtreeHtml(m, p.id, 1); }).join('') + '</ol>' : '');
         BOLD.photo.mountMany(threadEl.querySelectorAll('.bs-avatar'));
         clampLong();
@@ -700,34 +749,56 @@ window.BoldConversations = (function(){
         return;
       }
       drawTree(null);
-      if (posts === null) { postsEl.innerHTML = '<li class="proj-msg">Loading&hellip;</li>'; return; }
+      if (posts === null || (topicPage && !topicsReady)) { postsEl.innerHTML = '<li class="proj-msg">Loading&hellip;</li>'; return; }
       // A card's conversation made by opening the card (opened, functions/comment-conversation.js): left out until someone replies.
       var list = posts.filter(function(x){ return !(x.opened && !(x.replies > 0)); }).sort(sort === 'new' ? function(a, b){ return ms(b.at) - ms(a.at); } : function(a, b){ return score(b) - score(a) || ms(b.at) - ms(a.at); });
       fillFilters();
-      if (filtering()) {
-        if (filt.with) fetchReplies();
-        list = list.filter(passes);
-        if (!list.length) { postsEl.innerHTML = '<li class="proj-msg">No conversation matches these filters.</li>'; return; }
+      if (filtering()) list = list.filter(passes);
+      if (directory) {
+        var groups = new Map(topics.map(function(t){ return [t, []]; }));
+        list.forEach(function(p){ var t = groupOf(p); if (!groups.has(t)) groups.set(t, []); groups.get(t).push(p); });
+        postsEl.innerHTML = Array.from(groups, function(entry){ return topicPreview(entry[0], entry[1]); }).join('') ||
+          '<li class="proj-msg">No topics yet. Start a conversation to create one.</li>';
+        return;
       }
-      // Searching: the posts whose title, text, author, project or replies have every word, the whole phrase first,
-      // as the site's search ranks them; each post's place in Top or New breaks ties.
-      if (find.trim()) {
-        fetchReplies();
-        var R = window.BoldSearchRank;
-        list = R ? R.rank(list.map(function(x, i){ return { title: x.title, where: [x.name, x.projectTitle].filter(Boolean).join(' '), text: [x.body, replyText[x.id]].join(' '), x: x, i: i }; }), find)
-          .filter(function(h){ return !h.partial; }).map(function(h){ return h.item.x; })
-          : list.filter(function(x){ var hay = [x.title, x.body, x.name, x.projectTitle, replyText[x.id]].join(' ').toLowerCase(); return find.toLowerCase().split(/\s+/).filter(Boolean).every(function(w){ return hay.indexOf(w) !== -1; }); });
-        if (!list.length) { postsEl.innerHTML = '<li class="proj-msg">No conversation has “' + esc(find.trim()) + '”.</li>'; return; }
+      var t = topicById(active) || (active === unassigned.id && unassigned);
+      if (topicPage) {
+        topicNav.hidden = false;
+        topicNav.innerHTML = '<a href="#">All topics</a> / ' + (query ? 'Search results' : t ? esc(t.icon + ' ' + t.name) : active ? 'Unknown topic' : 'Filtered conversations');
+        if (active && !query) list = list.filter(function(p){ return groupOf(p).id === active; }).sort(function(a,b){ return Number(!!b.pinned) - Number(!!a.pinned); });
+      }
+      var empty = active && !query ? 'No conversations in this topic yet.' : project ? 'No conversations about this project yet.' : 'No posts yet.';
+      if (filtering()) empty = 'No conversation matches these filters.';
+      if (active && !t) empty = 'This topic is no longer available.';
+      var status = '';
+      if (query) {
+        var ranked = list.map(function(p){
+          var replies = repliesForSearch(p.id).map(function(r){ return r.where + ' ' + r.text; });
+          return { title: p.title, where: [p.name, p.projectTitle].filter(Boolean).join(' '), text: [p.body].concat(replies).join(' '), post: p };
+        });
+        var rank = window.BoldSearchRank;
+        list = rank ? rank.rank(ranked, query).filter(function(h){ return !h.partial; }).map(function(h){ return h.item.post; })
+          : ranked.filter(function(r){ var hay = [r.title, r.where, r.text].join(' ').toLowerCase(); return query.toLowerCase().split(/\s+/).every(function(w){ return hay.includes(w); }); }).map(function(r){ return r.post; });
+        empty = 'No conversation has “' + query + '”.';
+        var entries = Array.from(replySearch.values());
+        if (entries.some(function(e){ return !e.ready; })) status = 'Searching replies…';
+        else if (entries.some(function(e){ return e.failed; })) status = 'Some replies couldn’t be searched.';
       }
       postsEl.innerHTML = list.length ? list.map(function(q){
         // A peek (the home page): each opens on Conversations' own page.
         var at = opts.peek ? 'conversations.html#post=' + encodeURIComponent(q.id) : postHash(q.id);
         return '<li class="bs-post' + (mine(q) ? ' is-mine' : '') + '" id="m-' + esc(q.id) + '">' + vote(q) +
-          '<div class="bs-post-main"><h3 class="bs-title"><a href="' + at + '">' + esc(q.title) + '</a></h3><p class="bs-by">' + by(q) + (q.private ? ' · <span class="bs-private" title="' + esc(PRIVATE_TIP(q)) + '">Private</span>' : '') + '</p>' +
+          '<div class="bs-post-main">' + (q.pinned ? '<span class="bs-pin-label">Pinned</span> ' : '') +
+          (find.trim() ? '<span class="bs-result-topic">' + esc(groupOf(q).icon + ' ' + groupOf(q).name) + '</span>' : '') + '<h3 class="bs-title"><a href="' + at + '">' + esc(q.title) + '</a></h3><p class="bs-by">' + by(q) + (q.private ? ' · <span class="bs-private" title="' + esc(PRIVATE_TIP(q)) + '">Private</span>' : '') + '</p>' +
             (q.body && q.body.trim() !== q.title ? md(q.body).replace('class="bs-text md-desc"', 'class="bs-text md-desc bs-clip"') : '') +
-            '<p class="bs-acts"><a href="' + at + '">' + count(q.replies || 0) + '</a></p></div></li>';
-      }).join('') : '<li class="proj-msg">' + (project ? 'No conversations about this project yet: start one, or bring in a Slack thread.' : 'No posts yet: write one, start a chat with your agent, or bring in a Slack thread.') + '</li>';
+            matchingReplies(q, query) + '<p class="bs-acts"><a href="' + at + '">' + count(q.replies || 0) + '</a></p></div></li>';
+      }).join('') : '<li class="proj-msg">' + esc(status || empty) + '</li>';
+      if (status && list.length) postsEl.insertAdjacentHTML('beforeend', '<li class="proj-msg">' + esc(status) + '</li>');
     }
+    forumEl.addEventListener('click', function(e){
+      if (!topicPage || !e.target.closest('.bs-topic-nav a, .bs-open-topic') || e.ctrlKey || e.metaKey || e.shiftKey || e.altKey) return;
+      find = ''; findEl.value = ''; filt = { author: '', with: '', project: '', vis: '' }; render();
+    });
     window.addEventListener('hashchange', function(){ if (!root.isConnected) return; replying = ''; linkedMsg = route().msg; render(); if (!linkedMsg) window.scrollTo(0, 0); });
     function watchThread(id){
       if (stopMsgs) { stopMsgs(); stopMsgs = null; }
@@ -944,6 +1015,11 @@ window.BoldConversations = (function(){
       var b = e.target.closest('button');
       if (!b || b.disabled) return;
       var id = b.getAttribute('data-id'), pid = b.getAttribute('data-pid');
+      if (b.classList.contains('bs-pin')) {
+        var post = postOf(openId);
+        if (post && canPost) col().doc(openId).update({ pinned: !post.pinned }).catch(oops('Updating pin'));
+        return;
+      }
       // Copy (its text, as written) and Copy link, from its ⋯ menu: the menu's button says it's done.
       if (b.classList.contains('bs-link') || b.classList.contains('bs-copy')) {
         var cm = id === pid ? postOf(pid) : msgOf(pid, id);
@@ -1097,9 +1173,7 @@ window.BoldConversations = (function(){
     // Who can read it, unfolded or folded: remembered for the redraws.
     threadEl.addEventListener('toggle', function(e){ var d = e.target; if (d.classList && d.classList.contains('bs-readers')) readersOpen[d.getAttribute('data-pid')] = d.open; }, true);
     if (filtersEl) {
-      q('.bs-filterbtn').addEventListener('click', function(){ showFilters = !showFilters; if (showFilters) fetchReplies(); render(); });
-      filtersEl.addEventListener('pointerenter', fetchReplies);
-      filtersEl.addEventListener('focusin', fetchReplies);
+      q('.bs-filterbtn').addEventListener('click', function(){ showFilters = !showFilters; render(); });
       filtersEl.addEventListener('change', function(e){
         var sel = e.target.closest('.bs-filter'); if (!sel) return;
         filt[sel.getAttribute('data-f')] = sel.value; sel.blur(); render();
@@ -1115,10 +1189,11 @@ window.BoldConversations = (function(){
     // ---------- who, and what's there ----------
     BOLD.onUser(function(u){ me.name = (u && u.displayName) || 'You'; me.uid = (u && u.uid) || ''; loadFolds(); });
     BOLD.onAccess(function(a){
+      var version = ++accessVersion;
       unwatch.splice(0).forEach(function(stop){ stop(); });
       if (stopMsgs) { stopMsgs(); stopMsgs = null; }
-      openId = ''; posts = null; messages = {}; replyText = {}; replyNames = {}; topics = [];
-      threadEl.replaceChildren(); postsEl.replaceChildren();
+      openId = ''; posts = null; messages = {}; topics = []; topicsReady = false; syncReplySearch(); topicNav.hidden = true;
+      threadEl.replaceChildren(); postsEl.replaceChildren(); drawTree(null);
       postPicker.update(topics); slackPicker.update(topics);
 
       me.email = String((a && a.e) || '').toLowerCase();
@@ -1136,20 +1211,24 @@ window.BoldConversations = (function(){
       ((u && u.providerData) || []).forEach(function(p){ if (p.providerId === 'oidc.slack') slackId = p.uid; });
       me.slackId = slackId; loadNames();   // names: the authors' profiles, the pickers
       var parts = { open: [], mine: [] };
-      var fail = function(err){ console.error('[BOLD Lab] loading conversations failed', err); postsEl.innerHTML = '<li class="proj-msg">Couldn’t load the conversations.</li>'; };
+      var fail = function(err){ if (version !== accessVersion) return; console.error('[BOLD Lab] loading conversations failed', err); postsEl.innerHTML = '<li class="proj-msg">Couldn’t load the conversations.</li>'; };
       var merge = function(){
         var seen = {}; posts = [];
         parts.open.concat(parts.mine).forEach(function(p){ if (!seen[p.id]) { seen[p.id] = 1; posts.push(p); } });
-        if (!document.activeElement || !document.activeElement.closest('.bs-replyform, .bs-answer')) render();
+        if (!postOf(openId) || !document.activeElement || !document.activeElement.closest('.bs-replyform, .bs-answer')) render();
       };
       var watch = function(qy, key){
-        unwatch.push(qy.onSnapshot(function(snap){ parts[key] = snap.docs.map(function(d){ return Object.assign({ id: d.id }, d.data()); }); merge(); }, fail));
+        unwatch.push(qy.onSnapshot(function(snap){ if (version !== accessVersion) return; parts[key] = snap.docs.map(function(d){ return Object.assign({ id: d.id }, d.data()); }); merge(); }, fail));
       };
       // In a project: the open ones about it (never private: started there, or from its cards).
       unwatch.push(conversationTopicPicker.watch(function(items){
-        topics = items;
+        if (version !== accessVersion) return;
+        topics = items; topicsReady = true;
         postPicker.update(topics); slackPicker.update(topics); render();
-      }, function(err){ oops('Loading topics')(err); }));
+      }, function(err){
+        if (version !== accessVersion) return;
+        topicsReady = true; render(); oops('Loading topics')(err);
+      }));
       // In a project: the open ones about it, and the private ones about it the viewer reads (Who can read it › Change).
       if (project) {
         watch(col().where('project', '==', project.id).where('private', '==', false), 'open');

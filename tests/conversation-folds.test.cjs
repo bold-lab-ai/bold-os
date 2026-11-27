@@ -15,18 +15,19 @@ function openThread(storage, uid, hash = '#post=tea') {
   const { document, window } = parseHTML('<html><body></body></html>');
   const snapshot = items => ({ docs: items.map(item => ({ id: item.id, data: () => item })) });
   const receivers = new Map();
-  function collection(name) {
+  function collection(name, parent) {
+    const key = parent ? parent + '/' + name : name;
     const query = {
-      doc: () => ({ collection }), where: () => query,
+      doc: id => ({ collection: child => collection(child, id) }), where: () => query,
       get: async () => snapshot(name === 'people' ? [{ id: 'URIVER', name: 'River Day', email: 'river@example.test' }] : []),
-      onSnapshot: listener => { receivers.set(name, listener); return () => receivers.delete(name); },
+      onSnapshot: listener => { receivers.set(key, listener); return () => receivers.delete(key); },
     };
     return query;
   }
   let userChanged, accessChanged;
   const context = {
     document, location: { hash }, URLSearchParams, CSS: { escape: String },
-    Event: window.Event, setTimeout, console, addEventListener() {},
+    Event: window.Event, setTimeout, requestAnimationFrame: fn => setTimeout(fn, 0), console, addEventListener() {},
     getComputedStyle: () => ({ lineHeight: '20px' }),
     localStorage: { getItem: key => storage.get(key), setItem: (k, v) => storage.set(k, v), removeItem: k => storage.delete(k) },
     firebase: {
@@ -47,7 +48,7 @@ function openThread(storage, uid, hash = '#post=tea') {
   const scripts = JSON.parse(page.match(/^scripts: (.*)$/m)[1]);
   // Run the same shared forum and portrait components as the page. Eleventy also serves
   // shared server/client scripts from functions as assets/js.
-  for (const script of ['profile-photo.js', ...scripts.filter(name => name.startsWith('conversation'))]) {
+  for (const script of ['profile-photo.js', ...scripts.filter(name => name === 'search-rank.js' || name.startsWith('conversation'))]) {
     const asset = path.join(__dirname, '../src/assets/js', script);
     const file = fs.existsSync(asset) ? asset : path.join(__dirname, '../functions', script);
     vm.runInContext(fs.readFileSync(file, 'utf8'), context, { filename: script });
@@ -56,12 +57,13 @@ function openThread(storage, uid, hash = '#post=tea') {
   userChanged({ uid, displayName: uid });
   accessChanged({ e: uid + '@example.test' });
   receivers.get('conversations')(snapshot([post]));
-  const update = items => receivers.get('messages')(snapshot(items));
-  update(initial);
+  const update = items => receivers.get('tea/messages')(snapshot(items));
+  if (hash.includes('post=')) update(initial);
   const row = id => document.getElementById('m-' + id);
   const toggle = id => row(id).querySelector('.bs-open').click();
   const expanded = id => row(id).querySelector('.bs-open').getAttribute('aria-expanded') === 'true';
-  return { row, toggle, expanded, update };
+  return { row, toggle, expanded, update, document, location: context.location,
+    publish: (key, items) => receivers.get(key)(snapshot(items)) };
 }
 
 test('fold choices survive reopening, new replies and reload, and belong to one reader', async () => {
@@ -129,4 +131,29 @@ test('the connector and its minus button fold their own branch and share the hea
   assert.equal(thread.expanded('b'), false);
   thread.toggle('b');
   assert.ok(thread.row('c').querySelector('.bs-text'));
+});
+
+test('topic previews are capped and searching within a topic links to a reply in another topic', async () => {
+  const forum = openThread(new Map(), 'sam', '');
+  forum.publish('conversationTopics', [
+    { id: 'advice', name: 'Advice', icon: '☎️' }, { id: 'about-bold', name: 'About BOLD', icon: '🦋' }
+  ]);
+  const rows = ['first', 'second', 'third', 'fourth', 'old'].map((id, i) => ({
+    ...post, id, title: id, topicId: id === 'old' ? 'advice' : 'about-bold', at: i, pinned: id === 'first'
+  }));
+  forum.publish('conversations', rows);
+  const group = forum.document.querySelector('.bs-topic h2 a[href="#topic=about-bold"]').closest('.bs-topic');
+  assert.deepEqual(Array.from(group.querySelectorAll('ul a'), a => a.textContent), ['first', 'fourth', 'third']);
+  forum.location.hash = '#topic=about-bold';
+  forum.publish('conversations', rows);
+  assert.equal(forum.document.querySelectorAll('.bs-post').length, 4);
+  const search = forum.document.querySelector('.bs-find');
+  search.value = 'compass rose';
+  search.dispatchEvent(new forum.document.defaultView.Event('input'));
+  forum.publish('old/messages', [{ id: 'answer', name: 'River', body: 'Try a compass rose.' }]);
+  await new Promise(resolve => setTimeout(resolve, 0));
+  assert.equal(forum.document.querySelector('.bs-result-topic').textContent, '☎️ Advice');
+  assert.equal(forum.document.querySelector('.bs-matched-replies a').getAttribute('href'), '#post=old&msg=answer');
+  search.value = ''; search.dispatchEvent(new forum.document.defaultView.Event('input'));
+  assert.equal(forum.document.querySelectorAll('.bs-post').length, 4);
 });

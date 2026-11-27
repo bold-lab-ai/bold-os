@@ -257,12 +257,13 @@ module.exports = function({ db, onCall, onDocumentCreated, onDocumentUpdated, Ht
     const title = first.length > 120 ? first.slice(0, 117).replace(/\s+\S*$/, '') + '…' : first;
     const slack = { channel: link.channel, channelName: ch.name ? '#' + ch.name : '', thread: link.thread,
       permalink: (team || 'https://slack.com') + '/archives/' + link.channel + '/p' + link.thread.replace('.', '') };
+    const slackLastAt = t.replies.reduce((latest, r) => Math.max(latest, r.at), t.post.at);
     const reply = (r) => ({ parent: id, body: r.text, name: r.who, createdBy: '', at: r.at, source: 'slack' });
     if (had.exists) {
       const batch = db.batch();
       const old = had.data(), mine = (await ref.collection('messages').where('source', '==', 'slack').get()).size;
       // Who reads it follows the channel again, unless someone set it by hand (accessBy: Who can read it › Change).
-      batch.set(ref, Object.assign({ title, body: t.post.text, slack, slackReaders: vis.readers, slackReplies: t.replies.length,
+      batch.set(ref, Object.assign({ title, body: t.post.text, slack, slackLastAt, slackReaders: vis.readers, slackReplies: t.replies.length,
         replies: Math.max(0, (old.replies || 0) - (old.slackReplies != null ? old.slackReplies : mine)) + t.replies.length, refreshedAt: FieldValue.serverTimestamp() },
         old.accessBy ? {} : { private: vis.private, readers: vis.readers }), { merge: true });
       // Each Slack reply keeps its id (its place in the thread), so its votes stay.
@@ -272,7 +273,7 @@ module.exports = function({ db, onCall, onDocumentCreated, onDocumentUpdated, Ht
     }
     try {
       await withTopic(db, topicId, draftTopic, tx => {
-        tx.create(ref, Object.assign({ topicId, title, body: t.post.text, name: t.post.who, createdBy: '', at: t.post.at, source: 'slack', slack, private: vis.private, readers: vis.readers, slackReaders: vis.readers, votes: {}, replies: t.replies.length, slackReplies: t.replies.length,
+        tx.create(ref, Object.assign({ topicId, title, body: t.post.text, name: t.post.who, createdBy: '', at: t.post.at, source: 'slack', slack, slackLastAt, private: vis.private, readers: vis.readers, slackReaders: vis.readers, votes: {}, replies: t.replies.length, slackReplies: t.replies.length,
           broughtBy: { email: sender.email, name: sender.name || '' }, broughtAt: FieldValue.serverTimestamp() }, about && !vis.private ? about : {}));
         t.replies.forEach((r, i) => tx.set(ref.collection('messages').doc('slack-' + i), Object.assign(reply(r), { votes: {} })));
       });

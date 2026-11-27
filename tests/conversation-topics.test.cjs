@@ -145,3 +145,16 @@ test('a pending topic creation cannot select a topic in the next draft after can
   assert.equal(picker.required(), false);
   assert.equal(document.querySelector('.bs-topic-save').disabled, false);
 });
+
+test('topic previews put pins first, then recent activity, including imported replies', () => {
+  const posts = [
+    { id: 'recent-post', at: 60 }, { id: 'older-pin', at: 1, pinned: true },
+    { id: 'recent-reply', at: 2, lastAt: { toMillis: () => 80 } },
+    { id: 'slack-reply', at: 3, slackLastAt: 90 }, { id: 'newer-pin', at: 6, pinned: true }
+  ];
+  assert.deepEqual(posts.sort(topics.previewOrder).map(p => p.id),
+    ['newer-pin', 'older-pin', 'slack-reply', 'recent-reply', 'recent-post']);
+  assert.equal(topics.topicOf({ source: 'proposal' }), 'project-proposals');
+  assert.equal(topics.topicOf({ source: 'proposal', topicId: 'advice' }), 'advice');
+  assert.equal(topics.topicOf({ source: 'site' }), '');
+});

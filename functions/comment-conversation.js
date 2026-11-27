@@ -17,6 +17,13 @@
 
 const MAX_TITLE = 120;
 
+function lastReplyAt(replies){
+  return replies.reduce((latest, reply) => {
+    const at = reply.at?.toMillis ? reply.at.toMillis() : Number(reply.at) || 0;
+    return Math.max(latest, at);
+  }, 0);
+}
+
 // Pure: a post's title from the first comment (its first line, shortened), else the passage.
 function titleOf(text, quote){
   const line = String(text || '').split('\n').map((l) => l.replace(/^[\s>#*•-]+/, '').trim()).filter(Boolean)[0] || ('On “' + String(quote || '').trim() + '”');
@@ -114,7 +121,7 @@ module.exports = function({ db, onCall, HttpsError, signedInEmail, access, Field
       url: projectPageUrl(ws.cardId || c.pid, ws.boardId) + '&tab=work&card=' + encodeURIComponent(c.card) };
     const batch = db.batch();
     batch.create(ref, Object.assign({ title, body: String(first.text || ''), at: first.at || Date.now(), source: 'comment', topicId: 'about-bold', from, project: c.pid,
-      private: false, readers: [], votes: {}, replies: rest.length, commentReplies: rest.length, opened: !text,
+      private: false, readers: [], votes: {}, replies: rest.length, commentReplies: rest.length, lastAt: lastReplyAt(rest), opened: !text,
       broughtBy: { email, name: await nameOf(email) }, broughtAt: FieldValue.serverTimestamp() }, by(first)));
     // In order, each answering the one before (a Slack thread's way: conversations-forum.js parentOf).
     rest.forEach((r, i) => batch.set(ref.collection('messages').doc('cm-' + i), Object.assign({ parent: c.id, body: String(r.text || ''), at: r.at || Date.now(), source: 'comment', votes: {} }, by(r))));
@@ -156,7 +163,7 @@ module.exports = function({ db, onCall, HttpsError, signedInEmail, access, Field
     const batch = db.batch();
     // The post: whoever proposed it, with their note on it; what was said is its replies, in order.
     batch.create(ref, Object.assign({ title, body: String(q.note || 'Proposes a change' + (what ? ' to “' + what + '”' : '') + ' on ' + pageTitle + '.'), at: q.at || Date.now(), source: 'comment', topicId: 'about-bold', from,
-      private: false, readers: [], votes: {}, replies: old.length, commentReplies: old.length, broughtBy: { email, name: await nameOf(email) }, broughtAt: FieldValue.serverTimestamp() },
+      private: false, readers: [], votes: {}, replies: old.length, commentReplies: old.length, lastAt: lastReplyAt(old), broughtBy: { email, name: await nameOf(email) }, broughtAt: FieldValue.serverTimestamp() },
       by({ by: q.by || {} })));
     old.forEach((r, i) => batch.set(ref.collection('messages').doc('cm-' + i), Object.assign({ parent: c.id, body: String(r.text || ''), at: r.at || Date.now(), source: 'comment', votes: {} }, by(r))));
     try { await batch.commit(); }
@@ -211,7 +218,7 @@ module.exports = function({ db, onCall, HttpsError, signedInEmail, access, Field
       url: SITE_URL + 'audit-board.html#board=' + encodeURIComponent(c.board) + '&card=' + encodeURIComponent(c.card) };
     const first = old[0], rest = old.slice(1), batch = db.batch();
     batch.create(ref, Object.assign({ title, body: first.text, at: first.at || Date.now(), source: 'comment', topicId: 'about-bold', from, private: false, readers: [], votes: {},
-      replies: rest.length, commentReplies: rest.length, broughtBy: { email, name: await nameOf(email) }, broughtAt: FieldValue.serverTimestamp() },
+      replies: rest.length, commentReplies: rest.length, lastAt: lastReplyAt(rest), broughtBy: { email, name: await nameOf(email) }, broughtAt: FieldValue.serverTimestamp() },
       card.projectId ? { project: String(card.projectId), projectTitle: String(card.title || '').slice(0, 300) } : {}, by(first)));
     rest.forEach((r, i) => batch.set(ref.collection('messages').doc('cm-' + i), Object.assign({ parent: c.id, body: r.text, at: r.at || Date.now(), source: 'comment', votes: {} }, by(r))));
     try { await batch.commit(); }
@@ -259,7 +266,7 @@ module.exports = function({ db, onCall, HttpsError, signedInEmail, access, Field
     try {
       await require('./conversation-topic-writes').withTopic(db, data.topicId, data.newTopic, tx => {
         tx.create(ref, Object.assign({ title, body: bodyOf(root.quote, root.text), at: root.at || Date.now(), source: 'comment', topicId: data.topicId, from,
-          private: false, readers: [], votes: {}, replies: replies.length, commentReplies: replies.length,
+          private: false, readers: [], votes: {}, replies: replies.length, commentReplies: replies.length, lastAt: lastReplyAt(replies),
           broughtBy: { email, name }, broughtAt: FieldValue.serverTimestamp() }, by(root)));
         // In order, each answering the one before (conversations.js parentOf), as a Slack thread's.
         replies.forEach((r, i) => tx.set(ref.collection('messages').doc('cm-' + i), Object.assign({ parent: id, body: String(r.text || ''), at: r.at || Date.now(), source: 'comment', votes: {} }, by(r))));

@@ -960,6 +960,13 @@ service cloud.firestore {
       return d.topicId is string && d.topicId.size() <= 180 && d.topicId.matches('^[^/]+$')
         && existsAfter(/databases/$(database)/documents/conversationTopics/$(d.topicId));
     }
+    function pinsConversation() {
+      let d = request.resource.data;
+      let id = d.get('topicId', d.get('source', '') == 'proposal' ? 'project-proposals' : '');
+      return d.diff(resource.data).affectedKeys().hasOnly(['pinned']) && d.pinned is bool
+        && id is string && id.size() <= 180 && id.matches('^[^/]+$')
+        && exists(/databases/$(database)/documents/conversationTopics/$(id));
+    }
     match /conversations/{pid} {
       allow read: if seesConversation(resource.data);
       // One that isn't there yet, to whoever sees Conversations: a card watches for its own (card-talk.js).
@@ -975,7 +982,7 @@ service cloud.firestore {
         && (!('project' in request.resource.data) || (request.resource.data.project is string && request.resource.data.project.size() <= 80
           && seesProject(request.resource.data.project) && request.resource.data.get('projectTitle', '') is string && request.resource.data.get('projectTitle', '').size() <= 300))
         && request.resource.data.title is string && request.resource.data.title.size() > 0 && request.resource.data.title.size() <= 200;
-      allow update: if may('conversations', 'edit') && seesConversation(resource.data) && (onlyMyVote() || changesWhoReads() || editsMyText());
+      allow update: if may('conversations', 'edit') && seesConversation(resource.data) && (onlyMyVote() || changesWhoReads() || editsMyText() || pinsConversation());
       allow delete: if may('conversations', 'edit') && seesConversation(resource.data) && (resource.data.createdBy == email().lower() || hasFullWrite());
       // Invitations (conversations-forum.js Invite; slack-thread.js onConversationInvite tells them): by whoever reads
       // it, to people who can: an open one's anyone, a private one's readers.

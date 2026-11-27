@@ -64,6 +64,13 @@ const ConversationTopics = (function(){
     return typeof id === 'string' && id.length <= 180 && /^[\p{L}\p{N}]+(?:-[\p{L}\p{N}]+)*$/u.test(id)
       && (await db.collection('conversationTopics').doc(id).get()).exists;
   }
-  return { starters, topicId, suggestIcon, fromDoc, exists };
+  function time(t){ return t && typeof t.toMillis === 'function' ? t.toMillis() : Number(t) || 0; }
+  function activity(post){ return Math.max(time(post.at), time(post.lastAt), time(post.slackLastAt)); }
+  function previewOrder(a, b){
+    return Number(Boolean(b.pinned)) - Number(Boolean(a.pinned)) ||
+      activity(b) - activity(a) || a.id.localeCompare(b.id);
+  }
+  function topicOf(post){ return post.topicId || (post.source === 'proposal' ? 'project-proposals' : ''); }
+  return { starters, topicId, suggestIcon, fromDoc, exists, topicOf, previewOrder };
 })();
 if (typeof module !== 'undefined' && module.exports) module.exports = ConversationTopics;
