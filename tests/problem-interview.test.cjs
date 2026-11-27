@@ -36,7 +36,7 @@ test('the draft keeps only known fields and ids it was given', () => {
 
 test('the prompt names what it can link to', () => {
   const p = I.systemPrompt(lab);
-  for (const s of ['XY problem', 'A problem is not a method', 'ns-hcld: Human-Centric (northstar)', 'ms-co: Co-scientist (moonshot)', 'Diverging runs', 'existing_solutions', '"method", "benchmark" or "exploration"', 'inspiration: what inspired it', 'the problem itself is still not a method']) assert.ok(p.includes(s), s);
+  for (const s of ['XY problem', 'A problem is not a method', 'ns-hcld: Human-Centric (northstar)', 'ms-co: Co-scientist (moonshot)', 'Diverging runs', 'existing_solutions', '"method", "benchmark" or "open_question"', 'inspiration: what inspired it', 'the problem itself is still not a method']) assert.ok(p.includes(s), s);
   assert.ok(!p.includes('builds_benchmark') && !p.includes('benchmark_known'));
 });
 
@@ -69,10 +69,10 @@ test('an answer it can\u2019t read is asked again, once', async () => {
   assert.equal(m, 2);
 });
 
-test('a draft has a category: an exploration is complete with its title and inspiration alone', () => {
+test('a draft has a category: an open question is complete with its title and inspiration alone', () => {
   const known = {projects: new Set(), problems: new Set(), parents: new Set()};
-  const d = I.cleanDraft({category: 'exploration', title: 'Second descent', inspiration: ' Loss falls twice. ', significance: '', builds_benchmark: true}, known);
-  assert.equal(d.category, 'exploration'); assert.equal(d.inspiration, 'Loss falls twice.');
+  const d = I.cleanDraft({category: 'open_question', title: 'Second descent', inspiration: ' Loss falls twice. ', significance: '', builds_benchmark: true}, known);
+  assert.equal(d.category, 'open_question'); assert.equal(d.inspiration, 'Loss falls twice.');
   assert.equal(d.builds_benchmark, false); assert.equal(d.benchmark_known, true); // As a page from before categories reads it.
   assert.equal(I.complete(d), true);
   assert.equal(I.complete({...d, inspiration: ''}), false);

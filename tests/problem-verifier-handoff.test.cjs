@@ -85,12 +85,12 @@ test('partially configured and read-only handoffs stay blocked even when no avai
   }
 });
 
-test('only a method problem offers Add verifier: a benchmark and an exploration show that none is required', async()=>{
+test('only a method problem offers Add verifier: a benchmark and an open question show that none is required', async()=>{
   const method = await page({problem:{category:'method'}});
   assert.ok(method.button);
   assert.match(method.document.getElementById('problemBody').textContent,/No verifier/);
   for (const [problem,label] of [[{category:'benchmark',builds_benchmark:true},'Benchmark'],[{builds_benchmark:true},'Benchmark'],
-      [{category:'exploration',inspiration:'Loss falls twice.'},'Exploration']]) {
+      [{category:'open_question',inspiration:'Loss falls twice.'},'Open question']]) {
     const ui = await page({configured:true,permitted:true,problem});
     assert.equal(ui.button,null);
     const text = ui.document.getElementById('problemBody').textContent;
@@ -99,8 +99,8 @@ test('only a method problem offers Add verifier: a benchmark and an exploration 
     assert.doesNotMatch(text,/No verifier/);
     assert.equal(ui.document.getElementById('toggleReminder'),null);
   }
-  const exploration = await page({problem:{category:'exploration',inspiration:'Loss falls twice.'}});
-  assert.match(exploration.document.getElementById('problemBody').textContent,/This problem is an exploration\. A verifier is not required\./);
+  const open_question = await page({problem:{category:'open_question',inspiration:'Loss falls twice.'}});
+  assert.match(open_question.document.getElementById('problemBody').textContent,/This problem is an open question\. A verifier is not required\./);
 });
 
 test('a problem saved before categories is a method, and its link to Lite states the category', async()=>{

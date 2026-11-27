@@ -9,10 +9,10 @@
   var OPENING = 'Describe the problem you’d like to add: what you want to solve, and why it matters to you.';
   var categories = BoldProblemCategory;
   // What the Problem Bank needs, in the order Sofya asks for it: by the problem's category (problem-category.js).
-  // An exploration is defined by what inspired it alone.
+  // An open question is defined by what inspired it alone.
   var DESCRIBED = [['significance', 'Why it matters'], ['difficulties', 'What makes it hard'], ['existing_solutions', 'Where the frontier is']];
   function needs(){
-    return [['title', 'A title'], ['category', 'Its category']].concat(draft.category === 'exploration' ? [['inspiration', 'What inspired it']] : DESCRIBED)
+    return [['title', 'A title'], ['category', 'Its category']].concat(draft.category === 'open_question' ? [['inspiration', 'What inspired it']] : DESCRIBED)
       .concat([['links', 'What it’s part of <small>(optional)</small>']]);
   }
   var EMPTY = { category: '', title: '', significance: '', difficulties: '', existing_solutions: '', inspiration: '',
@@ -66,7 +66,7 @@
   }
   // Everything the Problem Bank needs is there (as the server's problem-interview.js complete()).
   function complete(d){
-    return !!(d.category && d.title && (d.category === 'exploration' ? d.inspiration : d.significance && d.difficulties && d.existing_solutions));
+    return !!(d.category && d.title && (d.category === 'open_question' ? d.inspiration : d.significance && d.difficulties && d.existing_solutions));
   }
   // Only a method gets a verifier; until its category is known, the step stays.
   function skipsVerifier(){ return !!draft.category && draft.category !== 'method'; }
@@ -78,13 +78,13 @@
     el('pbBaselineStep').hidden = skipsVerifier();
     el('pbToReview').hidden = review.hidden;
   }
-  // The fields of its category: an exploration shows its inspiration in place of the three descriptions.
+  // The fields of its category: an open question shows its inspiration in place of the three descriptions.
   function showCategory(){
-    var category = el('pbCategory').value, exploring = category === 'exploration';
-    el('pbCategoryHint').textContent = categories.HINTS[category] || 'Method: its solutions are scored by a verifier. Benchmark: the benchmark is the goal. Exploration: an observation or an idea to follow.';
-    el('pbInspirationField').hidden = !exploring; el('pbInspiration').required = exploring;
+    var category = el('pbCategory').value, openQuestion = category === 'open_question';
+    el('pbCategoryHint').textContent = categories.HINTS[category] || 'Method: its solutions are scored by a verifier. Benchmark: the benchmark is the goal. Open question: an observation or an idea to follow.';
+    el('pbInspirationField').hidden = !openQuestion; el('pbInspiration').required = openQuestion;
     Array.prototype.forEach.call(review.querySelectorAll('[data-described]'), function(field){
-      field.hidden = exploring; field.querySelector('textarea').required = !exploring;
+      field.hidden = openQuestion; field.querySelector('textarea').required = !openQuestion;
     });
   }
 
@@ -287,16 +287,16 @@
     draft = readReview();
     var generation = epoch;
     // builds_benchmark too: a server from before categories reads only that.
-    var method = draft.category === 'method', exploring = draft.category === 'exploration';
+    var method = draft.category === 'method', openQuestion = draft.category === 'open_question';
     var data = { action: 'create', category: draft.category, builds_benchmark: draft.category === 'benchmark', title: draft.title, owner_id: me.id, collaborators: draft.collaborators,
       significance: draft.significance, difficulties: draft.difficulties, existing_solutions: draft.existing_solutions,
       projects: projects.filter(function(p){ return draft.project_ids.indexOf(p.id) >= 0; }).map(function(p){ return { id: p.id, board: p.board || '' }; }) };
-    if (exploring) data.inspiration = draft.inspiration;
+    if (openQuestion) data.inspiration = draft.inspiration;
     if (draft.parent_ids.length || draft.related_ids.length) data.family = { parents: draft.parent_ids.slice(), related: draft.related_ids.slice() };
     saving = true; controls();
     try {
       var choice = await BOLD.confirmAction({ title: 'Save “' + draft.title + '”?', go: 'Save problem', always: true,
-        effects: ['Add it to the Problem Bank, with you as its definer.'].concat(exploring ? ['It is an exploration, so it needs no verifier.'] :
+        effects: ['Add it to the Problem Bank, with you as its definer.'].concat(openQuestion ? ['It is an open question, so it needs no verifier.'] :
           !method ? ['It builds a benchmark, so it needs no separate verifier.'] :
           [{ key: 'reminders', text: 'Remind me on Slack now and every week until this problem has a registered verifier. My notification settings apply.' }]) });
       if (!choice || generation !== epoch) return;

@@ -30,21 +30,21 @@ Requested by the owner on 27 November 2026. Each problem has one category. The m
 
 | Category | Meaning | Verifier |
 | --- | --- | --- |
-| Method | A research problem whose solutions are scored and compared. | Required. **Add verifier** opens AutoKaggle Lite. |
-| Benchmark | Building the benchmark is the goal. | Not required, as before. |
-| Exploration | An observation or a high-level idea to follow. There is nothing to score yet. | Not required. |
+| Method (`method`) | A research problem whose solutions are scored and compared. This includes a problem that uses a benchmark to measure another result. | Required. **Add verifier** opens AutoKaggle Lite. |
+| Benchmark (`benchmark`) | Building the benchmark is the goal. | Not required, as before. |
+| Open question (`open_question`) | An observation or a high-level idea to follow. There is nothing to score yet. | Not required. |
 
-- An exploration is defined by a title and by what inspired it (`inspiration`, at most 4,000 characters). Adding one asks for nothing else. Its significance, difficulties and frontier are optional.
-- Only a method problem shows **Add verifier**, gets verifier reminders, can issue a verifier handoff, and accepts a verifier registration. A benchmark and an exploration show **Verifier not required**.
+- An open question is defined by a title and by what inspired it (`inspiration`, at most 4,000 characters). Adding one asks for nothing else. Its significance, difficulties and frontier are optional.
+- Only a method problem shows **Add verifier**, gets verifier reminders, can issue a verifier handoff, and accepts a verifier registration. A benchmark and an open question show **Verifier not required**.
 - `functions/problem-category.js` holds the rule for the server and the pages. A problem saved before categories has no `category`: `builds_benchmark` true is a benchmark, anything else is a method. Nothing is migrated.
 - The server keeps `builds_benchmark` (true for a benchmark only) and still accepts it from an older page or agent. `category` and `builds_benchmark` must agree when a request sends both.
 - The link to Lite adds `category=method` to its fragment and keeps `builds_benchmark=0`, so a Lite release from before categories reads it as before.
-- Deploy the `benchmarkRegistry` and `problemInterview` functions with this page change. A function from before categories refuses a saved exploration and a category edit; the other paths work with either version.
-- A project proposal on an exploration problem still asks for a verifier plan (link one, defer it, or mark the project as a benchmark). The proposal has no exploration choice yet.
+- Deploy the `benchmarkRegistry` and `problemInterview` functions with this page change. A function from before categories refuses a saved open question and a category edit; the other paths work with either version.
+- A project proposal on an open question problem still asks for a verifier plan (link one, defer it, or mark the project as a benchmark). The proposal has no open-question choice yet.
 
 ## Onboard an open problem
 
-1. Select **Add problem**. Enter the title, choose its category, select the person who defined it, and describe its significance, difficulties and current frontier. For an exploration, describe only what inspired it. Link existing projects and name collaborators if applicable. Save the problem. To propose a new project, follow **All projects**, select **Propose a project**, and choose the open problem. If the problem is missing, follow **here** below the project form’s **Open problem** field. The bank opens in a separate tab. Save the problem and return to the proposal to select it. **Refresh list** reloads the choices if needed. The project then appears on the problem page.
+1. Select **Add problem**. Enter the title, choose its category, select the person who defined it, and describe its significance, difficulties and current frontier. For an open question, describe only what inspired it. Link existing projects and name collaborators if applicable. Save the problem. To propose a new project, follow **All projects**, select **Propose a project**, and choose the open problem. If the problem is missing, follow **here** below the project form’s **Open problem** field. The bank opens in a separate tab. Save the problem and return to the proposal to select it. **Refresh list** reloads the choices if needed. The project then appears on the problem page.
 2. On a method problem, select **Add verifier**. You can start before a project exists. To associate the verifier with a linked project, select it before opening Lite. Confirm the transfer. The handoff includes the problem ID, title, and a research brief of up to 4,000 characters in the URL fragment. It includes a project ID only when selected. Lite asks for storage consent. Each verifier has its own session, releases, data and assets, repository, metrics and score format, submission format, and constraints. Open **Verifiers** to compare releases. Older releases can lack recorded contract details.
 3. **Autoresearch baseline** is planned. This release does not start a baseline run or send a result email.
 

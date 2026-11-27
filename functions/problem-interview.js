@@ -20,7 +20,7 @@ const SCHEMA = {
       required: ['category', 'title', 'significance', 'difficulties', 'existing_solutions', 'inspiration', 'collaborators', 'project_ids', 'parent_ids', 'related_ids'],
       properties: {
         title: { type: 'string' }, significance: { type: 'string' }, difficulties: { type: 'string' }, existing_solutions: { type: 'string' },
-        category: { type: 'string', enum: ['', 'method', 'benchmark', 'exploration'] }, inspiration: { type: 'string' }, collaborators: { type: 'string' },
+        category: { type: 'string', enum: ['', 'method', 'benchmark', 'open_question'] }, inspiration: { type: 'string' }, collaborators: { type: 'string' },
         project_ids: { type: 'array', items: { type: 'string' } }, parent_ids: { type: 'array', items: { type: 'string' } }, related_ids: { type: 'array', items: { type: 'string' } }
       }
     }
@@ -39,13 +39,13 @@ function systemPrompt({ objectives, problems, projects }){
     'Write the title and the other fields about the problem, never about the method: "Training runs diverge without warning", not "A divergence detector based on gradient statistics". If the person insists the method itself is the goal, it may be a benchmark or a project rather than a problem: ask which.',
     '',
     'The Problem Bank needs, for each problem:',
-    '- category: "method", "benchmark" or "exploration". method: a problem whose solutions can be scored and compared, so it will get a verifier (the name is about what competes on it: the problem itself is still not a method). benchmark: the goal is to build a benchmark itself, so it needs no separate verifier. exploration: they start from an observation or a high-level idea and there is nothing to score yet, so it needs no verifier. Ask which it is early, when it’s unclear; use "" until you know.',
+    '- category: "method", "benchmark" or "open_question". method: a problem whose solutions can be scored and compared, so it will get a verifier (the name is about what competes on it: the problem itself is still not a method). benchmark: the goal is to build a benchmark itself, so it needs no separate verifier (a problem that uses a benchmark to measure another result is a method, not a benchmark). open_question: they start from an observation or a high-level idea and there is nothing to score yet, so it needs no verifier. Ask which it is early, when it’s unclear; use "" until you know.',
     '- title: a short, specific name for the problem (at most 180 characters). Propose one yourself once you understand it.',
     'For a method or a benchmark, also:',
     '- significance: why it matters, who benefits if it’s solved.',
     '- difficulties: what makes it hard.',
     '- existing_solutions: where the frontier is: what current methods can do, and what remains open.',
-    'For an exploration, only:',
+    'For an open question, only:',
     '- inspiration: what inspired it, usually an observation or a high-level idea, in their words. Ask for nothing else that is required: propose the title from it, and leave significance, difficulties and existing_solutions as "" unless they offer them.',
     'Optional: once the required fields are there, suggest these when they fit (one question for all of them), and confirm with the person:',
     '- parent_ids: the northstars, moonshots or broader problems it contributes to (ids from the lists below).',
@@ -54,7 +54,7 @@ function systemPrompt({ objectives, problems, projects }){
     '- collaborators: names of people working on it with them.',
     '',
     'Write each text field in the researcher’s voice, from what they said, concise and concrete (a few sentences). Keep every field you already have unless they change it; use "" or [] for what you don’t know yet.',
-    'Set ready to true once the category is known and its fields are filled (an exploration: title and inspiration; a method or a benchmark: title, significance, difficulties and existing_solutions); then sum up the problem in two or three sentences, and tell them it’s ready to check in Check and edit, under the conversation, where they can change any field and save it, or that they can keep talking to change anything.',
+    'Set ready to true once the category is known and its fields are filled (an open question: title and inspiration; a method or a benchmark: title, significance, difficulties and existing_solutions); then sum up the problem in two or three sentences, and tell them it’s ready to check in Check and edit, under the conversation, where they can change any field and save it, or that they can keep talking to change anything.',
     'Answer with JSON only, exactly this shape: { "reply": what you say to them next, "ready": true or false, "draft": { "category": "", "title": "", "significance": "", "difficulties": "", "existing_solutions": "", "inspiration": "", "collaborators": "", "project_ids": [], "parent_ids": [], "related_ids": [] } }.',
     '',
     'Northstars and moonshots (id: title):', list(objectives, (o) => o.id + ': ' + o.title + ' (' + o.kind + ')'),
@@ -95,7 +95,7 @@ function cleanDraft(d, known){
 }
 // Pure: whether the required fields are there.
 function complete(d){
-  return !!(d.category && d.title && (d.category === 'exploration' ? d.inspiration : d.significance && d.difficulties && d.existing_solutions));
+  return !!(d.category && d.title && (d.category === 'open_question' ? d.inspiration : d.significance && d.difficulties && d.existing_solutions));
 }
 
 // One turn: `turns` [{ role, content }], what the lab has (`lab`: { objectives, problems, projects }), Sofya's

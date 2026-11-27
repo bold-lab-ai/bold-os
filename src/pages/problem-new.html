@@ -30,9 +30,9 @@ nav: "problems.html"
         <h2 class="pb-review-head" id="pbReviewHead">Check and edit</h2>
         <p class="field-hint" id="pbReviewHint">What Sofya gathered from the conversation. Change anything, or keep talking to Sofya above.</p>
         <div class="field"><label for="pbTitle">Problem title</label><input id="pbTitle" required maxlength="180"></div>
-        <!-- Its category (problem-category.js): only a method needs a verifier; an exploration is defined by its inspiration alone. -->
+        <!-- Its category (problem-category.js): only a method needs a verifier; an open question is defined by its inspiration alone. -->
         <div class="field"><label for="pbCategory">Category</label>
-          <select id="pbCategory" required aria-describedby="pbCategoryHint"><option value="">Choose a category</option><option value="method">Method</option><option value="benchmark">Benchmark</option><option value="exploration">Exploration</option></select>
+          <select id="pbCategory" required aria-describedby="pbCategoryHint"><option value="">Choose a category</option><option value="method">Method</option><option value="benchmark">Benchmark</option><option value="open_question">Open question</option></select>
           <p class="field-hint" id="pbCategoryHint"></p></div>
         <div class="field" id="pbInspirationField" hidden><label for="pbInspiration">What inspired it?</label><textarea class="no-tags" id="pbInspiration" maxlength="4000" rows="3" placeholder="An observation or a high-level idea"></textarea></div>
         <div class="field" data-described><label for="pbWhy">Why it matters</label><textarea class="no-tags" id="pbWhy" required maxlength="8000" rows="3"></textarea></div>

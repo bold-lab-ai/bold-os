@@ -51,10 +51,10 @@
     function note(text){return node('p', 'proj-empty', text);}
     function stageText(item){
       var stage = item.archived ? 'Archived' : STAGES[item.stage] || 'Open';
-      // A benchmark or an exploration says so; a method shows its stage alone.
+      // A benchmark or an open question says so; a method shows its stage alone.
       var category = root.BoldProblemCategory ? root.BoldProblemCategory.of(item) : item.builds_benchmark ? 'benchmark' : 'method';
       if (category === 'method') return stage;
-      var label = category === 'exploration' ? 'Exploration' : 'Benchmark';
+      var label = category === 'open_question' ? 'Open question' : 'Benchmark';
       return stage === 'Open' ? label : label + ' · ' + stage;
     }
 

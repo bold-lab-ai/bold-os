@@ -132,11 +132,11 @@
         '<select id="fieldInput" aria-label="Category">' + categories.LIST.map(function(c){
           return '<option value="' + c + '"' + (c === category ? ' selected' : '') + '>' + esc(categories.LABELS[c]) + '</option>';
         }).join('') + '</select>' +
-        '<textarea id="fieldInspiration" aria-label="What inspired it" maxlength="4000" placeholder="What inspired it: an observation or a high-level idea"' + (category === 'exploration' ? '' : ' hidden') + '>' + esc(p.inspiration || '') + '</textarea>' +
-        '<p class="detail-muted">Only a method needs a verifier. A benchmark or an exploration skips the verifier step and its reminders.</p>',
+        '<textarea id="fieldInspiration" aria-label="What inspired it" maxlength="4000" placeholder="What inspired it: an observation or a high-level idea"' + (category === 'open_question' ? '' : ' hidden') + '>' + esc(p.inspiration || '') + '</textarea>' +
+        '<p class="detail-muted">Only a method needs a verifier. A benchmark or an open question skips the verifier step and its reminders.</p>',
         p.archived ? 'Restore this problem to change its category.' : '');
-      // An exploration is defined by what inspired it.
-      if (category === 'exploration' || p.inspiration) html += editableRow('inspiration','What inspired it',text(p.inspiration),
+      // An open question is defined by what inspired it.
+      if (category === 'open_question' || p.inspiration) html += editableRow('inspiration','What inspired it',text(p.inspiration),
         '<textarea id="fieldInput" aria-label="What inspired it" maxlength="4000">' + esc(p.inspiration || '') + '</textarea>');
       html += editableRow('owner','Problem definer', d.owner ? (p.owner_id ? '<a href="person.html?id=' + encodeURIComponent(p.owner_id) + '">' + esc(d.owner) + '</a>' : esc(d.owner)) : missing(),
         '<select id="fieldInput" aria-label="Problem definer"></select>');
@@ -154,7 +154,7 @@
       return p.papers.length ? BoldProblemPapers.list(p.papers) : '<p class="detail-muted">No papers registered for this problem.</p>';
     },
     releases: function(){
-      if (!releases.length) return '<p class="detail-muted">' + (categories.of(p) === 'exploration' ? 'This problem is an exploration. A verifier is not required.' : categories.of(p) === 'benchmark' ? 'This problem is building a benchmark. A separate verifier is not required.' : 'Registered verifiers and their checks will appear here.') + '</p>';
+      if (!releases.length) return '<p class="detail-muted">' + (categories.of(p) === 'open_question' ? 'This problem is an open question. A verifier is not required.' : categories.of(p) === 'benchmark' ? 'This problem is building a benchmark. A separate verifier is not required.' : 'Registered verifiers and their checks will appear here.') + '</p>';
       return '<ul class="talk-list">' + releases.map(function(r){
         var e = r.evaluator, a = r.approval, ra = r.reported_approval, v = r.research;
         var details = r.details || (p.latest_benchmark === r.id && !p.has_linked_verifiers ? p.details : {}) || {};
@@ -347,15 +347,15 @@
     if (editing === 'family') { wireFamilyEditor(); return; }
     if (editing === 'owner') BoldPeopleSelect.load().then(function(list){input.innerHTML=BoldPeopleSelect.options(list,p.owner_id,'Choose the problem definer');}).catch(function(e){fail(e.message);});
     if (input && input.focus) input.focus();
-    // Choosing Exploration asks for what inspired it, there and then.
-    if (editing === 'category') input.addEventListener('change', function(){ el('fieldInspiration').hidden = input.value !== 'exploration'; });
+    // Choosing Open question asks for what inspired it, there and then.
+    if (editing === 'category') input.addEventListener('change', function(){ el('fieldInspiration').hidden = input.value !== 'open_question'; });
     el('fieldSave').addEventListener('click', function(){
       var v = input.value, patch = {};
       if (editing === 'projects') patch.projects=BoldProblemProjects.selected(input,projects);
       else if (editing === 'owner') { if (!v) return fail('Choose the problem definer.'); patch.owner_id=v; }
       else if (editing === 'category') {
         patch.category = v;
-        if (v === 'exploration') {
+        if (v === 'open_question') {
           var inspired = el('fieldInspiration').value.trim();
           if (!inspired) return fail('Say what inspired it: an observation or a high-level idea.');
           patch.inspiration = inspired;

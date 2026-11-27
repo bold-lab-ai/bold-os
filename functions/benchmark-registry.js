@@ -254,12 +254,12 @@ module.exports = function({ db, onCall, callerEmail, isFullWrite, access, HttpsE
       if (modern && !owner) throw error('invalid-argument','Choose the problem definer.');
       let definition, collaborators, category;
       try {
-        // Its category (functions/problem-category.js): an exploration is defined by its inspiration alone.
+        // Its category (functions/problem-category.js): an open question is defined by its inspiration alone.
         category = categories.chosen(d.category, d.builds_benchmark) || 'method';
-        const exploring = category === 'exploration', described = ['significance', 'difficulties', 'existing_solutions'];
-        const required = exploring ? ['title', 'inspiration'] : modern ? ['title'].concat(described) : ['title', 'objective', 'significance', 'existing_solutions'];
+        const openQuestion = category === 'open_question', described = ['significance', 'difficulties', 'existing_solutions'];
+        const required = openQuestion ? ['title', 'inspiration'] : modern ? ['title'].concat(described) : ['title', 'objective', 'significance', 'existing_solutions'];
         definition = Object.fromEntries(required.map(k => [k, text(d[k], k === 'title' ? 180 : k === 'inspiration' ? 4000 : 8000, k === 'inspiration' ? 'the inspiration' : k)]));
-        if (exploring) described.forEach(k => { definition[k] = d[k] ? text(d[k], 8000, k) : ''; });
+        if (openQuestion) described.forEach(k => { definition[k] = d[k] ? text(d[k], 8000, k) : ''; });
         collaborators = d.collaborators ? text(d.collaborators,8000,'collaborators') : '';
       } catch (e) { throw error('invalid-argument',e.message); }
       const buildsBenchmark = category === 'benchmark', needsVerifier = category === 'method';
@@ -276,7 +276,7 @@ module.exports = function({ db, onCall, callerEmail, isFullWrite, access, HttpsE
       const hasLinks = selection && (selection.parents.length || selection.related.length);
       if (hasLinks) inputs.push(selection);
       if (buildsBenchmark) inputs.push({builds_benchmark:true});
-      if (category === 'exploration') inputs.push({category});
+      if (category === 'open_question') inputs.push({category});
       const fingerprint = sha(canonical(inputs));
       return db.runTransaction(async tx => {
         const previous = await tx.get(ref);
@@ -376,8 +376,8 @@ module.exports = function({ db, onCall, callerEmail, isFullWrite, access, HttpsE
           tx.set(receipt, { fingerprint, receipt: out, createdBy: email, createdAt: at });
           return out;
         }
-        if (!categories.needsVerifier(prior)) throw error('failed-precondition', categories.of(prior) === 'exploration'
-          ? 'This problem is an exploration and skips verifier registration.' : 'This problem builds a benchmark and skips verifier registration.');
+        if (!categories.needsVerifier(prior)) throw error('failed-precondition', categories.of(prior) === 'open_question'
+          ? 'This problem is an open question and skips verifier registration.' : 'This problem builds a benchmark and skips verifier registration.');
         if (prior.archived) throw error('failed-precondition', 'Restore this problem before registering a new release.');
         const previousVersion = streamDoc.exists ? streamDoc.data().version : (prior.source_id === data.source_id ? prior.latest_version : 0);
         if (previousVersion >= data.evaluator.version) throw error('failed-precondition', 'Version ' + data.evaluator.version + ' or a newer one is already registered.');
@@ -443,8 +443,8 @@ module.exports = function({ db, onCall, callerEmail, isFullWrite, access, HttpsE
         if (!snap.exists) throw error('not-found', 'This problem no longer exists.');
         const p = snap.data();
         if (p.createdBy !== email) throw error('permission-denied', 'Only the submitter can change their reminders.');
-        if (!categories.needsVerifier(p) && d.reminders) throw error('failed-precondition', categories.of(p) === 'exploration'
-          ? 'Explorations skip verifier reminders.' : 'Benchmark-building problems skip verifier reminders.');
+        if (!categories.needsVerifier(p) && d.reminders) throw error('failed-precondition', categories.of(p) === 'open_question'
+          ? 'Open questions skip verifier reminders.' : 'Benchmark-building problems skip verifier reminders.');
         if (p.evaluator || p.archived) throw error('failed-precondition', 'Reminders apply to active problems without a verifier.');
         if (!!p.reminders === d.reminders) return;
         tx.update(ref, { reminders: d.reminders, verifierNoticeDue: d.reminders ? Date.now() : null, verifierNoticeCycle: null });
@@ -472,8 +472,8 @@ module.exports = function({ db, onCall, callerEmail, isFullWrite, access, HttpsE
           throw error('failed-precondition', 'Change a released evaluator title through AutoKaggle.');
         try {
           for (const key of ['title', 'significance', 'difficulties', 'existing_solutions']) {
-            // An exploration is defined by its inspiration: its other descriptions can be emptied.
-            if (key in changes) patch[key] = key !== 'title' && changes[key] === '' && categories.of({...was, category: changes.category || was.category}) === 'exploration'
+            // An open question is defined by its inspiration: its other descriptions can be emptied.
+            if (key in changes) patch[key] = key !== 'title' && changes[key] === '' && categories.of({...was, category: changes.category || was.category}) === 'open_question'
               ? '' : text(changes[key], key === 'title' ? 180 : 8000, key);
           }
           if ('inspiration' in changes) patch.inspiration = text(changes.inspiration, 4000, 'the inspiration');
@@ -503,12 +503,12 @@ module.exports = function({ db, onCall, callerEmail, isFullWrite, access, HttpsE
         if ('builds_benchmark' in changes || 'category' in changes) {
           let next;
           try { next = categories.chosen(changes.category, changes.builds_benchmark); } catch (e) { throw error('invalid-argument', e.message); }
-          if (!next) throw error('invalid-argument','Choose the problem’s category: method, benchmark or exploration.');
+          if (!next) throw error('invalid-argument','Choose the problem’s category: method, benchmark or open_question.');
           patch.category = next; patch.builds_benchmark = next === 'benchmark';
           if (next !== 'method') Object.assign(patch, {reminders:false, verifierNoticeDue:null, verifierNoticeCycle:null});
         }
-        if (categories.of({...was,...patch}) === 'exploration' && !({...was,...patch}).inspiration)
-          throw error('invalid-argument','Say what inspired this exploration: an observation or a high-level idea.');
+        if (categories.of({...was,...patch}) === 'open_question' && !({...was,...patch}).inspiration)
+          throw error('invalid-argument','Say what inspired this open question: an observation or a high-level idea.');
         if ('archived' in changes) {
           if (typeof changes.archived !== 'boolean') throw error('invalid-argument', 'Supply the archive choice.');
           patch.archived = changes.archived;
@@ -516,7 +516,11 @@ module.exports = function({ db, onCall, callerEmail, isFullWrite, access, HttpsE
             Object.assign(patch, { verifierNoticeDue: patch.archived ? null : at, verifierNoticeCycle: null });
         }
         tx.update(ref,patch);
-        tx.set(ref.collection('versions').doc(crypto.randomUUID()),{...was,...patch,changeNote:'Updated the problem definition'});
+        const before = categories.of(was), after = categories.of({...was,...patch});
+        const changeNote = before === after ? 'Updated the problem definition'
+          : 'Changed the category from ' + categories.LABELS[before] + ' to ' + categories.LABELS[after] +
+            (before === 'method' ? ': it no longer needs a verifier' : after === 'method' ? ': it now needs a verifier' : '');
+        tx.set(ref.collection('versions').doc(crypto.randomUUID()),{...was,...patch,changeNote});
       });
       return {ok:true};
     }

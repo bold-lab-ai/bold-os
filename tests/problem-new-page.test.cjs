@@ -173,12 +173,12 @@ test('a conversation records its turns, and what was saved against BOLD\'s last 
   assert.equal(events[3].saved.title, 'Divergence');
 });
 
-test('an exploration asks only for what inspired it, and is saved with no verifier step', async () => {
+test('an open question asks only for what inspired it, and is saved with no verifier step', async () => {
   const f = await setup('', {}, {variant: 'form'});
   const described = [...f.document.querySelectorAll('#pbReview [data-described]')];
   assert.equal(described.length, 3);
   assert.equal(f.$('pbInspirationField').hidden, true);
-  f.$('pbCategory').value = 'exploration';
+  f.$('pbCategory').value = 'open_question';
   f.$('pbReview').dispatchEvent(new f.window.Event('change'));
   assert.equal(f.$('pbInspirationField').hidden, false);
   assert.ok(described.every((field) => field.hidden && !field.querySelector('textarea').required));
@@ -189,12 +189,12 @@ test('an exploration asks only for what inspired it, and is saved with no verifi
   f.$('pbReview').dispatchEvent(new f.window.Event('submit', {cancelable: true}));
   for (let i = 0; i < 6; i++) await new Promise((r) => setTimeout(r, 0));
   const create = f.calls.find((c) => c.data.action === 'create').data;
-  assert.equal(create.category, 'exploration'); assert.equal(create.inspiration, 'Loss falls twice.');
+  assert.equal(create.category, 'open_question'); assert.equal(create.inspiration, 'Loss falls twice.');
   assert.equal(create.builds_benchmark, false); assert.equal(create.reminders, false);
   assert.equal(f.visits.length, 1);
   // Back to a method: the three descriptions are asked for again.
   const g = await setup('', {}, {variant: 'form'});
-  g.$('pbCategory').value = 'exploration'; g.$('pbReview').dispatchEvent(new g.window.Event('change'));
+  g.$('pbCategory').value = 'open_question'; g.$('pbReview').dispatchEvent(new g.window.Event('change'));
   g.$('pbCategory').value = 'method'; g.$('pbReview').dispatchEvent(new g.window.Event('change'));
   assert.ok([...g.document.querySelectorAll('#pbReview [data-described]')].every((field) => !field.hidden && field.querySelector('textarea').required));
   assert.equal(g.$('pbVerifierStep').textContent, 'Add a verifier');
