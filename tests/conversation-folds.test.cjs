@@ -41,6 +41,7 @@ function openThread(storage, uid, hash = '#post=tea') {
     },
     BoldMarkdown: { render: text => text },
   };
+  context.history = { replaceState(_state, _title, hash) { context.location.hash = hash; } };
   context.window = context;
   window.HTMLElement.prototype.scrollIntoView = () => {};
   vm.createContext(context);
@@ -173,4 +174,32 @@ test('topic previews are capped and searching within a topic links to a reply in
   forum.location.hash = '';
   forum.publish('conversations', rows.filter(p => p.id !== 'second'));
   assert.equal(forum.document.querySelector('.bs-topic-all'), null);
+});
+
+test('All conversations includes every visible topic and preserves the chosen order in thread links', () => {
+  const forum = openThread(new Map(), 'sam', '#view=all');
+  forum.publish('conversationTopics', [{ id: 'advice', name: 'Advice', icon: '☎️' }]);
+  const rows = [
+    { ...post, id: 'popular', topicId: 'advice', at: 10, votes: { sam: 1, lee: 1 } },
+    { ...post, id: 'newest', at: 40 },
+    { ...post, id: 'welcome', topicId: 'advice', at: 20, votes: { sam: 1 }, pinned: true },
+    { ...post, id: 'empty-card', opened: true, replies: 0, at: 50 }
+  ];
+  forum.publish('conversations', rows);
+  const order = () => Array.from(forum.document.querySelectorAll('.bs-post'), el => el.id);
+  const button = sort => forum.document.querySelector('[data-sort="' + sort + '"]');
+  assert.deepEqual(order(), ['m-popular', 'm-welcome', 'm-newest']);
+  assert.equal(forum.document.querySelector('.bs-views [aria-current]').textContent, 'All conversations');
+  assert.equal(button('top').hidden, false);
+  button('new').click();
+  assert.deepEqual(order(), ['m-newest', 'm-welcome', 'm-popular']);
+  assert.equal(forum.location.hash, '#view=all&sort=new');
+  const href = forum.row('newest').querySelector('.bs-title a').getAttribute('href');
+  assert.equal(href, '#view=all&sort=new&post=newest');
+  forum.location.hash = href;
+  forum.publish('conversations', rows);
+  forum.publish('newest/messages', []);
+  const back = forum.document.querySelector('.back-link');
+  assert.equal(back.textContent, '← All conversations');
+  assert.equal(back.getAttribute('href'), '#view=all&sort=new');
 });

@@ -13,6 +13,11 @@
 /* In a project's tab: a little room under the tabs. */
 #projectPanel .bs-root{margin-top:18px;}
 .bs-note{margin:0 0 14px; font-size:13px; color:var(--muted);}
+.bs-views{display:flex; flex-wrap:wrap; gap:20px; border-bottom:1px solid var(--line); margin-bottom:14px;}
+.bs-views[hidden]{display:none;}
+.bs-views a{padding:6px 2px; margin-bottom:-1px; border-bottom:2px solid transparent; color:var(--muted); font:600 15px/1.5 var(--sans); text-decoration:none;}
+.bs-views a:hover, .bs-views a:focus-visible{color:var(--link);}
+.bs-views a[aria-current]{color:var(--ink); border-color:var(--accent);}
 .bs-sortbtn{font:inherit; font-size:13px; font-weight:600; color:var(--muted); background:none; border:1px solid var(--line); border-radius:0; padding:5px 12px; cursor:pointer;}
 .bs-sortbtn[aria-pressed="true"]{color:var(--ink); border-color:var(--ink);}
 .bs-sort{display:flex; align-items:center; gap:8px; margin-bottom:10px; flex-wrap:wrap;}

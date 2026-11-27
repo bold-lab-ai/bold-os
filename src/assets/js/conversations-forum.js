@@ -70,10 +70,12 @@ window.BoldConversations = (function(){
     };
   }
   // The forum's markup (once Conversations' page's).
-  function shell(note, peek){
+  function shell(note, peek, topicPage){
     return (note === false ? '' : '<p class="bs-note">' + BOLD.escapeHtml(note || 'Posts and replies are saved.') + '</p>') +
       '<div class="bs-cols"><section class="bs-forum" aria-label="Forum">' +
-        '<div class="bs-sort" role="group" aria-label="Sort">' +
+        (topicPage ? '<nav class="bs-views" aria-label="Browse conversations"><a href="#">Topics</a>' +
+          '<a href="#view=all">All conversations</a></nav>' : '') +
+        '<div class="bs-sort" role="group" aria-label="Conversation controls">' +
           (peek ? '' : '<input type="search" class="bs-find" placeholder="Search conversations" aria-label="Search conversations" autocomplete="off" spellcheck="false">' +
             // Filters: its icon opens them (the number: how many are set).
             '<button type="button" class="bs-filterbtn" aria-expanded="false" aria-label="Filters" title="Filters"><svg viewBox="0 0 16 16" aria-hidden="true" focusable="false"><path d="M2 3h12l-4.6 5.4V13l-2.8 1.2V8.4z"/></svg><span class="bs-filter-n" hidden></span></button>') +
@@ -115,8 +117,9 @@ window.BoldConversations = (function(){
     opts = opts || {};
     var root = document.createElement('div');
     root.className = 'bs-root';
-    root.innerHTML = shell(opts.note, opts.peek);
     var project = opts.project || null;
+    var topicPage = !project && !opts.thread && !opts.peek;
+    root.innerHTML = shell(opts.note, opts.peek, topicPage);
     var q = function(sel){ return root.querySelector(sel); };
     var postsEl = q('.bs-posts'), threadEl = q('.bs-thread'), sortEl = q('.bs-sort'), filtersEl = q('.bs-filters');
     var log = q('.bs-log'), form = q('.bs-compose'), text = q('.bs-compose textarea'), aboutEl = q('.bs-about');
@@ -130,10 +133,12 @@ window.BoldConversations = (function(){
     var md = function(t){ return '<div class="bs-text md-desc">' + BoldMarkdown.render(t, { breaks: true }) + '</div>'; };
     var me = { email: '', name: 'You', uid: '', slackId: '' }, canPost = false, canStart = false, full = false;
     var posts = null, messages = {}, openId = '', stopMsgs = null;
-    var topics = [], topicsReady = false, topicNav = q('.bs-topic-nav'), topicPage = !project && !opts.thread && !opts.peek;
+    var topics = [], topicsReady = false, topicNav = q('.bs-topic-nav'), viewNav = q('.bs-views');
     var topicById = function(id){ return topics.find(function(t){ return t.id === id; }); };
     function currentTopic(){ return topicPage ? new URLSearchParams(location.hash.slice(1)).get('topic') || '' : ''; }
     function topicHref(id){ return '#topic=' + encodeURIComponent(id); }
+    function allView(){ return topicPage && new URLSearchParams(location.hash.slice(1)).get('view') === 'all' && !currentTopic(); }
+    function allHref(order){ return '#view=all' + (order === 'new' ? '&sort=new' : ''); }
     var postPicker = conversationTopicPicker(writeEl.querySelector('.bs-topic-slot'));
     var slackPicker = conversationTopicPicker(importEl.querySelector('.bs-topic-slot'));
     var find = '';   // the search box's text: the list shows only the posts it finds, best first (search-rank.js)
@@ -638,11 +643,15 @@ window.BoldConversations = (function(){
       return { post: decodeURIComponent((p && p[1]) || ''), msg: decodeURIComponent((m && m[1]) || '') };
     }
     // The address without a post: the list.
-    function base(){ return project ? location.hash.replace(/&(post|msg)=[^&]*/g, '') : currentTopic() ? topicHref(currentTopic()) : ''; }
+    function base(){
+      if (project) return location.hash.replace(/&(post|msg)=[^&]*/g, '');
+      if (allView()) return allHref(sort);
+      return currentTopic() ? topicHref(currentTopic()) : '';
+    }
     function postHash(pid, mid){
       // One conversation alone: its messages' links are the page's own address, with &msg=.
       if (opts.thread) return location.hash.replace(/&msg=[^&]*/g, '') + (mid && mid !== pid ? '&msg=' + encodeURIComponent(mid) : '');
-      var b = topicPage && find.trim() ? '' : base();
+      var b = currentTopic() && find.trim() ? '' : base();
       return (b ? b + '&' : '#') + 'post=' + encodeURIComponent(pid) + (mid && mid !== pid ? '&msg=' + encodeURIComponent(mid) : '');
     }
     var listHref = function(){ return base() || '#'; };
@@ -678,7 +687,7 @@ window.BoldConversations = (function(){
     function groupOf(post){ return topicById(ConversationTopics.topicOf(post)) || unassigned; }
     function backLink(){
       var topic = topicById(currentTopic()) || (currentTopic() === unassigned.id && unassigned);
-      var label = !topicPage ? 'All posts' : find.trim() ? 'Search results' : topic ? topic.name : 'All topics';
+      var label = !topicPage ? 'All posts' : find.trim() ? 'Search results' : topic ? topic.name : allView() ? 'All conversations' : 'All topics';
       return '<a class="back-link" href="' + esc(listHref()) + '">&larr; ' + esc(label) + '</a>';
     }
     function topicControls(p){
@@ -726,8 +735,17 @@ window.BoldConversations = (function(){
       postsEl.hidden = !!open; sortEl.hidden = !!open; if (filtersEl) filtersEl.hidden = !!open || !showFilters; threadEl.hidden = !open;
       syncReplySearch();
       topicNav.hidden = true;
-      var active = currentTopic(), query = find.trim(), directory = topicPage && !active && !query && !filtering();
-      sortEl.querySelectorAll('.bs-sortbtn').forEach(function(button){ button.hidden = directory; });
+      var active = currentTopic(), query = find.trim(), all = allView(), directory = topicPage && !all && !active && !query && !filtering();
+      if (viewNav) {
+        viewNav.hidden = !!open;
+        viewNav.querySelectorAll('a').forEach(function(link){
+          var selected = (link.getAttribute('href') === '#view=all') === all;
+          if (selected) link.setAttribute('aria-current', 'page'); else link.removeAttribute('aria-current');
+        });
+      }
+      if (all) sort = new URLSearchParams(location.hash.slice(1)).get('sort') === 'new' ? 'new' : 'top';
+      syncSort();
+      sortEl.querySelectorAll('.bs-sortbtn').forEach(function(button){ button.hidden = directory || (topicPage && !!query); });
       if (open) {
         if (importEl) importEl.hidden = true;
         if (writeEl) writeEl.hidden = true;
@@ -780,7 +798,7 @@ window.BoldConversations = (function(){
       }
       var t = topicById(active) || (active === unassigned.id && unassigned);
       if (topicPage) {
-        topicNav.hidden = false;
+        topicNav.hidden = all && !query;
         topicNav.innerHTML = '<a href="#">All topics</a> / ' + (query ? 'Search results' : t ? esc(t.icon + ' ' + t.name) : active ? 'Unknown topic' : 'Filtered conversations');
         if (active && !query) list = list.filter(function(p){ return groupOf(p).id === active; }).sort(function(a,b){ return Number(!!b.pinned) - Number(!!a.pinned); });
       }
@@ -806,14 +824,14 @@ window.BoldConversations = (function(){
         var at = opts.peek ? 'conversations.html#post=' + encodeURIComponent(q.id) : postHash(q.id);
         return '<li class="bs-post' + (mine(q) ? ' is-mine' : '') + '" id="m-' + esc(q.id) + '">' + vote(q) +
           '<div class="bs-post-main">' + (q.pinned ? PINNED + ' ' : '') +
-          (find.trim() ? '<span class="bs-result-topic">' + esc(groupOf(q).icon + ' ' + groupOf(q).name) + '</span>' : '') + '<h3 class="bs-title"><a href="' + at + '">' + esc(q.title) + '</a></h3><p class="bs-by">' + by(q) + (q.private ? ' · <span class="bs-private" title="' + esc(PRIVATE_TIP(q)) + '">Private</span>' : '') + '</p>' +
+          (query || all ? '<span class="bs-result-topic">' + esc(groupOf(q).icon + ' ' + groupOf(q).name) + '</span>' : '') + '<h3 class="bs-title"><a href="' + at + '">' + esc(q.title) + '</a></h3><p class="bs-by">' + by(q) + (q.private ? ' · <span class="bs-private" title="' + esc(PRIVATE_TIP(q)) + '">Private</span>' : '') + '</p>' +
             (q.body && q.body.trim() !== q.title ? md(q.body).replace('class="bs-text md-desc"', 'class="bs-text md-desc bs-clip"') : '') +
             matchingReplies(q, query) + '<p class="bs-acts"><a href="' + at + '">' + count(q.replies || 0) + '</a></p></div></li>';
       }).join('') : '<li class="proj-msg">' + esc(status || empty) + '</li>';
       if (status && list.length) postsEl.insertAdjacentHTML('beforeend', '<li class="proj-msg">' + esc(status) + '</li>');
     }
     forumEl.addEventListener('click', function(e){
-      if (!topicPage || !e.target.closest('.bs-topic-nav a, .bs-open-topic') || e.ctrlKey || e.metaKey || e.shiftKey || e.altKey) return;
+      if (!topicPage || !e.target.closest('.bs-topic-nav a, .bs-open-topic, .bs-views a') || e.ctrlKey || e.metaKey || e.shiftKey || e.altKey) return;
       find = ''; findEl.value = ''; filt = { author: '', with: '', project: '', vis: '' }; render();
     });
     window.addEventListener('hashchange', function(){ if (!root.isConnected) return; replying = ''; linkedMsg = route().msg; render(); if (!linkedMsg) window.scrollTo(0, 0); });
@@ -1200,7 +1218,9 @@ window.BoldConversations = (function(){
     function syncSort(){ Array.prototype.forEach.call(root.querySelectorAll('.bs-sortbtn'), function(x){ x.setAttribute('aria-pressed', String(x.getAttribute('data-sort') === sort)); }); }
     sortEl.addEventListener('click', function(e){
       var b = e.target.closest('.bs-sortbtn'); if (!b) return;
-      sort = b.getAttribute('data-sort'); syncSort(); render();
+      sort = b.getAttribute('data-sort');
+      if (allView()) history.replaceState(history.state, '', allHref(sort));
+      render();
     });
 
     // ---------- who, and what's there ----------
