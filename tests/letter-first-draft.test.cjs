@@ -44,3 +44,9 @@ test('Connections: the applicant and their first drafter are linked, as the appl
   const old = await interactionsFor('letterRequests/L0', { requesterEmail: 'msc@x', writerEmail: 'ref@x', at: 1 }, none);
   assert.deepStrictEqual(old.map(pair), ['msc@x ref@x'], 'no drafter: as before');
 });
+
+test('a first draft never tells anyone it tags (it’s for the referee only)', () => {
+  const { tagPlace } = require('../functions/index.js')._internal;
+  assert.strictEqual(tagPlace('letterDrafts/L1', { text: 'Thanks to [@Pat](U123)' }), null);
+  assert.strictEqual(tagPlace('letterRequests/L1', {}), null);
+});

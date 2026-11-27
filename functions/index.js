@@ -1944,7 +1944,7 @@ function newTags(before, after){
 // nobody here: bookkeeping and private collections, and guides and the
 // BOLDiquette (their comments and proposed changes tell, above). Pure.
 const TAG_SILENT = ['problemBank', 'benchmarks', 'benchmarkReceipts', 'benchmarkSources', 'roles', 'people', 'meta', 'settings', 'readPoints', 'changelog', 'commentQueue', 'venueCalls', 'githubLinks', 'googleLinks',
-  'letterRequests', 'introRequests', 'joinRequests', 'members', 'hackathonJoins', 'projectWorkspaces', 'guides', 'handbook', 'interactions', 'privateInteractions',
+  'letterRequests', 'letterDrafts', 'introRequests', 'joinRequests', 'members', 'hackathonJoins', 'projectWorkspaces', 'guides', 'handbook', 'interactions', 'privateInteractions',
   // Conversations (Experimental, 2026-11-04): no Slack messages from it while it's an experiment.
   'conversations', 'conversationImports', 'cardImageImports', 'notifications'];
 // An event's page: its own (d.page: Collaboration Week, the Festival) or event.html.
