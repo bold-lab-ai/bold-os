@@ -16,22 +16,25 @@
 // BoldConversations.create({ project?: { id, title: () => its title }, thread?, note? (false: none), title? (false: no thread title), peek? (true: the home page's: no search box or filters, and a conversation opens on Conversations' page) }) → { el (kept: put it back after a redraw), away() }.
 window.BoldConversations = (function(){
   var EYE = '<svg class="bs-readers-eye" viewBox="0 0 16 16" aria-hidden="true" focusable="false"><path d="M1.5 8s2.4-4.5 6.5-4.5S14.5 8 14.5 8 12.1 12.5 8 12.5 1.5 8 1.5 8z"/><circle cx="8" cy="8" r="2"/></svg>';
-  // Reply: the home page's Reply to BOLD, a line that opens into a box (bold.css .ha-box), under every conversation
-  // (the forum's, and a thing's before it starts: talk.js). replyBox({ send: text → a promise (kept open if it
-  // fails), label? }) → { el, note(text): what it goes on from, beside the button, reset(), into(parent): put it (back)
-  // at the parent's end, keeping the focus }.
+  // Shared comment composer. Keep its DOM node so live updates preserve the draft.
   function replyBox(o){
     var esc = BOLD.escapeHtml, label = o.label || 'Reply';
     var el = document.createElement('section');
     el.className = 'ha-box bs-answer';
-    el.innerHTML = '<button type="button" class="ha-line" aria-expanded="false"><span class="ha-line-text">' + esc(label) + '</span><span class="ha-caret" aria-hidden="true"></span></button>' +
-      '<div class="ha-fold"><form class="ha-form" novalidate><textarea class="md-field" data-md-breaks="true" data-preview-class="bs-text md-desc" rows="2" maxlength="10000" aria-label="' + esc(label) + '" placeholder="' + esc(label) + '…"></textarea>' +
+    el.innerHTML = '<button type="button" class="btn-box bs-comment-button" aria-expanded="false">' + esc(label) + '</button>' +
+      '<div class="ha-fold" hidden><form class="ha-form" novalidate><textarea class="md-field" data-md-breaks="true" data-preview-class="bs-text md-desc" rows="2" maxlength="10000" aria-label="' + esc(label) + '"></textarea>' +
       '<div class="ha-actions"><span class="bs-answer-to"></span><button type="button" class="btn-text ha-close">Close</button><button type="submit" class="btn-box is-primary">' + esc(o.button || 'Reply') + '</button></div></form></div>';
-    var line = el.querySelector('.ha-line'), form = el.querySelector('form'), box = form.querySelector('textarea'), go = form.querySelector('button[type=submit]');
+    var line = el.querySelector('.bs-comment-button'), form = el.querySelector('form'), box = form.querySelector('textarea'), go = form.querySelector('button[type=submit]');
     function open(yes){
       el.classList.toggle('is-open', yes);
+      line.hidden = yes;
+      form.parentNode.hidden = !yes;
       line.setAttribute('aria-expanded', String(yes));
-      if (yes) { try { box.focus({ preventScroll: true }); } catch (e){ box.focus(); } }
+      if (yes) {
+        var writeTab = box.hidden && form.querySelector('[data-mdf-mode="write"]');
+        if (writeTab) writeTab.click();
+        box.focus();
+      }
     }
     line.addEventListener('click', function(){ open(true); });
     el.querySelector('.ha-close').addEventListener('click', function(){ open(false); line.focus(); });
@@ -55,7 +58,7 @@ window.BoldConversations = (function(){
     return {
       el: el,
       note: function(t){ el.querySelector('.bs-answer-to').textContent = t || ''; },
-      label: function(t){ line.querySelector('.ha-line-text').textContent = t; box.placeholder = t + '…'; box.setAttribute('aria-label', t); },
+      label: function(t){ line.textContent = t; box.setAttribute('aria-label', t); },
       reset: function(){ box.value = ''; open(false); },
       into: function(parent){
         var had = document.activeElement && el.contains(document.activeElement) ? document.activeElement : null;
@@ -409,7 +412,7 @@ window.BoldConversations = (function(){
     }
     function acts(m, pid){
       var why = canPost ? '' : ' disabled title="' + esc(BOLD.cannotReason('conversations', 'edit')) + '"';
-      // Reply: answers this message, nested under it. The post has none: Join the conversation, under it, is its.
+      // Reply: answers this message, nested under it. The post has none: the Add a comment button is below it.
       return '<p class="bs-acts">' +
         (m.id === pid ? '' : '<button type="button" class="btn-text bs-reply-btn" data-pid="' + esc(pid) + '" data-id="' + esc(m.id) + '"' + why + '>Reply</button>') +
         (AGENT ? '<button type="button" class="btn-text bs-discuss" data-pid="' + esc(pid) + '" data-id="' + esc(m.id) + '"' + (about && about.id === m.id ? ' disabled title="You’re reasoning about it with your agent"' : why) + '>Reason with your agent</button>' : '') +
@@ -601,14 +604,14 @@ window.BoldConversations = (function(){
       render();
       var el = document.getElementById('m-' + id); if (el) el.scrollIntoView({ block: 'center' });
     }
-    // ---------- Join the conversation, under the post (replyBox) ----------
+    // ---------- Top-level comment composer (replyBox) ----------
     // A reply to the post itself: the top level. One element, kept across the redraws (moved into each new
     // .bs-join), so what's written in it stays; a message's own Reply opens its own box.
     var answer = null, answerPid = '';
     function drawAnswer(p){
       var slot = threadEl.querySelector('.bs-join');
       if (!canPost || !slot) return;
-      if (!answer) answer = replyBox({ label: 'Join the conversation', send: function(body){
+      if (!answer) answer = replyBox({ label: 'Add a comment', button: 'Post comment', send: function(body){
         var q2 = postOf(answerPid); if (!q2) return Promise.reject(new Error('No such conversation'));
         return newReply(q2.id, q2.id, body, false).then(function(ref){ show(q2.id, ref.id); }, function(err){ oops('Replying')(err); throw err; });
       } });
@@ -620,19 +623,21 @@ window.BoldConversations = (function(){
       var open = route().post;
       // A peek given a conversation (an old index.html#post=… link): it opens on Conversations' page.
       if (open && opts.peek) { location.replace('conversations.html' + location.hash); return; }
-      if (open !== openId) watchThread(open);
       var p = open && postOf(open);
+      // A direct link can open before sign-in. Subscribe once the reader's post query includes it.
+      var visibleId = p ? open : '';
+      if (visibleId !== openId) watchThread(visibleId);
       postsEl.hidden = !!open; sortEl.hidden = !!open; if (filtersEl) filtersEl.hidden = !!open || !showFilters; threadEl.hidden = !open;
       if (open) {
         if (importEl) importEl.hidden = true;
         if (writeEl) writeEl.hidden = true;
-        if (posts === null || messages[open] === undefined) { threadEl.innerHTML = '<p class="proj-msg">Loading&hellip;</p>'; return; }
+        if (posts === null || (p && messages[open] === undefined)) { threadEl.innerHTML = '<p class="proj-msg">Loading&hellip;</p>'; return; }
         if (!p) { threadEl.innerHTML = '<a class="back-link" href="' + esc(listHref()) + '">&larr; All posts</a><p class="proj-msg">No such post: it may have been removed.</p>'; return; }
         // An open reply box is carried across the redraw (a reply or a vote arriving), with what's typed in it
         // and its Write | Preview tab.
         var keep = threadEl.querySelector('.bs-replyform');
         // The post, under its title: its first message, with where it came from. With no text of its own (a card
-        // with no description), only where it came from: Join the conversation is right under the title.
+        // with no description), only where it came from: Add a comment is right under the title.
         var first = Object.assign({}, p, { body: p.body && p.body.trim() !== p.title ? p.body : '' });
         var head = first.body ? '<ol class="bs-run bs-post-run">' + (function(h){ var i = h.lastIndexOf('</li>'); return h.slice(0, i) + origin(p) + h.slice(i); })(msgHtml(first, p.id)) + '</ol>' : origin(p);
         var top = under(p.id);

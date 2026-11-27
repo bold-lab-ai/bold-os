@@ -248,8 +248,9 @@ body.bs-agent-open .bs-cols{padding-bottom:min(46vh, 420px);}
 .event-form .bs-new-who label{display:flex; margin:0; color:var(--ink); cursor:pointer;}
 .event-form .bs-new-who input[type=radio]{width:auto; margin:0; flex:none;}
 .event-form .bs-new-who .bs-who-add{width:100%; max-width:360px; margin:0;}
-/* Join the conversation, under the post (conversations-forum.js drawAnswer): the home page's box (bold.css .ha-box). */
+/* The top-level comment composer shares the home page’s Markdown editor styles. */
 .bs-answer{margin:18px 0 0; font-family:var(--sans);}
+.bs-answer [hidden]{display:none;}
 .bs-join .bs-answer{margin:4px 12px 16px;}
 /* On a phone, replies step in less, so a deep one keeps room for its text. */
 @media (max-width:600px){ .bs-branches{padding-left:16px;} .bs-branches > .bs-run::before, .bs-branches > .bs-run:not(:last-child)::after{left:-10px;} .bs-branches > .bs-run::before{width:7px;} }
