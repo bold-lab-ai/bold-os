@@ -709,7 +709,7 @@
   var may = function(area, what){ return function(){ return BOLD.can(area, what) ? '' : BOLD.cannotReason(area, what); }; };
   var CREATE = [
     { head: 'New' },
-    { label: 'Open problem', href: 'problem-new.html', can: may('projects', 'edit') },
+    { label: 'Open problem', href: 'problem-new.html', can: may('problem-bank', 'edit') },
     { label: 'Project', href: 'projects-register.html', can: may('projects', 'edit') },
     { label: 'Moonshot', href: 'projects-register.html#level=moonshot', can: may('projects', 'edit') },
     { label: 'Northstar', href: 'projects-register.html#level=northstar', can: may('projects', 'edit') },
@@ -1005,13 +1005,15 @@
   }
   // Pages where every change is a proposal someone reviews (functions/access.js REVIEWED).
   var REVIEWED = ['boldiquette', 'guides', 'skills', 'tools', 'get-started'];
+  // A page the saved table has no row for, when it isn't BOLD-internal (functions/access.js UNLISTED).
+  var UNLISTED = { 'problem-bank': 'everyone' };
   // A page's level for `what`: view, or edit (propose is edit).
   // PAN-BOLD is Everyone (everyone signed in): one level.
   function levelFor(area, what){
     // On a branch that changes Who can see what: the table it would make.
     var pages = (branch && branch.pages) || (access && access.pages);
     var p = (pages && pages[area]) || {};
-    var l = (what === 'view' ? p.view : p.edit) || 'internal';
+    var l = (what === 'view' ? p.view : p.edit) || UNLISTED[area] || 'internal';
     return l === 'pan' ? 'everyone' : l;
   }
   // Whether the viewer may view | edit | propose on `area` (a page key: projects, …); list:
@@ -1143,7 +1145,7 @@
   // there, as a proposal on the BOLDiquette that another PI or admin accepts, and the chip
   // says while one waits.
   // The pages, as the table names them (functions/access.js PAGES, kept in sync by hand).
-  var AREA_NAMES = { boldiquette: 'BOLDiquette', projects: 'Projects', profile: 'Your profile', calendar: 'Calendar', 'ml-cycle': 'ML Conference Cycle',
+  var AREA_NAMES = { boldiquette: 'BOLDiquette', projects: 'Projects', 'problem-bank': 'Problem Bank', profile: 'Your profile', calendar: 'Calendar', 'ml-cycle': 'ML Conference Cycle',
     people: 'People', requests: 'Requests', events: 'Events', agents: 'Agents', tools: 'Tools', skills: 'Skills', guides: 'How to',
     'service-desk': 'Service desk', 'get-started': 'Get started', search: 'Search', changelog: 'Changes',
     experimental: 'Experimental', conversations: 'Conversations' };

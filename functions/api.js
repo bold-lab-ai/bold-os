@@ -498,13 +498,13 @@ module.exports = function(deps){
   // Who can see what (functions/access.js): each reading tool reads one page, and answers
   // only if its person may view that page. Acting goes through the rules and callables,
   // which check it themselves.
-  const TOOL_PAGE = { list_benchmarks: 'projects', register_benchmark: 'projects', create_open_problem: 'projects', edit_problem: 'projects', search: 'search', list_group_rota: 'events', list_projects: 'projects', get_project: 'projects', find_people: 'people', get_person: 'people',
+  const TOOL_PAGE = { list_benchmarks: 'problem-bank', register_benchmark: 'problem-bank', create_open_problem: 'problem-bank', edit_problem: 'problem-bank', search: 'search', list_group_rota: 'events', list_projects: 'projects', get_project: 'projects', find_people: 'people', get_person: 'people',
     calendar: 'calendar', my_items: 'profile', list_introduction_offers: 'service-desk', list_tools: 'tools', list_skills: 'skills', get_skill: 'skills' };
   const pageOfTool = (name, args) => { const p = String((args || {}).page || '').trim().toLowerCase();
     return name === 'read_page' ? (p === 'boldiquette' ? 'boldiquette' : require('./access').guideArea(p)) : TOOL_PAGE[name]; };
   async function mayView(who, page, permission = 'view'){
     if (!page || await access.can(who.email, page, permission)) return;
-    const level = ((await access.table())[page] || {}).view || 'internal';
+    const level = await access.levelOf(page, 'view');
     throw httpError(403, 'That page is for ' + (require('./access').LEVEL_NAMES[level] || level) + ' and above (BOLDiquette › Who can see what).');
   }
   const toolsFor = (who) => TOOLS.filter((t) => !t.write || who.write);
@@ -512,8 +512,9 @@ module.exports = function(deps){
   async function toolNamed(who, name){
     const t = TOOLS.find((x) => x.name === name);
     if (t) return Object.assign({}, t, { run: async (w, args) => {
+      // A project proposal's choices of problems and releases are open to Projects too (benchmarkRegistry holds the same).
       const proposalChoices = t.name === 'list_benchmarks' && ['problem_choices','releases'].includes(args?.view);
-      await mayView(w, pageOfTool(t.name, args), proposalChoices ? 'list' : 'view');
+      if (!(proposalChoices && await access.can(w.email, 'projects', 'list'))) await mayView(w, pageOfTool(t.name, args));
       return t.run(w, args);
     } });
     const one = (await added.toolList(Object.assign({}, who, { write: true }))).find((x) => x.name === name);
@@ -594,7 +595,7 @@ module.exports = function(deps){
     if (want('projects')) jobs.push(allProjects().then((g) => [].concat(g.proposed || [], g.ongoing, g.submission, g.planned, g.completed).forEach((p) =>
       item('projects', p.title, 'Project' + (p.owner ? ' · ' + p.owner : ''), [p.abstract, (p.keywords || []).join(' '), p.owner, (p.authors || []).map((x) => x.name).filter((n) => n !== p.owner).join(' ')].join(' '), projectHref(p.projectId || p.cardId, p.boardId)))));
     // The Problem Bank: problems not archived, and their evaluator releases.
-    if ((want('problems') || want('benchmarks')) && await access.can(who.email, 'projects', 'view')) jobs.push(Promise.all([db.collection('problemBank').get(), db.collection('benchmarks').get()]).then(([problems, releases]) => {
+    if ((want('problems') || want('benchmarks')) && await access.can(who.email, 'problem-bank', 'view')) jobs.push(Promise.all([db.collection('problemBank').get(), db.collection('benchmarks').get()]).then(([problems, releases]) => {
       const live = new Set(problems.docs.filter((d) => !d.data().archived).map((d) => d.id));
       if (want('problems')) problems.docs.filter((d) => live.has(d.id)).forEach((d) => { const x = d.data();
         item('problems', x.title, 'Problem Bank', [x.objective, x.significance, x.existing_solutions, x.task_kind, x.notes].filter(Boolean).join(' '), 'problem.html?problem=' + encodeURIComponent(d.id)); });

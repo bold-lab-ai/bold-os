@@ -28,9 +28,12 @@ async function req(path, method, token, body, mask) {
 
 
 (async () => {
-  const me = 'internal@example.com', other = 'associate@example.com', id = 'draft-' + Date.now();
+  const me = 'internal@example.com', other = 'associate@example.com', pan = 'pan@example.com', id = 'draft-' + Date.now();
+  // Who can do what, as saved (settings/access; the rules refuse everything without it): put back as it was afterwards.
+  const table = db.doc('settings/access'), tableBefore = await table.get();
+  await table.set({ pages: { projects: { view: 'internal', edit: 'internal' } } });
   const seeded = [];
-  for (const [path, data] of [['roles/pis', { emails: [] }], ['roles/admins', { emails: [] }], ['members/' + me, { category: 'internal' }], ['members/' + other, { category: 'internal' }]]) {
+  for (const [path, data] of [['roles/pis', { emails: [] }], ['roles/admins', { emails: [] }], ['members/' + me, { category: 'internal' }], ['members/' + other, { category: 'internal' }], ['members/' + pan, { category: 'pan' }]]) {
     const ref = db.doc(path);
     if (!(await ref.get()).exists) { await ref.create(data); seeded.push(ref); }
   }
@@ -47,9 +50,23 @@ async function req(path, method, token, body, mask) {
     assert.equal(await req('problemDrafts?documentId=' + id + 'z', 'POST', jwt(me, false), row(me)), 403, 'Slack accounts only');
     assert.equal(await req('problemDrafts/' + id, 'DELETE', jwt(other)), 403, 'nobody else deletes it');
     assert.equal(await req('problemDrafts/' + id, 'DELETE', jwt(me)), 200, 'they delete it');
+    // The Problem Bank's own row (2026-11-27): without one, everyone signed in, PAN-BOLD included.
+    assert.equal(await req('problemDrafts?documentId=' + id + 'b', 'POST', jwt(pan), row(pan)), 200, 'PAN-BOLD, under a table saved before the row');
+    assert.equal(await req('problemDrafts/' + id + 'b', 'PATCH', jwt(pan), row(pan, { done: true })), 200, 'and updates it');
+    assert.equal(await req('problemDrafts?documentId=' + id + 'c', 'POST', jwt(pan, false), row(pan)), 403, 'Slack accounts only, still');
+    assert.equal(await req('problemDrafts?documentId=' + id + 'd', 'POST', null, row(pan)), 403, 'nobody signed out');
+    // Its row decides, once the table has one.
+    await table.set({ pages: { projects: { view: 'everyone', edit: 'everyone' }, 'problem-bank': { view: 'everyone', edit: 'internal' } } });
+    assert.equal(await req('problemDrafts?documentId=' + id + 'e', 'POST', jwt(pan), row(pan)), 403, 'not PAN-BOLD when its row says BOLD-internal, whatever Projects says');
+    assert.equal(await req('problemDrafts?documentId=' + id + 'f', 'POST', jwt(me), row(me)), 200, 'BOLD-internal then');
+    // The Problem Bank opens nothing else: the roster stays People's or Projects'.
+    await table.set({ pages: { projects: { view: 'internal', edit: 'internal' }, people: { view: 'internal', edit: 'internal' } } });
+    assert.equal(await req('people/nobody', 'GET', jwt(pan)), 403, 'the roster stays closed to PAN-BOLD');
+    assert.equal(await req('problemBank/any', 'GET', jwt(pan)), 403, 'problems only through the callable');
     console.log('problem draft rules: ok');
   } finally {
-    await Promise.all([db.doc('problemDrafts/' + id), ...seeded].map((ref) => ref.delete()));
+    await Promise.all([db.doc('problemDrafts/' + id), ...'bcdef'.split('').map((x) => db.doc('problemDrafts/' + id + x)), ...seeded].map((ref) => ref.delete()));
+    if (tableBefore.exists) await table.set(tableBefore.data()); else await table.delete();
     await admin.app().delete();
   }
 })().catch((e) => { console.error(e); process.exitCode = 1; });

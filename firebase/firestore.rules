@@ -54,7 +54,8 @@ service cloud.firestore {
     // settings/access (written only by decideProposal, from the BOLDiquette's table). A
     // group is a member's `category` (only PIs and admins set it); without one, PAN-BOLD,
     // the same as Everyone (everyone signed in). Not signed in, nothing. PIs and admins count as
-    // BOLD-exec. A page missing from the table is BOLD-internal. may() is on top of each
+    // BOLD-exec. A page missing from the table is BOLD-internal, but the Problem Bank, which is
+    // everyone signed in (functions/access.js UNLISTED, 2026-11-27). may() is on top of each
     // rule's own conditions, which still apply.
     function levelRank(level) {
       return {'everyone': 1, 'pan': 1, 'associate': 2, 'internal': 3, 'staff': 4, 'exec': 5, 'none': 6}.get(level, 3);
@@ -68,7 +69,8 @@ service cloud.firestore {
     }
     function level(page, what) {
       let a = get(/databases/$(database)/documents/settings/access);
-      return a == null ? 'internal' : a.data.get('pages', {}).get(page, {}).get(what, 'internal');
+      let unlisted = {'problem-bank': 'everyone'}.get(page, 'internal');
+      return a == null ? unlisted : a.data.get('pages', {}).get(page, {}).get(what, unlisted);
     }
     function need(page, what) { return myRank() >= levelRank(level(page, what)); }
     // Who sees an event series or an event (`visibleTo`, functions/access.js VISIBILITY; 2026-11-02):
@@ -479,7 +481,7 @@ service cloud.firestore {
     // as on a project's page) or a PI/admin, deleted or moved only by its
     // submitter or a PI/admin.
     // The Problem Bank (problems.html): read and written only through benchmarkRegistry,
-    // which checks Slack identity, Projects access and ownership, and keeps people's
+    // which checks Slack identity, Problem Bank access and ownership, and keeps people's
     // emails (createdBy, updatedBy, approvedBy) from pages and agents.
     match /problemBank/{id} {
       allow read, write: if false;
@@ -1052,9 +1054,10 @@ service cloud.firestore {
     // last marked as read. Theirs alone, keyed by their Firebase Auth uid.
     // A problem being talked through with BOLD (problem-new.html): its conversation and what BOLD gathered, kept
     // to pick up later. Only whoever started it reads or changes it; deleted once the problem is saved.
+    // Whoever may edit the Problem Bank ('change' before 2026-11-27: not a name the table has, so BOLD-internal).
     match /problemDrafts/{id} {
       allow read, delete: if isSignedIn() && resource.data.email == email();
-      allow create, update: if may('projects', 'change') && request.resource.data.email == email()
+      allow create, update: if may('problem-bank', 'edit') && request.resource.data.email == email()
         && (resource == null || resource.data.email == email())
         && request.resource.data.keys().hasOnly(['email', 'turns', 'draft', 'done', 'title', 'me', 'createdAt', 'updatedAt'])
         && request.resource.data.turns is list && request.resource.data.turns.size() <= 41

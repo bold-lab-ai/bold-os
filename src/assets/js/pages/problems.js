@@ -201,9 +201,9 @@
     setView(view);
   });
   BOLD.onAccess(function(){
-    var button = el('pbAdd'), allowed = BOLD.can('projects', 'edit');
+    var button = el('pbAdd'), allowed = BOLD.can('problem-bank', 'edit');
     if (allowed) button.href = 'problem-new.html'; else button.removeAttribute('href');
-    button.setAttribute('aria-disabled', String(!allowed)); button.title = allowed ? '' : BOLD.cannotReason('projects', 'edit');
+    button.setAttribute('aria-disabled', String(!allowed)); button.title = allowed ? '' : BOLD.cannotReason('problem-bank', 'edit');
     if (loaded) renderList();
   });
 })();

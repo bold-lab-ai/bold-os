@@ -51,7 +51,7 @@
     if (p.archived) return 'Restore this problem first.';
     if (handoffRequired && p.handoff_enabled !== true)
       return p.handoff_unavailable_reason || 'The verifier handoff is unavailable. Ask a BOLD OS administrator to check access and settings.';
-    return BOLD.can('projects','edit') ? '' : BOLD.cannotReason('projects','edit');
+    return BOLD.can('problem-bank','edit') ? '' : BOLD.cannotReason('problem-bank','edit');
   }
   async function openVerifier(){
     if (launching || !p || p.builds_benchmark || this.disabled || verifierUnavailable()) return;
@@ -86,6 +86,10 @@
     } finally {
       if (epoch === userEpoch) { launching = false; this.disabled = false; }
     }
+  }
+  // The roster (people) is People's or Projects' to read (firestore.rules), not the Problem Bank's.
+  function rosterUnavailable(){
+    return BOLD.can('people','view') || BOLD.can('projects','list') ? '' : 'Choosing another definer needs People or Projects access (BOLDiquette › Who can do what).';
   }
   function editButton(what, why){
     var off = !canEdit() ? NOT_EDITOR : (why || '');
@@ -129,7 +133,7 @@
         '<p class="detail-muted">This skips the verifier step and turns off verifier reminders.</p>',
         p.archived ? 'Restore this problem to change its type.' : '');
       html += editableRow('owner','Problem definer', d.owner ? (p.owner_id ? '<a href="person.html?id=' + encodeURIComponent(p.owner_id) + '">' + esc(d.owner) + '</a>' : esc(d.owner)) : missing(),
-        '<select id="fieldInput" aria-label="Problem definer"></select>');
+        '<select id="fieldInput" aria-label="Problem definer"></select>', rosterUnavailable());
       [['significance','Why it matters'],['difficulties','What are the difficulties?'],['existing_solutions','Where is the frontier?']].forEach(function(f){
         html += editableRow(f[0],f[1],text(p[f[0]]),'<textarea id="fieldInput" aria-label="' + esc(f[1]) + '" maxlength="8000">' + esc(p[f[0]] || '') + '</textarea>');
       });
