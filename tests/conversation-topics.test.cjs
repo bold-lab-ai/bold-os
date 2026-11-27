@@ -50,3 +50,24 @@ test('creating a topic selects it without submitting or resetting the draft', as
   assert.equal(saved[1].icon, topics.suggestIcon('Paper club'));
   assert.equal(picker.required(), true);
 });
+
+test('a pending topic creation cannot select a topic in the next draft after cancel', async () => {
+  const { document } = parseHTML('<div class="slot"></div>');
+  const ctx = { document, BOLD: { escapeHtml: String }, ConversationTopics: topics };
+  vm.runInNewContext(fs.readFileSync(require.resolve('../src/assets/js/conversation-topic-picker.js'), 'utf8'), ctx);
+  let finishSave;
+  ctx.conversationTopicPicker.create = () => new Promise(resolve => { finishSave = resolve; });
+  const picker = ctx.conversationTopicPicker(document.querySelector('.slot'));
+  picker.update(topics.starters);
+  document.querySelector('[data-topic=advice]').click();
+  document.querySelector('.bs-topic-new').click();
+  document.querySelector('.bs-topic-name').value = 'Paper club';
+  document.querySelector('.bs-topic-save').click();
+  picker.reset();
+  finishSave({ id: 'paper-club', name: 'Paper club', icon: '▤' });
+  await new Promise(setImmediate);
+  assert.equal(document.querySelector('summary').textContent, 'Choose a topic');
+  assert.equal(picker.value(), '');
+  assert.equal(picker.required(), false);
+  assert.equal(document.querySelector('.bs-topic-save').disabled, false);
+});

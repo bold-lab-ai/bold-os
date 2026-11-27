@@ -903,7 +903,9 @@ window.BoldConversations = (function(){
       if (!el.hidden) { loadNames(); drawPick('new'); }
     }
     writeEl.addEventListener('change', function(e){ if (e.target.name === 'bs-new-who') { syncNewWho(); var i = writeEl.querySelector('.bs-pick[data-pick=new] .bs-who-add'); if (i && !writeEl.querySelector('.bs-pick[data-pick=new]').hidden) i.focus(); } });
-    writeEl.querySelector('.bs-write-cancel').addEventListener('click', function(){ writeEl.hidden = true; });
+    writeEl.querySelector('.bs-write-cancel').addEventListener('click', function(){
+      postPicker.reset(); writeEl.hidden = true; sortEl.querySelector('.bs-write').focus();
+    });
     sortEl.querySelector('.bs-import').addEventListener('click', function(){
       writeEl.hidden = true; importEl.hidden = !importEl.hidden;
       if (!importEl.hidden) importEl.querySelector('input').focus();
@@ -923,7 +925,9 @@ window.BoldConversations = (function(){
         err.textContent = (x && x.message) || 'Couldn’t bring it in.'; err.hidden = false;
       }).then(function(){ go.disabled = false; go.textContent = 'Bring it in'; });
     });
-    importEl.querySelector('.bs-import-cancel').addEventListener('click', function(){ importEl.hidden = true; });
+    importEl.querySelector('.bs-import-cancel').addEventListener('click', function(){
+      slackPicker.reset(); importEl.hidden = true; sortEl.querySelector('.bs-import').focus();
+    });
 
     // ---------- votes, replies, folding, removing, reasoning ----------
     forumEl.addEventListener('click', function(e){

@@ -1,7 +1,7 @@
 // A searchable disclosure with ordinary keyboard-operable buttons. Topic creation is
 // inline in the existing composer, so title, text, and visibility survive the choice.
 function conversationTopicPicker(host){
-  var esc = BOLD.escapeHtml, topics = [], selected = '', saving = false;
+  var esc = BOLD.escapeHtml, topics = [], selected = '', choiceVersion = 0;
   host.innerHTML = '<details class="bs-topic-picker"><summary aria-label="Choose a topic">Choose a topic</summary><div class="bs-topic-menu">' +
     '<input type="search" aria-label="Find a topic" placeholder="Find a topic" maxlength="60">' +
     '<div class="bs-topic-options"></div><button type="button" class="btn-text bs-topic-new">Create a topic…</button>' +
@@ -24,6 +24,7 @@ function conversationTopicPicker(host){
     }).join('');
   }
   function choose(id){
+    choiceVersion++; save.disabled = false;
     selected = id; search.value = ''; editor.hidden = true; details.open = false; report(''); draw();
   }
   options.addEventListener('click', function(e){
@@ -40,14 +41,18 @@ function conversationTopicPicker(host){
   save.addEventListener('click', async function(){
     var title = name.value.trim(), id = ConversationTopics.topicId(title);
     if (!id) { report('Give the topic a name containing a letter or number.'); name.focus(); return; }
-    if (saving) return;
-    saving = true; save.disabled = true;
+    if (save.disabled) return;
+    var version = choiceVersion;
+    save.disabled = true;
     try {
       var topic = await conversationTopicPicker.create(id, title, icon.value.trim() || ConversationTopics.suggestIcon(title));
+      // Cancel or choosing a different topic takes precedence over a pending save.
+      if (version !== choiceVersion) return;
       if (!topics.some(function(t){ return t.id === topic.id; })) topics = topics.concat(topic);
       choose(topic.id); summary.focus();
-    } catch (e){ report(e.message || 'Couldn’t create the topic.'); }
-    finally { saving = false; save.disabled = false; }
+    } catch (e){
+      if (version === choiceVersion) { save.disabled = false; report(e.message || 'Couldn’t create the topic.'); }
+    }
   });
   host.addEventListener('keydown', function(e){
     if (e.key === 'Escape' && details.open) { details.open = false; summary.focus(); e.preventDefault(); e.stopPropagation(); }
