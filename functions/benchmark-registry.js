@@ -197,13 +197,23 @@ module.exports = function({ db, onCall, callerEmail, isFullWrite, access, HttpsE
       if (action === 'past_paper_problem_choices') return activeProblemChoices(false);
       return registerPastPaper({db,error,fingerprint:value=>sha(canonical(value))},d,email,request.auth?.token?.name);
     }
-    const permission = ['open_choices','benchmark_catalogue'].includes(action) ? 'list' : ['list', 'get', 'projects', 'search', 'family'].includes(action) ? 'view' : 'change';
-    await access.requireAccess(email, 'projects', permission);
+    // Who can do what: the Problem Bank's own row (2026-11-27; it was Projects' before). A project proposal
+    // is Projects'; its form's choices of problems and releases are open to either page.
+    const seesProjects = await access.can(email,'projects','list');
+    if (action === 'create_project_proposal') await access.requireAccess(email,'projects','change');
+    else if (!(['open_choices','benchmark_catalogue'].includes(action) && seesProjects))
+      await access.requireAccess(email, 'problem-bank', ['open_choices','benchmark_catalogue','list', 'get', 'projects', 'search', 'family'].includes(action) ? 'view' : 'change');
     const full = await isFullWrite(email);
-    const mayEdit = full || await access.can(email, 'projects', 'change');
+    const mayEdit = full || await access.can(email, 'problem-bank', 'change');
     const canEdit = (doc) => mayEdit && (full || doc.data().createdBy === email);
+    // The projects a problem links to: their titles, which everyone signed in sees (getAllProjects); the venue
+    // only for whoever sees Projects.
+    async function directory(includePapers){
+      const all = await readDirectory(includePapers);
+      return seesProjects ? all : {...all, projects:all.projects.map(({venue, ...project}) => project)};
+    }
     async function problemDirectory(){
-      return readDirectory(await access.can(email,'ml-cycle','view'));
+      return directory(await access.can(email,'ml-cycle','view'));
     }
     function withLinks(doc, directory){
       const p = publicRow(doc,canEdit(doc));
@@ -230,7 +240,7 @@ module.exports = function({ db, onCall, callerEmail, isFullWrite, access, HttpsE
     if (action === 'family') return family.list(full);
     if (action === 'set_family') return family.setFamily(d,email,canEdit);
     if (action === 'benchmark_catalogue') return require('./benchmark-catalogue').listBenchmarkReleases(db,d,error);
-    if (action === 'projects') return { items:(await readDirectory(false)).projects };
+    if (action === 'projects') return { items:(await directory(false)).projects };
 
     if (action === 'open_choices') return activeProblemChoices(true);
     if (action === 'search') {
@@ -317,7 +327,7 @@ module.exports = function({ db, onCall, callerEmail, isFullWrite, access, HttpsE
       problem.handoff_enabled = linkedVerifier.configured() && mayEdit && !problem.archived && !problem.builds_benchmark;
       if (handoffRequired && !problem.handoff_enabled) {
         if (!linkedVerifier.configured()) problem.handoff_unavailable_reason = 'A BOLD OS administrator must finish configuring the AutoKaggle Lite connection.';
-        else if (!mayEdit) problem.handoff_unavailable_reason = 'You need permission to edit projects to start a verifier in Lite.';
+        else if (!mayEdit) problem.handoff_unavailable_reason = 'You need permission to edit the Problem Bank to start a verifier in Lite.';
       }
       // Lite sessions linked to it (#43): each can be unlinked by whoever linked it, a PI or an admin.
       if (linkedVerifier.configured() && mayEdit)
@@ -557,7 +567,7 @@ module.exports = function({ db, onCall, callerEmail, isFullWrite, access, HttpsE
       if (typeof args.email !== 'string') throw error('invalid-argument','Supply the verified Lite email.');
       const member = args.email.trim().toLowerCase();
       await handoffs.countFor(member);
-      await access.requireAccess(member,'projects','change');
+      await access.requireAccess(member,'problem-bank','change');
       return handoffs.claim(args);
     }
     if (action !== 'register_linked_verifier') throw error('invalid-argument','Unknown linked verifier operation.');

@@ -48,7 +48,7 @@ export default {
     // lower of the two; areaWhat titles: everyone signed in sees the projects' titles, and
     // below Projects' View and Edit asks to join one, 2026-11-02); Internal review has its own area.
     { label: 'Research', href: 'projects.html', area: 'projects', areaWhat: 'titles', links: [
-      { label: 'Problem Bank', href: 'problems.html', area: 'projects' },
+      { label: 'Problem Bank', href: 'problems.html', area: 'problem-bank' },
       { label: 'Projects', href: 'projects.html', area: 'projects', areaWhat: 'titles' },
       // Northstars, moonshots and stepping stones, and how they connect (#248).
       { label: 'Internal review', href: 'audit-board.html', area: 'ml-cycle' },

@@ -10,10 +10,12 @@
 
 const ACCESS_PART = 'access';
 
-// The pages, as the table names them. A page missing from the table is BOLD-internal.
+// The pages, as the table names them. A page missing from the table is BOLD-internal (UNLISTED: the exceptions).
 const PAGES = [
   ['boldiquette', 'BOLDiquette'],
   ['projects', 'Projects'],
+  // Its own row since 2026-11-27 (it was Projects' before): problems.html, problem.html, problem-new.html.
+  ['problem-bank', 'Problem Bank'],
   ['profile', 'Your profile'],
   ['calendar', 'Calendar'],
   ['ml-cycle', 'ML Conference Cycle'],
@@ -48,6 +50,11 @@ const LEVEL_NAMES = { out: 'Not signed in', everyone: 'Everyone', pan: 'PAN-BOLD
 const DEFAULT_LEVEL = 'internal';
 const RANKS = { out: 0, everyone: 1, pan: 1, associate: 2, internal: 3, staff: 4, exec: 5, none: 6 };
 function rank(level){ return level in RANKS ? RANKS[level] : RANKS[DEFAULT_LEVEL]; }
+// A page the saved table has no row for, when it isn't BOLD-internal: a page added after the table
+// was last saved opens as it starts. The Problem Bank: everyone signed in, PAN-BOLD included (2026-11-27).
+// The rules (firestore.rules level()) and the pages (bold.js UNLISTED) hold the same (tests/problem-bank-access.test.cjs).
+const UNLISTED = { 'problem-bank': 'everyone' };
+const unlisted = (page) => UNLISTED[page] || DEFAULT_LEVEL;
 
 // The starting table (BOLDiquette text and settings/access agree on it).
 const DEFAULT_PAGES = {
@@ -57,7 +64,7 @@ const DEFAULT_PAGES = {
   // Get started at BOLD: for everyone who joins, PAN-BOLD included; changed by proposals, as the Service desk.
   'get-started': { view: 'everyone', edit: 'associate' },
 };
-PAGES.forEach(([key]) => { if (!DEFAULT_PAGES[key]) DEFAULT_PAGES[key] = { view: 'internal', edit: 'internal' }; });
+PAGES.forEach(([key]) => { if (!DEFAULT_PAGES[key]) DEFAULT_PAGES[key] = { view: unlisted(key), edit: unlisted(key) }; });
 
 const norm = (s) => String(s || '').replace(/[*_`]/g, '').replace(/\[([^\]]*)\]\([^)]*\)/g, '$1').trim().toLowerCase();
 
@@ -65,7 +72,7 @@ const norm = (s) => String(s || '').replace(/[*_`]/g, '').replace(/\[([^\]]*)\]\
 // which row is wrong. Read: the table headed | Page | …; other text, and other tables (the
 // part also shows the groups' ranks), are ignored. Headed | Page | Edit | (2026-11-04: everyone
 // signed in sees everything; groups differ in what they can do), every page's View is
-// Everyone, and a page left out is Edit BOLD-internal. Headed | Page | View | Edit |, as
+// Everyone, and a page left out is Edit BOLD-internal (UNLISTED: the exceptions). Headed | Page | View | Edit |, as
 // written. A row as the table first was (| Page | View | Edit | Propose |) reads as View,
 // and Edit from Propose on a REVIEWED page and from Edit elsewhere.
 function parseAccessTable(body){
@@ -95,7 +102,7 @@ function parseAccessTable(body){
   if (!Object.keys(out).length) throw new Error('The table has no pages.');
   if (out.profile && rank(out.profile.view) > rank('pan')) throw new Error('Your profile must stay open to PAN-BOLD: it’s where people ask for another group.');
   if (out.boldiquette && rank(out.boldiquette.view) > rank('pan')) throw new Error('The BOLDiquette must stay open to PAN-BOLD.');
-  // A page left out keeps the default (BOLD-internal), as the rules have it.
+  // A page left out keeps the default (BOLD-internal; UNLISTED: the exceptions), as the rules have it.
   return out;
 }
 
@@ -131,7 +138,7 @@ function parseEditTable(body){
     out[key] = { view: 'everyone', edit: level };
   });
   if (!Object.keys(seen).length) throw new Error('The table has no pages.');
-  PAGES.forEach(([key]) => { if (!out[key]) out[key] = { view: 'everyone', edit: DEFAULT_LEVEL }; });
+  PAGES.forEach(([key]) => { if (!out[key]) out[key] = { view: 'everyone', edit: unlisted(key) }; });
   // Their profile is where people ask for another group, so everyone edits it.
   if (rank(out.profile.edit) > rank('pan')) throw new Error('Your profile must stay editable by Everyone: it’s where people ask for another group.');
   return out;
@@ -196,7 +203,7 @@ function accessRowsChanged(beforeBody, afterBody){
 function accessTableMarkdown(pages){
   pages = pages || DEFAULT_PAGES;
   return '| Page | View | Edit |\n|---|---|---|\n' +
-    PAGES.map(([key, name]) => '| ' + name + ' | ' + WHAT.map((w) => LEVEL_NAMES[(pages[key] || {})[w] || DEFAULT_LEVEL]).join(' | ') + ' |').join('\n');
+    PAGES.map(([key, name]) => '| ' + name + ' | ' + WHAT.map((w) => LEVEL_NAMES[(pages[key] || {})[w] || unlisted(key)]).join(' | ') + ' |').join('\n');
 }
 
 module.exports = function access({ db, groupOf, isFullWrite, viewingAs, viewingTable, HttpsError }){
@@ -224,7 +231,7 @@ module.exports = function access({ db, groupOf, isFullWrite, viewingAs, viewingT
   // A table's level for `what` (view | edit; propose is edit).
   async function levelOf(page, what){
     const p = (await table())[page] || {}, w = whatOf(what);
-    return p[w] || DEFAULT_LEVEL;
+    return p[w] || unlisted(page);
   }
   async function can(email, page, what){
     // list: View or Edit (Projects: whoever has Edit without View sees the titles and joins).
@@ -278,4 +285,4 @@ const visibleLevels = (group) => VISIBILITY.filter((l) => VIS_RANK[l] <= (VIS_RA
 const VISIBILITY_NAMES = { public: 'Anyone, even signed out', everyone: 'Everyone signed in', associate: 'BOLD-associate and above',
   internal: 'BOLD-internal and above', staff: 'BOLD-staff and above', exec: 'BOLD-exec' };
 
-Object.assign(module.exports, { accessColumns, parseEditTable, VISIBILITY, VIS_RANK, visibilityOf, seesEvent, visibleLevels, VISIBILITY_NAMES, ACCESS_PART, ACCESS_INTRO, setAccessRow, accessPartBody, accessChangeText, accessRowsChanged, PAGES, LEVELS, LEVEL_NAMES, DEFAULT_PAGES, REVIEWED, GUIDE_AREAS, guideArea, parseAccessTable, accessTableMarkdown, rank });
+Object.assign(module.exports, { accessColumns, parseEditTable, VISIBILITY, VIS_RANK, visibilityOf, seesEvent, visibleLevels, VISIBILITY_NAMES, ACCESS_PART, ACCESS_INTRO, setAccessRow, accessPartBody, accessChangeText, accessRowsChanged, PAGES, LEVELS, LEVEL_NAMES, DEFAULT_PAGES, UNLISTED, REVIEWED, GUIDE_AREAS, guideArea, parseAccessTable, accessTableMarkdown, rank });

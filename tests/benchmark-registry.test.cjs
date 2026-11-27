@@ -534,7 +534,7 @@ test('a disabled handoff never issues a credential or accepts a service release'
   assert.ok([...h.data.keys()].every(key=>!key.startsWith('verifierHandoffs/')));
 });
 
-test('required handoffs distinguish incomplete deployment from insufficient project access', async () => {
+test('required handoffs distinguish incomplete deployment from insufficient Problem Bank access', async () => {
   const flag='BOLD_LINKED_VERIFIER_HANDOFF_ENABLED', digest='BOLD_LINKED_VERIFIER_SERVICE_TOKEN_SHA256';
   const previous={[flag]:process.env[flag],[digest]:process.env[digest]};
   try {
@@ -549,10 +549,54 @@ test('required handoffs distinguish incomplete deployment from insufficient proj
     readonly.data.set('problemBank/'+problem_id,h.data.get('problemBank/'+problem_id));
     const blocked=await readonly.call(query);
     assert.equal(blocked.handoff_enabled,true); assert.equal(blocked.problem.handoff_enabled,false);
-    assert.match(blocked.problem.handoff_unavailable_reason,/permission to edit projects/);
+    assert.match(blocked.problem.handoff_unavailable_reason,/permission to edit the Problem Bank/);
     await assert.rejects(readonly.call({action:'issue_verifier_handoff',problem_id}),{code:'permission-denied'});
     const ready=await h.call(query);
     assert.equal(ready.problem.handoff_enabled,true); assert.equal(ready.problem.handoff_unavailable_reason,undefined);
+  } finally {
+    for (const [k,v] of Object.entries(previous)) {if(v===undefined) delete process.env[k]; else process.env[k]=v;}
+  }
+});
+
+// The Problem Bank has its own row in Who can do what (2026-11-27): PAN-BOLD reads and adds
+// problems without Projects access, and gets nothing of Projects through it.
+const directoryWithVenue = async includePapers => ({projects:[{id:'diverging-runs',stable_id:'diverging-runs',board:'',title:'Diverging runs',venue:'ICLR 2027',openProblemId:''}],papers:includePapers ? new Map() : null});
+test('Problem Bank access alone reads, adds and edits problems', async () => {
+  const h = harness(page => page === 'problem-bank', directoryWithVenue);
+  const {problem_id} = await h.call(openProblem);
+  assert.equal((await h.call({action:'list'})).items.length, 1);
+  assert.equal((await h.call({action:'get',problem_id})).problem.title, openProblem.title);
+  assert.ok((await h.call({action:'search'})).items.some(x => x.problem_id === problem_id));
+  assert.ok((await h.call({action:'family'})).problems.some(x => x.id === problem_id));
+  assert.ok((await h.call({action:'open_choices'})).items.some(x => x.id === problem_id));
+  await h.call({action:'update',problem_id,changes:{title:'Estimate kinetics from sparse data'}});
+  assert.equal(h.data.get('problemBank/'+problem_id).title, 'Estimate kinetics from sparse data');
+});
+test('Problem Bank access alone gives no Projects action and no venue', async () => {
+  const h = harness(page => page === 'problem-bank', directoryWithVenue);
+  const {problem_id} = await h.call(openProblem);
+  await assert.rejects(h.call({action:'create_project_proposal'}), {code:'permission-denied'});
+  await assert.rejects(h.call({action:'register_past_paper'}), {code:'permission-denied'});
+  await assert.rejects(h.call({action:'past_paper_problem_choices'}), {code:'permission-denied'});
+  const titles = [(await h.call({action:'projects'})).items, (await h.call({action:'get',problem_id})).problem.projects, (await h.call({action:'list'})).items[0].projects];
+  for (const rows of titles) { assert.equal(rows[0].title, 'Diverging runs'); assert.equal('venue' in rows[0], false); }
+  const all = harness(() => true, directoryWithVenue);
+  assert.equal((await all.call({action:'projects'})).items[0].venue, 'ICLR 2027');
+});
+test('Projects access alone keeps the project form’s choices and gets no Problem Bank page', async () => {
+  const h = harness(page => page === 'projects', directoryWithVenue);
+  assert.deepEqual((await h.call({action:'open_choices'})).items, []);
+  await assert.rejects(h.call({action:'list'}), {code:'permission-denied'});
+  await assert.rejects(h.call(openProblem), {code:'permission-denied'});
+});
+test('Lite claims a handoff for a member with Problem Bank access, not Projects access', async () => {
+  const flag='BOLD_LINKED_VERIFIER_HANDOFF_ENABLED', digest='BOLD_LINKED_VERIFIER_SERVICE_TOKEN_SHA256';
+  const previous={[flag]:process.env[flag],[digest]:process.env[digest]};
+  try {
+    process.env[flag]='true'; process.env[digest]='a'.repeat(64);
+    const claim = h => h.registry.runLinkedService('claim_verifier_handoff',{email:'owner@example.invalid',handoff:'none',session_id:'none'});
+    await assert.rejects(claim(harness(page => page === 'projects')), {code:'permission-denied'});
+    await assert.rejects(claim(harness(page => page === 'problem-bank')), e => e.code !== 'permission-denied');
   } finally {
     for (const [k,v] of Object.entries(previous)) {if(v===undefined) delete process.env[k]; else process.env[k]=v;}
   }

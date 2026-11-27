@@ -137,7 +137,7 @@
   function controls(){
     var on = !!userId && canWrite && ready && !talking && !saving;
     input.disabled = send.disabled = !on;
-    input.title = canWrite ? '' : BOLD.cannotReason('projects', 'edit');
+    input.title = canWrite ? '' : BOLD.cannotReason('problem-bank', 'edit');
     save.disabled = !on || !me || (mode === 'chat' && !done);
     save.title = me ? '' : 'You’re not in the BOLD Slack roster yet, so you can’t be its definer.';
     el('pbRestart').hidden = turns.length < 2;
@@ -293,7 +293,7 @@
     finally { if (generation === epoch) { saving = false; controls(); } }
   });
 
-  BOLD.onAccess(function(){ canWrite = BOLD.can('projects', 'edit'); controls(); });
+  BOLD.onAccess(function(){ canWrite = BOLD.can('problem-bank', 'edit'); controls(); });
   BOLD.onUser(function(user){
     var generation = ++epoch;
     userId = user && user.uid; ready = false; talking = false; saving = false; me = null; projects = []; attempt = null; mode = 'chat';

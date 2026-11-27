@@ -9928,7 +9928,7 @@ exports.problemTrial = onCall(async (request) => {
     if (!(await isFullWrite(email))) throw new HttpsError('permission-denied', 'Only PIs and admins see the comparison.');
     return { rows: await problemTrial.list() };
   }
-  await access.requireAccess(email, 'projects', 'change');
+  await access.requireAccess(email, 'problem-bank', 'change');
   let out;
   try { out = await problemTrial.record(email, d); } catch (err) { throw new HttpsError('invalid-argument', err.message); }
   if (d.event === 'start') {
@@ -9941,7 +9941,7 @@ const problemInterview = require('./problem-interview');
 const sofyaForProblems = require('./sofya')({ key: () => BOLD_LLM_KEY.value() });
 exports.problemInterview = onCall({ secrets: [BOLD_LLM_KEY], timeoutSeconds: 120 }, async (request) => {
   const email = callerEmail(request);
-  await access.requireAccess(email, 'projects', 'change');
+  await access.requireAccess(email, 'problem-bank', 'change');
   const [family, dir] = await Promise.all([problemBank.run({ data: { action: 'family' } }, email), problemBank.run({ data: { action: 'projects' } }, email)]);
   const lab = {
     objectives: (family.objectives || []).filter((o) => !o.archived).map((o) => ({ id: o.id, title: o.title, kind: o.kind })),
