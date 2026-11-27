@@ -148,11 +148,16 @@ test('topic previews are capped and searching within a topic links to a reply in
   assert.equal(forum.document.querySelector('.bs-topic h2 a[href="#topic=advice"] .bs-topic-all'), null);
   assert.deepEqual(Array.from(group.querySelectorAll('ul a'), a => a.textContent), ['first', 'fourth', 'third']);
   const [pinned, recent] = group.querySelectorAll('.bs-highlight');
-  assert.equal(pinned.querySelector('.bs-highlight-counts').textContent, '2 upvotes 1 comment');
-  assert.equal(recent.querySelector('.bs-highlight-counts').textContent, '0 upvotes 0 comments');
+  assert.equal(pinned.querySelector('.bs-score').textContent, '1');
+  assert.equal(recent.querySelector('.bs-score').textContent, '0');
+  assert.equal(pinned.querySelector('[aria-label="Upvote"]').getAttribute('aria-pressed'), 'true');
+  assert.equal(pinned.querySelector('[aria-label="Downvote"]').getAttribute('data-id'), 'first');
   assert.ok(pinned.querySelector('.bs-pin-label svg[aria-hidden="true"]'));
   assert.equal(recent.querySelector('.bs-pin-label'), null);
-  assert.equal(pinned.querySelector('a').getAttribute('aria-describedby'), pinned.querySelector('.bs-highlight-detail').id);
+  const description = card => card.querySelector('a').getAttribute('aria-describedby').split(' ')
+    .map(id => forum.document.getElementById(id).textContent).join(' ');
+  assert.equal(description(pinned), 'Pinned 1 comment');
+  assert.equal(description(recent), '0 comments');
   forum.location.hash = '#topic=about-bold';
   forum.publish('conversations', rows);
   assert.equal(forum.document.querySelectorAll('.bs-post').length, 4);

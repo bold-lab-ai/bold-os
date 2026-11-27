@@ -413,10 +413,11 @@ window.BoldConversations = (function(){
 
     function vote(m, inline){
       var v = (m.votes || {})[me.uid] || 0;
-      return '<div class="bs-vote' + (inline ? ' bs-vote-inline' : '') + (v > 0 ? ' is-up' : v < 0 ? ' is-down' : '') + '">' +
-        '<button type="button" class="bs-up" data-id="' + esc(m.id) + '" data-v="1" aria-pressed="' + (v > 0) + '" aria-label="Upvote" title="Upvote">▲</button>' +
+      var disabled = canPost ? '' : ' disabled', why = canPost ? '' : esc(BOLD.cannotReason('conversations', 'edit'));
+      return '<div role="group" aria-label="Votes" class="bs-vote' + (inline ? ' bs-vote-inline' : '') + (v > 0 ? ' is-up' : v < 0 ? ' is-down' : '') + '">' +
+        '<button type="button" class="bs-up" data-id="' + esc(m.id) + '" data-v="1" aria-pressed="' + (v > 0) + '" aria-label="Upvote" title="' + (why || 'Upvote') + '"' + disabled + '>▲</button>' +
         '<span class="bs-score">' + score(m) + '</span>' +
-        '<button type="button" class="bs-up bs-down" data-id="' + esc(m.id) + '" data-v="-1" aria-pressed="' + (v < 0) + '" aria-label="Downvote" title="Downvote">▼</button></div>';
+        '<button type="button" class="bs-up bs-down" data-id="' + esc(m.id) + '" data-v="-1" aria-pressed="' + (v < 0) + '" aria-label="Downvote" title="' + (why || 'Downvote') + '"' + disabled + '>▼</button></div>';
     }
     // Who wrote it: someone (or their agent), or, brought in from Slack, its author there.
     // Who wrote it, first and clearly, then when. Where a thread came from (Slack) is said after, at the
@@ -701,13 +702,12 @@ window.BoldConversations = (function(){
       var limit = 3, more = list.length > limit;
       var cards = list.slice().sort(ConversationTopics.previewOrder).slice(0, limit).map(function(p){
         var post = topicHref(topic.id) + '&post=' + encodeURIComponent(p.id);
-        var upvotes = Object.values(p.votes || {}).filter(function(v){ return Number(v) === 1; }).length;
         var comments = Number(p.replies) || 0, detail = 'bs-highlight-' + uid + '-' + esc(p.id);
         var flags = (p.pinned ? PINNED : '') + (p.private ? ' <span class="bs-private">Private</span>' : '');
-        return '<li class="bs-highlight"><a class="bs-highlight-title" href="' + esc(post) + '" aria-describedby="' + detail + '">' + esc(p.title) + '</a>' +
-          '<div class="bs-highlight-detail" id="' + detail + '">' + (flags ? '<div class="bs-highlight-flags">' + flags + '</div>' : '') +
-          '<div class="bs-highlight-counts"><span>' + upvotes + (upvotes === 1 ? ' upvote' : ' upvotes') + '</span> ' +
-          '<span>' + comments + (comments === 1 ? ' comment' : ' comments') + '</span></div></div></li>';
+        return '<li class="bs-highlight"><a class="bs-highlight-title" href="' + esc(post) + '" aria-describedby="' + (flags ? detail + '-flags ' : '') + detail + '-comments">' + esc(p.title) + '</a>' +
+          '<div class="bs-highlight-detail">' + (flags ? '<div class="bs-highlight-flags" id="' + detail + '-flags">' + flags + '</div>' : '') +
+          '<div class="bs-highlight-counts">' + vote(p, true) + '<span id="' + detail + '-comments">' + comments +
+          (comments === 1 ? ' comment' : ' comments') + '</span></div></div></li>';
       }).join('');
       var arrow = '<span class="bs-topic-arrow" aria-hidden="true">›</span>';
       return '<li class="bs-topic"><h2><a class="bs-topic-heading" href="' + topicHref(topic.id) + '"><span><span aria-hidden="true">' + esc(topic.icon) + '</span> ' +
@@ -766,10 +766,16 @@ window.BoldConversations = (function(){
       fillFilters();
       if (filtering()) list = list.filter(passes);
       if (directory) {
+        var focused = document.activeElement;
+        var focusedVote = focused && postsEl.contains(focused) && focused.closest('.bs-up');
         var groups = new Map(topics.map(function(t){ return [t, []]; }));
         list.forEach(function(p){ var t = groupOf(p); if (!groups.has(t)) groups.set(t, []); groups.get(t).push(p); });
         postsEl.innerHTML = Array.from(groups, function(entry){ return topicPreview(entry[0], entry[1]); }).join('') ||
           '<li class="proj-msg">No topics yet. Start a conversation to create one.</li>';
+        if (focusedVote) {
+          var nextVote = postsEl.querySelector('.bs-up[data-id="' + CSS.escape(focusedVote.dataset.id) + '"][data-v="' + focusedVote.dataset.v + '"]');
+          if (nextVote) nextVote.focus({ preventScroll: true });
+        }
         return;
       }
       var t = topicById(active) || (active === unassigned.id && unassigned);
