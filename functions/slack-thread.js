@@ -3,12 +3,12 @@
 // Slack threads into Conversations (conversations.html, 2026-11-04), saved as a post
 // (conversations/{id}) with the thread's replies under it (conversations/{id}/messages), by the
 // people who wrote them. Two ways in, the same checks:
-// - slackThread { url }: Import from Slack on the page → { id } (the post; one already brought in
+// - slackThread { url, topicId }: Import from Slack on the page → { id } (the post; one already brought in
 //   keeps its id, so a thread is never in twice: sending it again refreshes it from Slack).
 // - Take it to the BOLD OS, a message shortcut in Slack (callback_id send_to_conversations, on any
 //   message of the thread): handleShortcut answers Slack at once by writing conversationImports/{id}
 //   (server only); onConversationImport does the work and tells its sender, by the shortcut's
-//   response_url, where it is.
+//   response_url, where to choose a topic or find the refreshed conversation.
 // Only a thread its sender can read in Slack themselves: a public channel, or a private channel or
 // group DM they're in; never a one-to-one DM. The bot must be in the channel (Slack's
 // not_in_channel otherwise), and needs channels:history, groups:history, mpim:history and
@@ -161,6 +161,7 @@ function threadReplyOf(e){
 }
 
 module.exports = function({ db, onCall, onDocumentCreated, onDocumentUpdated, HttpsError, logger, SLACK_BOT_TOKEN, signedInEmail, access, slackIdForEmail, FieldValue, SITE_URL, postInChannel, slackText, nudgeInThread, noteFor, dmByEmail, emailForSlackId, rolesEmails }){
+  const { withTopic } = require('./conversation-topic-writes');
   const PAGE = SITE_URL + 'conversations.html';
   // A thread newly in Conversations says so in the thread, for everyone in it (pilot conversation-sent;
   // until it's live its testers get it instead). Not when one is refreshed. Never fails the send.
@@ -244,7 +245,7 @@ module.exports = function({ db, onCall, onDocumentCreated, onDocumentUpdated, Ht
   // Saves the thread as a post → { id, title, existed }. Sent again, it's refreshed: its text and its Slack
   // replies as they are now (new ones added), its votes and the replies written on BOLD.OS kept.
   // about: { project, projectTitle } when brought in from a project's Conversations tab (a new, open thread only).
-  async function saveThread(token, link, team, sender, about){
+  async function saveThread(token, link, team, sender, about, topicId, draftTopic){
     const id = postIdOf(link.channel, link.thread), ref = db.collection('conversations').doc(id);
     const had = await ref.get();
     const { t, ch, members } = await readThread(token, link, sender.slackId);
@@ -256,12 +257,13 @@ module.exports = function({ db, onCall, onDocumentCreated, onDocumentUpdated, Ht
     const title = first.length > 120 ? first.slice(0, 117).replace(/\s+\S*$/, '') + '…' : first;
     const slack = { channel: link.channel, channelName: ch.name ? '#' + ch.name : '', thread: link.thread,
       permalink: (team || 'https://slack.com') + '/archives/' + link.channel + '/p' + link.thread.replace('.', '') };
-    const batch = db.batch();
+    const slackLastAt = t.replies.reduce((latest, r) => Math.max(latest, r.at), t.post.at);
     const reply = (r) => ({ parent: id, body: r.text, name: r.who, createdBy: '', at: r.at, source: 'slack' });
     if (had.exists) {
+      const batch = db.batch();
       const old = had.data(), mine = (await ref.collection('messages').where('source', '==', 'slack').get()).size;
       // Who reads it follows the channel again, unless someone set it by hand (accessBy: Who can read it › Change).
-      batch.set(ref, Object.assign({ title, body: t.post.text, slack, slackReaders: vis.readers, slackReplies: t.replies.length,
+      batch.set(ref, Object.assign({ title, body: t.post.text, slack, slackLastAt, slackReaders: vis.readers, slackReplies: t.replies.length,
         replies: Math.max(0, (old.replies || 0) - (old.slackReplies != null ? old.slackReplies : mine)) + t.replies.length, refreshedAt: FieldValue.serverTimestamp() },
         old.accessBy ? {} : { private: vis.private, readers: vis.readers }), { merge: true });
       // Each Slack reply keeps its id (its place in the thread), so its votes stay.
@@ -269,11 +271,13 @@ module.exports = function({ db, onCall, onDocumentCreated, onDocumentUpdated, Ht
       await batch.commit();
       return { id, title, existed: true };
     }
-    batch.create(ref, Object.assign({ title, body: t.post.text, name: t.post.who, createdBy: '', at: t.post.at, source: 'slack', slack, private: vis.private, readers: vis.readers, slackReaders: vis.readers, votes: {}, replies: t.replies.length, slackReplies: t.replies.length,
-      broughtBy: { email: sender.email, name: sender.name || '' }, broughtAt: FieldValue.serverTimestamp() }, about && !vis.private ? about : {}));
-    t.replies.forEach((r, i) => batch.set(ref.collection('messages').doc('slack-' + i), Object.assign(reply(r), { votes: {} })));
-    try { await batch.commit(); }
-    catch (e) { const again = await ref.get(); if (again.exists) return { id, title: again.data().title, existed: true }; throw e; }
+    try {
+      await withTopic(db, topicId, draftTopic, tx => {
+        tx.create(ref, Object.assign({ topicId, title, body: t.post.text, name: t.post.who, createdBy: '', at: t.post.at, source: 'slack', slack, slackLastAt, private: vis.private, readers: vis.readers, slackReaders: vis.readers, votes: {}, replies: t.replies.length, slackReplies: t.replies.length,
+          broughtBy: { email: sender.email, name: sender.name || '' }, broughtAt: FieldValue.serverTimestamp() }, about && !vis.private ? about : {}));
+        t.replies.forEach((r, i) => tx.set(ref.collection('messages').doc('slack-' + i), Object.assign(reply(r), { votes: {} })));
+      });
+    } catch (e) { const again = await ref.get(); if (again.exists) return { id, title: again.data().title, existed: true }; throw e; }
     return { id, title, existed: false, channelName: ch.name || '', replies: t.replies.length, private: vis.private };
   }
   async function personFor(email){
@@ -301,8 +305,9 @@ module.exports = function({ db, onCall, onDocumentCreated, onDocumentUpdated, Ht
       if (!sees) throw new HttpsError('permission-denied', 'You can’t see that project.');
       about = { project: pid, projectTitle: String(ws.data().title || '').slice(0, 300) };
     }
+    const topicId = request.data.topicId;
     const p = await personFor(email);
-    const token = SLACK_BOT_TOKEN.value(), r = await saveThread(token, link, new URL(String(request.data.url)).origin, { email, name: p.name || '', slackId: p.slackId || await slackIdForEmail(email) }, about);
+    const token = SLACK_BOT_TOKEN.value(), r = await saveThread(token, link, new URL(String(request.data.url)).origin, { email, name: p.name || '', slackId: p.slackId || await slackIdForEmail(email) }, about, topicId, request.data.newTopic);
     await announce(token, link, r.channelName, r, p.name, p.slackId || '');
     return r;
   });
@@ -331,10 +336,14 @@ module.exports = function({ db, onCall, onDocumentCreated, onDocumentUpdated, Ht
       if (!(await startsChats(email))) throw new HttpsError('permission-denied', STARTS);
       if (!/^\d{10}\.\d{6}$/.test(d.thread) || !d.channel) throw new HttpsError('invalid-argument', 'That message can’t be sent.');
       const token = SLACK_BOT_TOKEN.value(), link = { channel: d.channel, ts: d.thread, thread: d.thread };
-      const r = await saveThread(token, link, d.team, { email, name: p.data().name || '', slackId: d.slackId });
-      await announce(token, link, r.channelName, r, p.data().name, d.slackId);
-      const url = PAGE + '#post=' + encodeURIComponent(r.id);
-      out = { id: r.id, text: (r.existed ? 'Updated in Conversations: ' : 'Sent to Conversations: ') + '<' + url + '|' + String(r.title).replace(/[<>|]/g, '') + '>' };
+      const existing = await db.collection('conversations').doc(postIdOf(link.channel, link.thread)).get();
+      if (existing.exists) {
+        const r = await saveThread(token, link, d.team, { email, name: p.data().name || '', slackId: d.slackId });
+        out = { id: r.id, text: 'Updated in Conversations: <' + PAGE + '#post=' + encodeURIComponent(r.id) + '|' + String(r.title).replace(/[<>|]/g, '') + '>' };
+      } else {
+        const permalink = (d.team || 'https://slack.com') + '/archives/' + link.channel + '/p' + link.thread.replace('.', '');
+        out = { text: '<' + PAGE + '#import=' + encodeURIComponent(permalink) + '|Choose a topic on BOLD.OS> to import this thread.' };
+      }
     } catch (e) {
       out = { error: String(e && e.message || e), text: 'Not sent to Conversations: ' + String(e && e.message || e) };
     }

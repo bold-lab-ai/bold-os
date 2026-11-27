@@ -55,7 +55,7 @@
   }
   if (typeof module !== 'undefined' && module.exports) { module.exports = { arrow: arrow, typing: typing, whole: whole, parse: parse, find: find, byName: byName }; return; }
 
-  var all = null, loading = null;
+  var all = null, loading = null, names = null;
   var box = null, list = [], at = 0, field = null, start = -1;
 
   function load(){
@@ -71,6 +71,28 @@
     });
     return loading;
   }
+
+  // Topic icon pickers use the same lazily loaded catalogue as text-field completions.
+  window.BoldEmoji = {
+    search: function(query, limit){
+      return load().then(function(){ return find(all, query, limit); });
+    },
+    names: function(){
+      return load().then(function(){
+        if (!names) {
+          names = new Map();
+          all.forEach(function(emoji){
+            emoji.names.forEach(function(alias){
+              names.set(alias, emoji.e);
+              // "planet" can suggest ringed_planet; an exact emoji name always wins.
+              alias.split('_').forEach(function(word){ if (!names.has(word)) names.set(word, emoji.e); });
+            });
+          });
+        }
+        return names;
+      });
+    }
+  };
 
   function close(){ if (box) box.remove(); box = null; list = []; field = null; start = -1; }
 

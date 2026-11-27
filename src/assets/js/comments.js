@@ -366,7 +366,9 @@ window.BoldComments = (function(){
       if (!BOLD.can('conversations', 'edit')) return '';
       return '<button type="button" class="btn-text cm-convo"' + (busy ? ' disabled' : '') + ' title="Copy this thread to Conversations, where it goes on">Make it a conversation</button>';
     }
-    function toConversation(id){
+    async function toConversation(id){
+      var selection = await conversationTopicPicker.prompt();
+      if (!selection) return;
       var n = replies(id).length;
       BOLD.confirmAction({ title: 'Make this thread a conversation?', go: 'Make it a conversation', effects: [
         'Copy it to Conversations' + (n ? ', with its ' + (n === 1 ? 'reply' : n + ' replies') : '') + ', each by whoever wrote it',
@@ -374,7 +376,7 @@ window.BoldComments = (function(){
         'Close it to replies here: it goes on there'] }).then(function(go){
         if (!go) return;
         busy = true; error = ''; changed();
-        return firebase.app().functions('europe-west2').httpsCallable('commentConversation')({ on: opts.ref.parent.id + '/' + opts.ref.id, id: id })
+        return firebase.app().functions('europe-west2').httpsCallable('commentConversation')(Object.assign({ on: opts.ref.parent.id + '/' + opts.ref.id, id: id }, selection))
           .then(function(){ busy = false; changed(); });
       }).catch(function(err){
         console.error('[BOLD Comments] making a conversation failed', err);

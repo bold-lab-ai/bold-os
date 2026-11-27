@@ -217,7 +217,7 @@ module.exports = function({ db, admin, logger, onCall, onSchedule, onDocumentWri
       const title = text.split('\n')[0].replace(/[#*_`>]/g, '').trim();
       const ref = db.collection('conversations').doc();
       await ref.create({ title: title.length > 100 ? title.slice(0, 99) + '…' : title, body: text, name, createdBy: email, at: FieldValue.serverTimestamp(),
-        source: SOURCE, viaAgent: false, votes: {}, private: true, readers: [await slackIdOf(email)].filter(Boolean), replies: 0 });
+        source: SOURCE, topicId: intent === 'bug' || intent === 'feature' ? 'bold-os-feedback' : 'about-bold', viaAgent: false, votes: {}, private: true, readers: [await slackIdOf(email)].filter(Boolean), replies: 0 });
       pid = ref.id; last = pid;
     }
     const said = await answer(email, name, turns, (await lab()).models, intent, effort);

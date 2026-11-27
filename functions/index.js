@@ -5081,6 +5081,7 @@ exports.onProjectRegistered = onDocumentCreated(
 // A project proposed (#226): approved at once, or PIs and admins hear (their Inbox, To do) and decide it with
 // projectProposal; asking for more compute, by its `dueAt` (approveDueProposals approves it after that).
 async function routeProposal(card, cardId){
+  await proposalThread(cardId, card);
   const route = proposalRoute(await access.groupFor(lowerEmail(card.submittedBy)), card.proposal);
   if (route === 'approve') { await approveProposal(cardId, card, null, ''); return; }
   if (route === 'deadline') {
@@ -5196,7 +5197,7 @@ function normalizeGpuHours(v){
 // announces it if they asked, and tells them; declining tells them, with the note.
 // A proposed project's conversation (2026-11-06): conversations/cm-proposal-<card id>, about the project, started as
 // its proposer (its budget and abstract); where the proposer and the PIs and admins discuss it, and where each
-// decision (approved, declined, sent again) is written. Made when first needed, so older proposals have one too.
+// decision (approved, declined, sent again) is written. Made on registration, or on first visit for older proposals.
 // Its decisions are source 'proposal' (onConversationMessage leaves them: the proposer is told by deliver).
 async function proposalThread(id, card){
   const pid = 'cm-proposal-' + id, ref = db.collection('conversations').doc(pid);
@@ -5205,7 +5206,7 @@ async function proposalThread(id, card){
   const post = { title: ('Proposal: ' + String(card.title || 'a project')).slice(0, 200),
     body: '**' + String(card.title || 'A project') + '**, asking for ' + proposalHours(prop) + '.' + (abstract ? '\n\n' + abstract : ''),
     name: String(by.name || by.email || 'Someone').slice(0, 200), createdBy: String(by.email || '').toLowerCase(), at: prop.at || card.createdAt || Date.now(),
-    source: 'proposal', project: projectIdOf(card, id), projectTitle: String(card.title || '').slice(0, 300), private: false, readers: [], votes: {}, replies: 0 };
+    source: 'proposal', topicId: 'project-proposals', project: projectIdOf(card, id), projectTitle: String(card.title || '').slice(0, 300), private: false, readers: [], votes: {}, replies: 0 };
   await ref.create(post).catch((e) => { if (e.code !== 6) throw e; });   // 6: made meanwhile
   return pid;
 }
@@ -9884,6 +9885,11 @@ exports.publicEvent = require('./public-event')({ db, onCall, HttpsError }).publ
 // Slack threads into Conversations (functions/slack-thread.js): Import from Slack on the page, Take it to the BOLD OS in Slack.
 const conversationsSlack = require('./slack-thread')({ db, onCall, onDocumentCreated, onDocumentUpdated, HttpsError, logger, SLACK_BOT_TOKEN, signedInEmail, access, slackIdForEmail, FieldValue, SITE_URL, postInChannel, slackText, nudgeInThread, noteFor, dmByEmail, emailForSlackId, rolesEmails });
 exports.slackThread = conversationsSlack.slackThread;
+exports.removeConversationTopic = onCall(async request => {
+  await access.requireAccess(signedInEmail(request).toLowerCase(), 'conversations', 'edit');
+  await require('./conversation-topic-writes').removeEmpty(db, (request.data || {}).topicId);
+  return { removed: true };
+});
 // A comment thread on the BOLDiquette or a guide, or a board card's comments, made a conversation (functions/comment-conversation.js).
 exports.commentConversation = require('./comment-conversation')({ db, onCall, HttpsError, signedInEmail, access, FieldValue, SITE_URL, rank: accessLib.rank, guideArea: accessLib.guideArea, projectPageUrl }).commentConversation;
 exports.onConversationImport = conversationsSlack.onConversationImport;

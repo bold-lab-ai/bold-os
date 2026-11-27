@@ -949,6 +949,24 @@ service cloud.firestore {
         && request.resource.data.accessByName is string && request.resource.data.accessByName.size() <= 200
         && request.resource.data.get('accessTell', false) is bool;
     }
+    match /conversationTopics/{id} {
+      allow read: if may('conversations', 'view');
+      allow create: if may('conversations', 'edit') && id.size() <= 180 && id.matches('^[\\p{L}\\p{N}]+(-[\\p{L}\\p{N}]+)*$')
+        && request.resource.data.keys().hasOnly(['name', 'icon'])
+        && request.resource.data.name is string && request.resource.data.name.size() > 0 && request.resource.data.name.size() <= 60
+        && request.resource.data.icon is string && request.resource.data.icon.size() > 0 && request.resource.data.icon.size() <= 16;
+    }
+    function existingTopic(d) {
+      return d.topicId is string && d.topicId.size() <= 180 && d.topicId.matches('^[^/]+$')
+        && existsAfter(/databases/$(database)/documents/conversationTopics/$(d.topicId));
+    }
+    function pinsConversation() {
+      let d = request.resource.data;
+      let id = d.get('topicId', d.get('source', '') == 'proposal' ? 'project-proposals' : '');
+      return d.diff(resource.data).affectedKeys().hasOnly(['pinned']) && d.pinned is bool
+        && id is string && id.size() <= 180 && id.matches('^[^/]+$')
+        && exists(/databases/$(database)/documents/conversationTopics/$(id));
+    }
     match /conversations/{pid} {
       allow read: if seesConversation(resource.data);
       // One that isn't there yet, to whoever sees Conversations: a card watches for its own (card-talk.js).
@@ -956,14 +974,15 @@ service cloud.firestore {
       // Started on the site: open to everyone who sees Conversations (private: false), or private to readers
       // (Slack ids), its starter among them: only them, or them and the people they chose.
       allow create: if may('conversations', 'edit') && okMessage(request.resource.data)
-        && request.resource.data.keys().hasOnly(['title', 'body', 'name', 'createdBy', 'at', 'source', 'viaAgent', 'votes', 'private', 'readers', 'project', 'projectTitle'])
+        && request.resource.data.keys().hasOnly(['title', 'body', 'name', 'createdBy', 'at', 'source', 'viaAgent', 'votes', 'private', 'readers', 'project', 'projectTitle', 'topicId'])
+        && existingTopic(request.resource.data)
         && (request.resource.data.private == false && request.resource.data.get('readers', []).size() == 0
           || request.resource.data.private == true && request.resource.data.readers is list && request.resource.data.readers.size() <= 500 && slackUid() in request.resource.data.readers)
         // About a project (its Conversations tab, project-talk.js): one its poster sees.
         && (!('project' in request.resource.data) || (request.resource.data.project is string && request.resource.data.project.size() <= 80
           && seesProject(request.resource.data.project) && request.resource.data.get('projectTitle', '') is string && request.resource.data.get('projectTitle', '').size() <= 300))
         && request.resource.data.title is string && request.resource.data.title.size() > 0 && request.resource.data.title.size() <= 200;
-      allow update: if may('conversations', 'edit') && seesConversation(resource.data) && (onlyMyVote() || changesWhoReads() || editsMyText());
+      allow update: if may('conversations', 'edit') && seesConversation(resource.data) && (onlyMyVote() || changesWhoReads() || editsMyText() || pinsConversation());
       allow delete: if may('conversations', 'edit') && seesConversation(resource.data) && (resource.data.createdBy == email().lower() || hasFullWrite());
       // Invitations (conversations-forum.js Invite; slack-thread.js onConversationInvite tells them): by whoever reads
       // it, to people who can: an open one's anyone, a private one's readers.

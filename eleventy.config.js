@@ -14,6 +14,8 @@ export default function (eleventyConfig) {
   // When the home letters are due, and which is current: the server's and the home page's (letter-due.js).
   eleventyConfig.addPassthroughCopy({ 'functions/letter-due.js': 'assets/js/letter-due.js' });
 
+  eleventyConfig.addPassthroughCopy({ 'functions/conversation-topics.js': 'assets/js/conversation-topics.js' });
+
   // The theme tool (tools/theme, at /theme/): the ground truth for the site's colours, live but
   // not in the sidebar. It reads the CSS and JS it finds uses of each colour in from this list.
   eleventyConfig.addPassthroughCopy({ 'tools/theme': 'theme' });
