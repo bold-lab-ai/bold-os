@@ -273,6 +273,8 @@ body.bs-agent-open .bs-cols{padding-bottom:min(46vh, 420px);}
 .bs-topic, .bs-topic-nav {border-top:1px solid var(--line); padding:14px 0;}
 .bs-topic {container-type:inline-size;}
 .bs-topic h2 {font:600 19px var(--sans); margin:0 0 12px;}
+.bs-topic-heading {display:flex; align-items:baseline; justify-content:space-between; gap:4px 12px; flex-wrap:wrap; overflow-wrap:anywhere;}
+.bs-topic-all {color:var(--ink-soft); font:500 14px/1.4 var(--sans);}
 .bs-topic h2 a, .bs-topic li a {color:var(--ink); text-decoration:none;}
 .bs-topic a:hover, .bs-topic a:focus-visible {text-decoration:underline;}
 .bs-highlights {display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:10px; list-style:none; padding:0; margin:0;}

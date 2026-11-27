@@ -144,6 +144,8 @@ test('topic previews are capped and searching within a topic links to a reply in
   Object.assign(rows[0], { votes: { sam: 1, lee: 1, pat: -1 }, replies: 1 });
   forum.publish('conversations', rows);
   const group = forum.document.querySelector('.bs-topic h2 a[href="#topic=about-bold"]').closest('.bs-topic');
+  assert.match(group.querySelector('.bs-topic-all').textContent, /View all 4 conversations/);
+  assert.equal(forum.document.querySelector('.bs-topic h2 a[href="#topic=advice"] .bs-topic-all'), null);
   assert.deepEqual(Array.from(group.querySelectorAll('ul a'), a => a.textContent), ['first', 'fourth', 'third']);
   const [pinned, recent] = group.querySelectorAll('.bs-highlight');
   assert.equal(pinned.querySelector('.bs-highlight-counts').textContent, '2 upvotes 1 comment');
@@ -163,4 +165,7 @@ test('topic previews are capped and searching within a topic links to a reply in
   assert.equal(forum.document.querySelector('.bs-matched-replies a').getAttribute('href'), '#post=old&msg=answer');
   search.value = ''; search.dispatchEvent(new forum.document.defaultView.Event('input'));
   assert.equal(forum.document.querySelectorAll('.bs-post').length, 4);
+  forum.location.hash = '';
+  forum.publish('conversations', rows.filter(p => p.id !== 'second'));
+  assert.equal(forum.document.querySelector('.bs-topic-all'), null);
 });

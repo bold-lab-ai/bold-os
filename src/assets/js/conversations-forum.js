@@ -698,7 +698,8 @@ window.BoldConversations = (function(){
       }).join('') + '</ul>';
     }
     function topicPreview(topic, list){
-      var cards = list.slice().sort(ConversationTopics.previewOrder).slice(0, 3).map(function(p){
+      var limit = 3, more = list.length > limit;
+      var cards = list.slice().sort(ConversationTopics.previewOrder).slice(0, limit).map(function(p){
         var post = topicHref(topic.id) + '&post=' + encodeURIComponent(p.id);
         var upvotes = Object.values(p.votes || {}).filter(function(v){ return Number(v) === 1; }).length;
         var comments = Number(p.replies) || 0, detail = 'bs-highlight-' + uid + '-' + esc(p.id);
@@ -708,7 +709,10 @@ window.BoldConversations = (function(){
           '<div class="bs-highlight-counts"><span>' + upvotes + (upvotes === 1 ? ' upvote' : ' upvotes') + '</span> ' +
           '<span>' + comments + (comments === 1 ? ' comment' : ' comments') + '</span></div></div></li>';
       }).join('');
-      return '<li class="bs-topic"><h2><a href="' + topicHref(topic.id) + '"><span aria-hidden="true">' + esc(topic.icon) + '</span> ' + esc(topic.name) + '<span class="bs-topic-arrow" aria-hidden="true">›</span></a></h2>' +
+      var arrow = '<span class="bs-topic-arrow" aria-hidden="true">›</span>';
+      return '<li class="bs-topic"><h2><a class="bs-topic-heading" href="' + topicHref(topic.id) + '"><span><span aria-hidden="true">' + esc(topic.icon) + '</span> ' +
+        esc(topic.name) + (more ? '' : arrow) + '</span>' +
+        (more ? '<span class="bs-topic-all">View all ' + list.length + ' conversations' + arrow + '</span>' : '') + '</a></h2>' +
         (cards ? '<ul class="bs-highlights">' + cards + '</ul>' : '<p class="detail-muted">No conversations yet.</p>') + '</li>';
     }
     function render(){
