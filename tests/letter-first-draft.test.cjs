@@ -50,3 +50,9 @@ test('a first draft never tells anyone it tags (it’s for the referee only)', (
   assert.strictEqual(tagPlace('letterDrafts/L1', { text: 'Thanks to [@Pat](U123)' }), null);
   assert.strictEqual(tagPlace('letterRequests/L1', {}), null);
 });
+
+test('no first draft once every letter is in', () => {
+  const { letterDraftRefusal } = require('../functions/index.js')._internal;
+  assert.ok(letterDraftRefusal({ open: false }));
+  assert.strictEqual(letterDraftRefusal({ open: true }), '');
+});

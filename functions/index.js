@@ -8980,6 +8980,12 @@ function normalizeLetterDraft(d){
 
 const letterOpen = (recipients) => recipients.some((r) => !r.submittedAt);
 
+// Pure: why a first draft can't be sent now, or '': once every letter is in (or the
+// request is closed), no draft is needed.
+function letterDraftRefusal(q){
+  return q && q.open === false ? 'Every letter is in: no first draft is needed now.' : '';
+}
+
 // Pure: the reminders due today → [{ id, recipientId, days }]. `requests`: [{ id, recipients }].
 function letterRemindersDue(requests, today){
   const day = (s) => Date.parse(s + 'T00:00:00Z') / 86400000;
@@ -9098,6 +9104,8 @@ exports.letterRequest = onCall(
         if (q.open) note = { to: q.writerEmail, text: '↩️ ' + slackText(q.requesterName) + ' withdrew their request for a letter: *' + slackText(q.purpose) + '*. Nothing more to do.' };
         if (q.open && q.drafterEmail && !q.draftAt) notes.push({ to: q.drafterEmail, text: '↩️ ' + slackText(q.requesterName) + ' withdrew their request for a letter, so no first draft is needed: *' + slackText(q.purpose) + '*.' });
       } else if (d.action === 'draft') {
+        const late = letterDraftRefusal(q);
+        if (late) throw new HttpsError('failed-precondition', late);
         const n = normalizeLetterDraft(d);
         if (n.error) throw new HttpsError('invalid-argument', n.error);
         const now = Date.now(), again = !!q.draftAt;
@@ -9882,7 +9890,7 @@ exports._internal = { ownDocs, proposalRoute, proposalHours, asksForMore, replac
   projectsFromDashboard, badgesForCard, skillMd, skillZip, versionContent, stableJson,
   normalizeMeeting, firstMeetingTimes, meetingRecurrence, projectMembers, normalizeRepo, projectRepoName,
   projectIdOf, projectGroupForCards, workspaceStarted, normalizeJoinRequest, welcomeEmail, mimeMessage, joinChangesRefusal, joinChangesKeyRefusal, joinChangesEmail, joinChangesView, joinChangesProposed, joinChangesLines, keyHash,
-  onboardingSteps, inviteRefusal, normalizeLetterRequest, letterRemindersDue, letterDrafterOf, normalizeLetterDraft, normalizeStudies, groupOf, channelGroupsFor, seriesStart, normalizeSupervisionChannel, supervisionChannelFor, inviteReminderStage, taggedIds, proposalNewTags, newTags, tagPlace, tagExcerpt, tagMessageId, venueCallsToCheck, venueCallMessage, interactionsFor, isInteractionSource, thingOf, slackExternal, groupMoveOf, currentGroupMove, groupMoveTitle, normalizeGpuHours, proposalPending, inviteChoices, validInviteTo, projectChannelChange, alignmentPlan, alignmentMessage, groupChannelsFor, allGroupChannels, alignmentNow, runAlignment
+  onboardingSteps, inviteRefusal, normalizeLetterRequest, letterRemindersDue, letterDrafterOf, normalizeLetterDraft, letterDraftRefusal, normalizeStudies, groupOf, channelGroupsFor, seriesStart, normalizeSupervisionChannel, supervisionChannelFor, inviteReminderStage, taggedIds, proposalNewTags, newTags, tagPlace, tagExcerpt, tagMessageId, venueCallsToCheck, venueCallMessage, interactionsFor, isInteractionSource, thingOf, slackExternal, groupMoveOf, currentGroupMove, groupMoveTitle, normalizeGpuHours, proposalPending, inviteChoices, validInviteTo, projectChannelChange, alignmentPlan, alignmentMessage, groupChannelsFor, allGroupChannels, alignmentNow, runAlignment
 };
 
 // For tests and the test copy: the home letter's inputs as someone (functions/bold-llm.js).
