@@ -6,7 +6,7 @@
 const crypto = require('crypto');
 
 const VARIANTS = ['chat', 'form'];
-const FIELDS = ['title', 'significance', 'difficulties', 'existing_solutions', 'builds_benchmark', 'collaborators', 'project_ids', 'parent_ids', 'related_ids'];
+const FIELDS = ['title', 'significance', 'difficulties', 'existing_solutions', 'builds_benchmark', 'category', 'inspiration', 'collaborators', 'project_ids', 'parent_ids', 'related_ids'];
 
 // Pure: the way someone gets, by their email: fixed, about half each.
 function variantFor(email){
