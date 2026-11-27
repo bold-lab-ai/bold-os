@@ -2,7 +2,7 @@
 // need to know, and a sync the limit stopped is recognised (and retried every hour).
 const test = require('node:test');
 const assert = require('node:assert');
-const { calendarUpdates, isCalendarLimit, meetCodeOf, ensureMeetOpen } = require('../functions/index.js')._internal;
+const { calendarUpdates, isCalendarLimit, meetCodeOf, ensureMeetOpen, openMeetOnce } = require('../functions/index.js')._internal;
 
 test('a new time, recurrence or guest list emails the guests; a title, description or Meet link doesn’t', () => {
   assert.strictEqual(calendarUpdates({ attendees: [] }), 'all');
@@ -58,4 +58,23 @@ test('a pending Meet is read back from Calendar before its access is checked', a
     ['GET', 'https://www.googleapis.com/calendar/v3/calendars/primary/events/event%2F1'],
     ['GET', 'https://meet.googleapis.com/v2/spaces/abc-defg-hij'],
   ]);
+});
+
+test('in a sync, a Meet made open already isn’t asked about again', async () => {
+  const calls = [];
+  const googleFetch = async (method, url) => { calls.push(method + ' ' + url); return {}; };
+  const ev = { conferenceData: { conferenceId: 'abc-defg-hij' } };
+  const o = await openMeetOnce(ev, 'event-1', 'abc-defg-hij', 'test', { googleFetch, wait: async () => {} });
+  assert.deepStrictEqual(o, { ev, code: 'abc-defg-hij' });
+  assert.deepStrictEqual(calls, []);
+});
+
+test('in a sync, a Meet that can’t be made open is logged, and the sync goes on', async () => {
+  const warned = [];
+  const googleFetch = async () => { const e = new Error('Request had insufficient authentication scopes.'); e.status = 403; throw e; };
+  const ev = { conferenceData: { conferenceId: 'abc-defg-hij' }, hangoutLink: 'https://meet.google.com/abc-defg-hij' };
+  const o = await openMeetOnce(ev, 'event-1', '', 'project p1', { googleFetch, wait: async () => {}, logger: { warn: (m, x) => warned.push(x) } });
+  assert.deepStrictEqual(o, { ev, code: '' }, 'not marked open, so the next sync tries again');
+  assert.strictEqual(warned.length, 1);
+  assert.strictEqual(warned[0].where, 'project p1');
 });
