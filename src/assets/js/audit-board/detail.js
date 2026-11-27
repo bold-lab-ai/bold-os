@@ -491,22 +491,28 @@
     });
   });
 
+  function cardNavigationHtml(card, boardId, boardLabel){
+    var html = '<nav class="detail-nav" aria-label="Paper navigation">' +
+      '<a href="#" class="detail-back" id="detailBack">&larr; Back to ' + escapeHtml(boardLabel || 'board') + '</a>';
+    if (card && card.registrationKind !== 'past_paper') {
+      var href = 'project.html#id=' + encodeURIComponent(card.id) + '&amp;board=' + encodeURIComponent(boardId);
+      html += '<a class="detail-back" href="' + href + '">Project overview</a>';
+    }
+    return html + '</nav>';
+  }
+
   function renderCardDetail(){
     var card = getCurrentCard();
     // Redrawn, its fields show what's saved now: an edit starts again from here.
     if (card) delete state.editingFrom['stage:' + card.id];
     var board = getCurrentBoard();
+    var html = '<div class="detail">' + cardNavigationHtml(card, state.currentBoardId, board && board.label);
     if (!card){
-      els.boardRegion.innerHTML = '<div class="detail"><a href="#" class="detail-back" id="detailBack">&larr; Back to board</a><p class="board-empty">This paper is no longer on the board.</p></div>';
+      els.boardRegion.innerHTML = html + '<p class="board-empty">This paper is no longer on the board.</p></div>';
       var lb = document.getElementById('detailBack');
       if (lb) lb.addEventListener('click', function(e){ e.preventDefault(); backToBoard(); });
       return;
     }
-
-
-    var html = '<div class="detail">';
-    html += '<a href="#" class="detail-back" id="detailBack">&larr; Back to ' + (board ? escapeHtml(board.label) : 'board') + '</a>';
-
     // Title, then a line under it with the badges (stage first, then the
     // review / rebuttal / outcome / overdue ones) on the left and Remove
     // paper pushed to the right (2026-09-18+23, per Eduardo).

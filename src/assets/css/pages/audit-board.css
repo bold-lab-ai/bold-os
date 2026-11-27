@@ -407,6 +407,7 @@ select.rv-input:invalid{border-color:var(--warn-line); background:color-mix(in s
 .card-move-btn.card-move-btn-accept:disabled{color:var(--muted); background:var(--surface); border-color:var(--line); opacity:.5;}
 /* ---------- card detail ---------- */
 .detail{max-width:var(--content-max); margin:20px 0 0 var(--page-left); padding:0 var(--gutter) 88px;}
+.detail-nav{display:flex; flex-wrap:wrap; column-gap:20px;}
 .detail-back{font-size:13.5px; color:var(--muted); text-decoration:none; display:inline-block; margin-bottom:16px;}
 .detail-back:hover{color:var(--link);}
 .detail-head{display:flex; align-items:baseline; gap:12px; flex-wrap:wrap;}
