@@ -8,13 +8,16 @@ function conversationIconChooser(editor){
   ];
   var esc = BOLD.escapeHtml, button = editor.querySelector('.bs-topic-icon'), panel = editor.querySelector('.bs-icon-panel');
   var search = panel.querySelector('input'), grid = panel.querySelector('.bs-icon-grid'), restore = panel.querySelector('.bs-icon-restore');
-  var suggested = '💬', picked = '', pickedName = '';
+  var suggested = '💬', picked = '', pickedName = '', topicName = '', emojiNames, ready;
   function updateButton(){
     var value = picked || suggested, item = featured.find(function(x){ return x[0] === value; });
     var label = 'Choose icon: ' + (pickedName || (item && item[1]) || value);
     button.textContent = value;
     button.setAttribute('aria-label', label); button.title = label;
     restore.hidden = !picked;
+    if (!panel.hidden) grid.querySelectorAll('[data-icon]').forEach(function(choice){
+      choice.setAttribute('aria-pressed', String(choice.dataset.icon === value));
+    });
   }
   function close(){
     panel.hidden = true; button.setAttribute('aria-expanded', 'false');
@@ -57,10 +60,21 @@ function conversationIconChooser(editor){
     } else return;
     e.preventDefault(); e.stopPropagation();
   });
+  function suggest(name){
+    topicName = name;
+    suggested = ConversationTopics.suggestIcon(name, emojiNames); updateButton();
+  }
   return {
-    suggest: function(name){ suggested = ConversationTopics.suggestIcon(name); updateButton(); },
-    reset: function(name){ picked = ''; pickedName = ''; close(); this.suggest(name); },
-    value: function(){ return picked || suggested; }
+    suggest: suggest,
+    reset: function(name){
+      picked = ''; pickedName = ''; close(); suggest(name);
+      if (!ready) ready = BoldEmoji.names().then(function(names){ emojiNames = names; suggest(topicName); });
+    },
+    value: async function(name){
+      if (picked) return picked;
+      await ready;
+      return ConversationTopics.suggestIcon(name, emojiNames);
+    }
   };
 }
 
@@ -111,7 +125,9 @@ function conversationTopicPicker(host){
     var version = choiceVersion;
     save.disabled = true;
     try {
-      var topic = await conversationTopicPicker.create(id, title, icon.value());
+      var emoji = await icon.value(title);
+      if (version !== choiceVersion) return;
+      var topic = await conversationTopicPicker.create(id, title, emoji);
       // Cancel or choosing a different topic takes precedence over a pending save.
       if (version !== choiceVersion) return;
       if (!topics.some(function(t){ return t.id === topic.id; })) topics = topics.concat(topic);

@@ -27,11 +27,22 @@ test('topic records display emoji for both old symbols and new selections', () =
   }
 });
 
+test('topic suggestions use phrases and whole words in the typed name', () => {
+  const emojiNames = new Map([['polar_bear', '🐻‍❄️'], ['bear', '🐻'], ['planet', '🪐'], ['octopus', '🐙']]);
+  for (const [name, icon] of [['Polar bear club', '🐻‍❄️'], ['Planet discussions', '🪐'], ['Octopus', '🐙'],
+    ['Café meetup', '☕'], ['Machine learning', '🤖'], ['Summer hikes', '🥾']]) {
+    assert.equal(topics.suggestIcon(name, emojiNames), icon);
+  }
+  assert.equal(topics.suggestIcon('Vellum Collective'), topics.suggestIcon('vellum collective'));
+  assert.equal(topics.suggestIcon(''), '💬');
+});
+
 test('creating a topic selects it without submitting or resetting the draft', async () => {
   const { document, window } = parseHTML('<form><input name="title" value="My draft"><div class="slot"></div><textarea>Unfinished text</textarea></form>');
   const ctx = { document, BOLD: { escapeHtml: String }, ConversationTopics: topics };
   vm.runInNewContext(fs.readFileSync(require.resolve('../src/assets/js/conversation-topic-picker.js'), 'utf8'), ctx);
-  ctx.BoldEmoji = { search: async query => query === 'octopus' ? [{ e: '🐙', name: 'octopus' }] : [] };
+  ctx.BoldEmoji = { names: async () => new Map([['telescope', '🔭']]),
+    search: async query => query === 'octopus' ? [{ e: '🐙', name: 'octopus' }] : [] };
   const saved = [];
   ctx.conversationTopicPicker.create = async (id, name, icon) => { const topic = { id, name, icon }; saved.push(topic); return topic; };
   const picker = ctx.conversationTopicPicker(document.querySelector('.slot'));
@@ -52,6 +63,8 @@ test('creating a topic selects it without submitting or resetting the draft', as
   q('.bs-topic-new').click();
   const icon = q('.bs-topic-icon');
   assert.equal(icon.getAttribute('aria-label'), 'Choose icon: Book');
+  input('.bs-topic-name', 'Telescope club'); await new Promise(setImmediate);
+  assert.equal(icon.textContent, '🔭');
   icon.click();
   input('.bs-icon-panel input', 'octopus');
   await new Promise(setImmediate);
@@ -77,11 +90,31 @@ test('creating a topic selects it without submitting or resetting the draft', as
   assert.equal(picker.required(), true);
 });
 
+test('saving while emoji names load uses the final topic name', async () => {
+  const { document, window } = parseHTML('<div class="slot"></div>');
+  let loadNames, saved;
+  const ctx = { document, BOLD: { escapeHtml: String }, ConversationTopics: topics,
+    BoldEmoji: { names: () => new Promise(resolve => { loadNames = resolve; }) } };
+  vm.runInNewContext(fs.readFileSync(require.resolve('../src/assets/js/conversation-topic-picker.js'), 'utf8'), ctx);
+  ctx.conversationTopicPicker.create = async (id, name, icon) => (saved = { id, name, icon });
+  ctx.conversationTopicPicker(document.querySelector('.slot'));
+  document.querySelector('.bs-topic-new').click();
+  const field = document.querySelector('.bs-topic-name');
+  for (const value of ['Coffee', 'Telescope club']) {
+    field.value = value; field.dispatchEvent(new window.Event('input'));
+  }
+  document.querySelector('.bs-topic-save').click();
+  loadNames(new Map([['telescope', '🔭']]));
+  await new Promise(setImmediate);
+  assert.deepEqual(saved, { id: 'telescope-club', name: 'Telescope club', icon: '🔭' });
+});
+
 test('a pending topic creation cannot select a topic in the next draft after cancel', async () => {
   const { document } = parseHTML('<div class="slot"></div>');
   const ctx = { document, BOLD: { escapeHtml: String }, ConversationTopics: topics };
   vm.runInNewContext(fs.readFileSync(require.resolve('../src/assets/js/conversation-topic-picker.js'), 'utf8'), ctx);
   let finishSave;
+  ctx.BoldEmoji = { names: async () => new Map() };
   ctx.conversationTopicPicker.create = () => new Promise(resolve => { finishSave = resolve; });
   const picker = ctx.conversationTopicPicker(document.querySelector('.slot'));
   picker.update(topics.starters);
@@ -89,6 +122,7 @@ test('a pending topic creation cannot select a topic in the next draft after can
   document.querySelector('.bs-topic-new').click();
   document.querySelector('.bs-topic-name').value = 'Paper club';
   document.querySelector('.bs-topic-save').click();
+  await new Promise(setImmediate);
   picker.reset();
   finishSave({ id: 'paper-club', name: 'Paper club', icon: '📖' });
   await new Promise(setImmediate);
