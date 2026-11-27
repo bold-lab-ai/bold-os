@@ -295,6 +295,17 @@ body.bs-agent-open .bs-cols{padding-bottom:min(46vh, 420px);}
 .bs-topic-options button.btn-text:is(:hover, :focus-visible) {background:var(--paper); text-decoration:underline;}
 .bs-topic-create {display:grid; grid-template-columns:minmax(0, 1fr) 5rem; gap:8px; margin-top:8px;}
 .bs-topic-create label {min-width:0;}
+.bs-icon-field {font:13px/1.4 var(--sans); color:var(--muted);}
+.bs-topic-icon, .bs-icon-choice {display:inline-flex; align-items:center; justify-content:center; cursor:pointer; color:var(--ink); background:var(--surface);}
+.bs-topic-icon {width:100%; min-height:36px; gap:9px; margin-top:4px; border:1px solid var(--underline); border-radius:var(--radius); font-size:20px;}
+.bs-topic-icon::after {content:""; width:6px; height:6px; border:solid currentColor; border-width:0 1.5px 1.5px 0; transform:translateY(-2px) rotate(45deg);}
+.bs-topic-icon[aria-expanded=true]::after {transform:translateY(2px) rotate(225deg);}
+.bs-icon-panel {grid-column:1/-1; border:1px solid var(--line); padding:8px;}
+.bs-icon-grid {display:grid; grid-template-columns:repeat(auto-fill, minmax(40px,1fr)); gap:3px; max-height:13rem; overflow:auto; margin-top:6px;}
+.bs-icon-choice {min-height:40px; border:1px solid transparent; border-radius:var(--radius); font:22px/1 var(--sans);}
+.bs-icon-choice:hover, .bs-icon-choice[aria-pressed=true] {border-color:var(--underline); background:var(--paper);}
+.bs-icon-choice:focus-visible {outline:2px solid var(--accent); outline-offset:-2px;}
+.bs-no-icons {grid-column:1/-1; padding:8px 0; font-size:14px; color:var(--muted);}
 .bs-topic-create .bs-topic-save {grid-column:1/-1; justify-self:start;}
 .bs-topic-create[hidden] {display:none;}
 .bs-topic-menu [role=alert]:not([hidden]) {margin:8px 0 0; color:var(--ink); font-weight:600;}

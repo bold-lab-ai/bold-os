@@ -72,6 +72,11 @@
     return loading;
   }
 
+  // Topic icon pickers use the same lazily loaded catalogue as text-field completions.
+  window.BoldEmoji = { search: function(query, limit){
+    return load().then(function(){ return find(all, query, limit); });
+  } };
+
   function close(){ if (box) box.remove(); box = null; list = []; field = null; start = -1; }
 
   // Writes `text` in place of what's from `from` to the caret, and tells whoever keeps what's typed.

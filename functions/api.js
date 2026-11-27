@@ -492,7 +492,7 @@ module.exports = function(deps){
     { name: 'list_conversation_topics', description: 'Topics available when posting in Conversations, with their id, name and icon.',
       inputSchema: { type: 'object', properties: {} }, run: async () => {
         const snap = await db.collection('conversationTopics').orderBy('name').get();
-        return snap.docs.map((d) => ({ id: d.id, name: d.data().name, icon: d.data().icon }));
+        return snap.docs.map(require('./conversation-topics').fromDoc);
       } },
     // Acting, and what it needs to read: functions/api-actions.js.
     ...actions.READ,

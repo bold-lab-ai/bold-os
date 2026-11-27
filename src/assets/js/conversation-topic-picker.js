@@ -1,3 +1,69 @@
+// The first choices include the lab's icons. Searching also uses the site's emoji catalogue.
+function conversationIconChooser(editor){
+  var featured = [
+    ['🦋', 'Butterfly', 'about bold'], ['☎️', 'Telephone', 'advice help phone'], ['⚙️', 'Gear', 'feedback settings'],
+    ['📄', 'Document', 'file page proposal project plan'], ['🧠', 'Brain', 'research brainstorm'],
+    ['📖', 'Book', 'paper reading'], ['🕒', 'Clock', 'meeting event'], ['💬', 'Speech bubble', 'general conversation chat'],
+    ['💡', 'Light bulb', 'idea'], ['🔬', 'Microscope', 'science'], ['🌱', 'Seedling', 'growth'], ['⭐', 'Star', 'favourite']
+  ];
+  var esc = BOLD.escapeHtml, button = editor.querySelector('.bs-topic-icon'), panel = editor.querySelector('.bs-icon-panel');
+  var search = panel.querySelector('input'), grid = panel.querySelector('.bs-icon-grid'), restore = panel.querySelector('.bs-icon-restore');
+  var suggested = '💬', picked = '', pickedName = '';
+  function updateButton(){
+    var value = picked || suggested, item = featured.find(function(x){ return x[0] === value; });
+    var label = 'Choose icon: ' + (pickedName || (item && item[1]) || value);
+    button.textContent = value;
+    button.setAttribute('aria-label', label); button.title = label;
+    restore.hidden = !picked;
+  }
+  function close(){
+    panel.hidden = true; button.setAttribute('aria-expanded', 'false');
+  }
+  async function results(){
+    var query = search.value.trim().toLowerCase();
+    var choices = featured.filter(function(x){ return x[0] === query || (x[1] + ' ' + x[2]).toLowerCase().includes(query); });
+    if (query) {
+      grid.innerHTML = '<span class="bs-no-icons">Searching…</span>';
+      var more = await BoldEmoji.search(query.replace(/\s+/g, '_'), 48);
+      if (panel.hidden || query !== search.value.trim().toLowerCase()) return;
+      var seen = new Set(choices.map(function(x){ return x[0].replace(/\uFE0F/g, ''); }));
+      more.forEach(function(x){
+        var key = x.e.replace(/\uFE0F/g, '');
+        if (seen.has(key)) return;
+        seen.add(key); choices.push([x.e, x.name.replace(/_/g, ' ')]);
+      });
+    }
+    grid.innerHTML = choices.map(function(x){
+      return '<button type="button" class="bs-icon-choice" data-icon="' + esc(x[0]) + '" aria-label="' + esc(x[1]) +
+        '" title="' + esc(x[1]) + '" aria-pressed="' + (x[0] === (picked || suggested)) + '">' + esc(x[0]) + '</button>';
+    }).join('') || '<span class="bs-no-icons">No matching icons</span>';
+  }
+  button.addEventListener('click', function(){
+    if (!panel.hidden) { close(); return; }
+    panel.hidden = false; button.setAttribute('aria-expanded', 'true');
+    search.value = ''; results(); search.focus();
+  });
+  search.addEventListener('input', results);
+  grid.addEventListener('click', function(e){
+    var choice = e.target.closest('[data-icon]'); if (!choice) return;
+    picked = choice.dataset.icon; pickedName = choice.getAttribute('aria-label');
+    close(); updateButton(); button.focus();
+  });
+  restore.addEventListener('click', function(){ picked = ''; pickedName = ''; close(); updateButton(); button.focus(); });
+  panel.addEventListener('keydown', function(e){
+    if (e.key === 'Escape') { close(); button.focus(); }
+    else if (e.key === 'Enter' && e.target === search) {
+      var first = grid.querySelector('button'); if (first) first.focus();
+    } else return;
+    e.preventDefault(); e.stopPropagation();
+  });
+  return {
+    suggest: function(name){ suggested = ConversationTopics.suggestIcon(name); updateButton(); },
+    reset: function(name){ picked = ''; pickedName = ''; close(); this.suggest(name); },
+    value: function(){ return picked || suggested; }
+  };
+}
+
 // A searchable disclosure with ordinary keyboard-operable buttons. Topic creation is
 // inline in the existing composer, so title, text, and visibility survive the choice.
 function conversationTopicPicker(host){
@@ -6,13 +72,15 @@ function conversationTopicPicker(host){
     '<input type="search" aria-label="Find a topic" placeholder="Find a topic" maxlength="60">' +
     '<div class="bs-topic-options"></div><button type="button" class="btn-text bs-topic-new">Create a topic…</button>' +
     '<div class="bs-topic-create" hidden><label>Topic name<input class="bs-topic-name" maxlength="60"></label>' +
-    '<label>Icon<input class="bs-topic-icon no-emoji" maxlength="16"></label>' +
+    '<div class="bs-icon-field"><span>Icon</span><button type="button" class="bs-topic-icon" aria-label="Choose icon" aria-expanded="false"></button></div>' +
+    '<div class="bs-icon-panel" hidden><input type="search" class="no-emoji" aria-label="Search icons" placeholder="Search icons" maxlength="60">' +
+    '<div class="bs-icon-grid" role="group" aria-label="Icons"></div><button type="button" class="btn-text bs-icon-restore" hidden>Use suggested icon</button></div>' +
     '<button type="button" class="btn-box bs-topic-save">Create topic</button></div>' +
     '<p class="field-error" role="alert" hidden></p></div></details>';
   var details = host.querySelector('details'), summary = host.querySelector('summary'), search = host.querySelector('[type=search]');
   var options = host.querySelector('.bs-topic-options'), add = host.querySelector('.bs-topic-new'), editor = host.querySelector('.bs-topic-create');
-  var name = host.querySelector('.bs-topic-name'), icon = host.querySelector('.bs-topic-icon'), save = host.querySelector('.bs-topic-save');
-  var error = host.querySelector('[role=alert]'), custom = false;
+  var name = host.querySelector('.bs-topic-name'), icon = conversationIconChooser(editor), save = host.querySelector('.bs-topic-save');
+  var error = host.querySelector('[role=alert]');
   function report(message){ error.textContent = message; error.hidden = !message; }
   function draw(){
     var hit = topics.find(function(t){ return t.id === selected; });
@@ -20,7 +88,7 @@ function conversationTopicPicker(host){
     summary.textContent = hit ? hit.icon + ' ' + hit.name : 'Choose a topic';
     var query = search.value.trim().toLowerCase();
     options.innerHTML = topics.filter(function(t){ return t.name.toLowerCase().startsWith(query); }).map(function(t){
-      return '<button type="button" class="btn-text" data-topic="' + esc(t.id) + '">' + esc(t.icon + ' ' + t.name) + '</button>';
+      return '<button type="button" class="btn-text" data-topic="' + esc(t.id) + '"><span aria-hidden="true">' + esc(t.icon) + '</span> ' + esc(t.name) + '</button>';
     }).join('');
   }
   function choose(id){
@@ -33,11 +101,9 @@ function conversationTopicPicker(host){
   });
   search.addEventListener('input', draw);
   add.addEventListener('click', function(){
-    editor.hidden = false; name.value = search.value.trim(); icon.value = ConversationTopics.suggestIcon(name.value);
-    custom = false; report(''); name.focus();
+    editor.hidden = false; name.value = search.value.trim(); icon.reset(name.value); report(''); name.focus();
   });
-  name.addEventListener('input', function(){ if (!custom) icon.value = ConversationTopics.suggestIcon(name.value); });
-  icon.addEventListener('input', function(){ custom = !!icon.value.trim(); });
+  name.addEventListener('input', function(){ icon.suggest(name.value); });
   save.addEventListener('click', async function(){
     var title = name.value.trim(), id = ConversationTopics.topicId(title);
     if (!id) { report('Give the topic a name containing a letter or number.'); name.focus(); return; }
@@ -45,7 +111,7 @@ function conversationTopicPicker(host){
     var version = choiceVersion;
     save.disabled = true;
     try {
-      var topic = await conversationTopicPicker.create(id, title, icon.value.trim() || ConversationTopics.suggestIcon(title));
+      var topic = await conversationTopicPicker.create(id, title, icon.value());
       // Cancel or choosing a different topic takes precedence over a pending save.
       if (version !== choiceVersion) return;
       if (!topics.some(function(t){ return t.id === topic.id; })) topics = topics.concat(topic);
@@ -78,14 +144,14 @@ conversationTopicPicker.create = function(id, name, icon){
   var db = firebase.firestore(BOLD.getApp()), ref = db.collection('conversationTopics').doc(id);
   return db.runTransaction(async function(tx){
     var existing = await tx.get(ref);
-    if (existing.exists) return Object.assign({ id: id }, existing.data());
+    if (existing.exists) return ConversationTopics.fromDoc(existing);
     tx.set(ref, { name: name, icon: icon });
     return { id: id, name: name, icon: icon };
   });
 };
 conversationTopicPicker.watch = function(update, fail){
   return firebase.firestore(BOLD.getApp()).collection('conversationTopics').onSnapshot(function(snap){
-    var topics = snap.docs.map(function(d){ return Object.assign({ id: d.id }, d.data()); });
+    var topics = snap.docs.map(ConversationTopics.fromDoc);
     update(topics.sort(function(a,b){ return a.name.localeCompare(b.name); }));
   }, fail);
 };
