@@ -52,6 +52,10 @@
 .bs-vote.is-down .bs-score{color:var(--plum);}
 .bs-import-form{max-width:none; margin:0 0 12px;}
 .bs-post-main{flex:1; min-width:0;}
+.bs-post-heading{display:flex; align-items:flex-start; justify-content:space-between; gap:8px;}
+.bs-post-heading .bs-title{min-width:0; overflow-wrap:anywhere;}
+.bs-post-heading .bs-preview-toggle{margin-block:-4px;}
+.bs-read{color:var(--ink-soft); font-weight:600; white-space:nowrap;}
 .bs-title{margin:0; font-family:var(--sans); font-size:16px; font-weight:600; color:var(--ink);}
 .bs-by{margin:2px 0 0; font-size:12px; color:var(--muted);}
 .bs-author{font-size:13px; font-weight:600; color:var(--ink);}

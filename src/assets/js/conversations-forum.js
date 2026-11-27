@@ -18,6 +18,7 @@ window.BoldConversations = (function(){
   var EYE = '<svg class="bs-readers-eye" viewBox="0 0 16 16" aria-hidden="true" focusable="false"><path d="M1.5 8s2.4-4.5 6.5-4.5S14.5 8 14.5 8 12.1 12.5 8 12.5 1.5 8 1.5 8z"/><circle cx="8" cy="8" r="2"/></svg>';
   var PIN = '<svg class="bs-pin-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><g transform="rotate(38 12 12)"><path d="M8 3h8v2l-1 1v4l3 3v2H6v-2l3-3V6L8 5zM12 15v7"/></g></svg>';
   var PINNED = '<span class="bs-pin-label">' + PIN + 'Pinned</span>';
+  var CHEVRON = '<svg width="16" height="16" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="m8 4 8 8-8 8"/></svg>';
   // Shared comment composer. Keep its DOM node so live updates preserve the draft.
   function replyBox(o){
     var esc = BOLD.escapeHtml, label = o.label || 'Reply';
@@ -499,7 +500,7 @@ window.BoldConversations = (function(){
       var reply = m.id !== pid, folded = reply && Array.isArray(folds[m.id]), summary = '';
       var toggle = reply ? '<button type="button" class="bs-open" data-fold data-id="' + esc(m.id) + '" aria-expanded="' + !folded +
         '" aria-label="' + (folded ? 'Expand' : 'Collapse') + ' comment by ' + esc(m.name || 'someone') + '">' +
-        '<svg width="16" height="16" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="m8 4 8 8-8 8"/></svg></button>' : '';
+        CHEVRON + '</button>' : '';
       if (folded) {
         var ids = descendantIds(m.id), seen = new Set(folds[m.id]);
         var fresh = ids.filter(function(id){ return !seen.has(id); }).length;
@@ -655,6 +656,48 @@ window.BoldConversations = (function(){
       return (b ? b + '&' : '#') + 'post=' + encodeURIComponent(pid) + (mid && mid !== pid ? '&msg=' + encodeURIComponent(mid) : '');
     }
     var listHref = function(){ return base() || '#'; };
+    // Read and collapse are independent, per reader and post. Separate keys also let
+    // two tabs update different posts without overwriting each other's choices.
+    var localFlags = new Set();
+    function listFlagKey(flag, id){ return 'boldConversation:' + me.uid + ':' + flag + ':' + id; }
+    function hasListFlag(flag, id){
+      if (!me.uid) return false;
+      var key = listFlagKey(flag, id);
+      try { return localStorage.getItem(key) === '1'; } catch (e){ return localFlags.has(key); }
+    }
+    function setListFlag(flag, id, on){
+      if (!me.uid) return;
+      var key = listFlagKey(flag, id);
+      if (on) localFlags.add(key); else localFlags.delete(key);
+      try { if (on) localStorage.setItem(key, '1'); else localStorage.removeItem(key); } catch (e){}
+    }
+    var lastPlace = null, returningTo = '';
+    function rememberPlace(row){
+      lastPlace = { reader: me.uid, list: listHref(), id: row.id.slice(2), top: row.getBoundingClientRect().top };
+      try { sessionStorage.setItem('boldConversationReturn', JSON.stringify(lastPlace)); } catch (e){}
+    }
+    function restorePlace(){
+      if (!returningTo) return;
+      var id = returningTo, selector = '#m-' + CSS.escape(id);
+      // The private and open lists can arrive in separate snapshots.
+      if (!postsEl.querySelector(selector)) return;
+      requestAnimationFrame(function(){
+        if (returningTo !== id || route().post) return;
+        var row = postsEl.querySelector(selector);
+        if (!row) return;
+        returningTo = '';
+        if (!lastPlace) {
+          try { lastPlace = JSON.parse(sessionStorage.getItem('boldConversationReturn')); } catch (e){}
+        }
+        if (lastPlace && lastPlace.reader === me.uid && lastPlace.list === listHref() && lastPlace.id === id && Number.isFinite(lastPlace.top)) {
+          window.scrollBy({ top: row.getBoundingClientRect().top - lastPlace.top, behavior: 'instant' });
+        } else {
+          row.scrollIntoView({ block: 'center', behavior: 'instant' });
+        }
+        row.querySelector('.bs-title a').focus({ preventScroll: true });
+      });
+    }
+    function previewLabel(folded, title){ return (folded ? 'Expand' : 'Collapse') + ' preview for ' + title; }
     var linkedMsg = route().msg;   // a link to a message: shown once its thread is in
     function msgLink(pid, id){ return location.origin + location.pathname + postHash(pid, id); }
     // The linked message: its branches unfolded down to it, selected (as from the tree), in view.
@@ -751,6 +794,7 @@ window.BoldConversations = (function(){
         if (writeEl) writeEl.hidden = true;
         if (posts === null || (p && messages[open] === undefined)) { threadEl.innerHTML = '<p class="proj-msg">Loading&hellip;</p>'; return; }
         if (!p) { threadEl.innerHTML = backLink() + '<p class="proj-msg">No such post: it may have been removed.</p>'; return; }
+        if (topicPage && !hasListFlag('read', p.id)) setListFlag('read', p.id, true);
         // An open reply box is carried across the redraw (a reply or a vote arriving), with what's typed in it
         // and its Write | Preview tab.
         var keep = threadEl.querySelector('.bs-replyform') || parkedForm;
@@ -822,19 +866,57 @@ window.BoldConversations = (function(){
       postsEl.innerHTML = list.length ? list.map(function(q){
         // A peek (the home page): each opens on Conversations' own page.
         var at = opts.peek ? 'conversations.html#post=' + encodeURIComponent(q.id) : postHash(q.id);
+        var preview = q.body && q.body.trim() && q.body.trim() !== q.title ? md(q.body) : '';
+        var folded = topicPage && hasListFlag('folded', q.id);
+        var previewId = 'bs-preview-' + uid + '-' + esc(q.id);
+        var label = esc(previewLabel(folded, q.title));
+        var toggle = topicPage && preview ? '<button type="button" class="bs-open bs-preview-toggle" aria-expanded="' + !folded +
+          '" aria-controls="' + previewId + '" aria-label="' + label + '" title="' + label + '">' + CHEVRON + '</button>' : '';
+        var read = topicPage && hasListFlag('read', q.id) ? ' · <span class="bs-read"><span aria-hidden="true">✓ </span>Read</span>' : '';
         return '<li class="bs-post' + (mine(q) ? ' is-mine' : '') + '" id="m-' + esc(q.id) + '">' + vote(q) +
           '<div class="bs-post-main">' + (q.pinned ? PINNED + ' ' : '') +
-          (query || all ? '<span class="bs-result-topic">' + esc(groupOf(q).icon + ' ' + groupOf(q).name) + '</span>' : '') + '<h3 class="bs-title"><a href="' + at + '">' + esc(q.title) + '</a></h3><p class="bs-by">' + by(q) + (q.private ? ' · <span class="bs-private" title="' + esc(PRIVATE_TIP(q)) + '">Private</span>' : '') + '</p>' +
-            (q.body && q.body.trim() !== q.title ? md(q.body).replace('class="bs-text md-desc"', 'class="bs-text md-desc bs-clip"') : '') +
+          (query || all ? '<span class="bs-result-topic">' + esc(groupOf(q).icon + ' ' + groupOf(q).name) + '</span>' : '') +
+          '<div class="bs-post-heading"><h3 class="bs-title"><a href="' + at + '">' + esc(q.title) + '</a></h3>' + toggle + '</div><p class="bs-by">' + by(q) +
+          (q.private ? ' · <span class="bs-private" title="' + esc(PRIVATE_TIP(q)) + '">Private</span>' : '') + read + '</p>' +
+            preview.replace('class="bs-text md-desc"', 'class="bs-text md-desc bs-clip" id="' + previewId + '"' + (folded ? ' hidden' : '')) +
             matchingReplies(q, query) + '<p class="bs-acts"><a href="' + at + '">' + count(q.replies || 0) + '</a></p></div></li>';
       }).join('') : '<li class="proj-msg">' + esc(status || empty) + '</li>';
       if (status && list.length) postsEl.insertAdjacentHTML('beforeend', '<li class="proj-msg">' + esc(status) + '</li>');
+      restorePlace();
     }
+    postsEl.addEventListener('click', function(e){
+      if (!topicPage) return;
+      var row = e.target.closest('.bs-post');
+      if (!row) return;
+      var button = e.target.closest('.bs-preview-toggle');
+      if (button) {
+        var preview = row.querySelector('.bs-clip');
+        preview.hidden = !preview.hidden;
+        setListFlag('folded', row.id.slice(2), preview.hidden);
+        button.setAttribute('aria-expanded', String(!preview.hidden));
+        button.title = previewLabel(preview.hidden, row.querySelector('.bs-title').textContent);
+        button.setAttribute('aria-label', button.title);
+      } else if (!e.ctrlKey && !e.metaKey && !e.shiftKey && !e.altKey && e.target.closest('.bs-title a, .bs-acts a, .bs-matched-replies a')) {
+        rememberPlace(row);
+      }
+    });
+    // Opening a title in another tab also marks it read in the list left behind.
+    if (topicPage) window.addEventListener('storage', function(e){
+      if (!root.isConnected || postsEl.hidden || !me.uid || !e.key || !e.key.startsWith('boldConversation:' + me.uid + ':')) return;
+      render();
+    });
     forumEl.addEventListener('click', function(e){
       if (!topicPage || !e.target.closest('.bs-topic-nav a, .bs-open-topic, .bs-views a') || e.ctrlKey || e.metaKey || e.shiftKey || e.altKey) return;
       find = ''; findEl.value = ''; filt = { author: '', with: '', project: '', vis: '' }; render();
     });
-    window.addEventListener('hashchange', function(){ if (!root.isConnected) return; replying = ''; linkedMsg = route().msg; render(); if (!linkedMsg) window.scrollTo(0, 0); });
+    window.addEventListener('hashchange', function(e){
+      if (!root.isConnected) return;
+      replying = ''; linkedMsg = route().msg;
+      var previous = new URLSearchParams(e.oldURL.split('#')[1]).get('post');
+      returningTo = !route().post && (currentTopic() || allView()) ? previous || '' : '';
+      render();
+      if (!linkedMsg && !returningTo) window.scrollTo({ top: 0, behavior: 'instant' });
+    });
     function watchThread(id){
       if (stopMsgs) { stopMsgs(); stopMsgs = null; }
       openId = id;

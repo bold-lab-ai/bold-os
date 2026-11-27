@@ -25,9 +25,12 @@ function openThread(storage, uid, hash = '#post=tea') {
     return query;
   }
   let userChanged, accessChanged;
+  const windowEvents = new Map(), scrolls = [];
   const context = {
     document, location: { hash }, URLSearchParams, CSS: { escape: String },
-    Event: window.Event, setTimeout, requestAnimationFrame: fn => setTimeout(fn, 0), console, addEventListener() {},
+    Event: window.Event, setTimeout, requestAnimationFrame: fn => setTimeout(fn, 0), console,
+    addEventListener: (event, listener) => windowEvents.set(event, listener),
+    scrollTo: options => scrolls.push(['to', options.top]), scrollBy: options => scrolls.push(['by', options.top]),
     getComputedStyle: () => ({ lineHeight: '20px' }),
     localStorage: { getItem: key => storage.get(key), setItem: (k, v) => storage.set(k, v), removeItem: k => storage.delete(k) },
     firebase: {
@@ -63,7 +66,12 @@ function openThread(storage, uid, hash = '#post=tea') {
   const row = id => document.getElementById('m-' + id);
   const toggle = id => row(id).querySelector('.bs-open').click();
   const expanded = id => row(id).querySelector('.bs-open').getAttribute('aria-expanded') === 'true';
-  return { row, toggle, expanded, update, document, location: context.location,
+  function navigate(hash){
+    const oldURL = 'http://localhost/conversations.html' + context.location.hash;
+    context.location.hash = hash;
+    windowEvents.get('hashchange')({ oldURL });
+  }
+  return { row, toggle, expanded, update, document, location: context.location, navigate, scrolls,
     publish: (key, items) => receivers.get(key)(snapshot(items)) };
 }
 
@@ -94,6 +102,42 @@ test('fold choices survive reopening, new replies and reload, and belong to one 
   assert.equal(linked.expanded('b'), true);
   assert.equal(linked.row('c').classList.contains('is-selected'), true);
   assert.equal(linked.row('c').querySelector('.bs-avatar img').getAttribute('src'), '/fictional-portrait.png');
+});
+
+test('topic previews and read marks belong to each reader, and returning restores the opened row', async () => {
+  const storage = new Map(), topic = '#topic=advice';
+  function topicList(reader){
+    const forum = openThread(storage, reader, topic);
+    forum.publish('conversationTopics', [{ id: 'advice', name: 'Advice', icon: '☎️' }]);
+    forum.publish('conversations', [{ ...post, topicId: 'advice' }, { ...post, id: 'short', topicId: 'advice', body: post.title }]);
+    return forum;
+  }
+  const forum = topicList('sam');
+  await new Promise(resolve => setTimeout(resolve, 0)); // allow the roster to finish its redraw
+  const button = () => forum.row('tea').querySelector('.bs-preview-toggle');
+  assert.equal(forum.row('short').querySelector('.bs-preview-toggle'), null);
+  button().click();
+  assert.equal(button().getAttribute('aria-expanded'), 'false');
+  assert.ok(forum.document.getElementById(button().getAttribute('aria-controls')).hidden);
+  assert.equal(forum.row('tea').querySelector('.bs-read'), null);
+
+  forum.row('tea').getBoundingClientRect = () => ({ top: 140 });
+  const link = forum.row('tea').querySelector('.bs-title a');
+  link.click();
+  forum.navigate(link.getAttribute('href'));
+  forum.update(initial);
+  forum.navigate(forum.document.querySelector('.back-link').getAttribute('href'));
+  forum.row('tea').getBoundingClientRect = () => ({ top: 740 });
+  await new Promise(resolve => setTimeout(resolve, 0));
+  assert.deepEqual(forum.scrolls.at(-1), ['by', 600]);
+  const reloaded = topicList('sam').row('tea');
+  assert.match(reloaded.querySelector('.bs-read').textContent, /Read/);
+  assert.ok(reloaded.querySelector('.bs-clip').hidden);
+  reloaded.querySelector('.bs-preview-toggle').click();
+  assert.equal(topicList('sam').row('tea').querySelector('.bs-clip').hidden, false);
+  const other = topicList('lee').row('tea');
+  assert.equal(other.querySelector('.bs-read'), null);
+  assert.equal(other.querySelector('.bs-clip').hidden, false);
 });
 
 test('deep replies remain reachable and a draft returns after its ancestor is reopened', () => {
