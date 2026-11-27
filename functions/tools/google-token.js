@@ -7,7 +7,8 @@
 // (Not piped: the CLI reads stdin at once and fails with EAGAIN while this waits for the sign-in.)
 //
 // The client is an OAuth client of type "Desktop app" in the bold-d7ff2 Google
-// Cloud project (docs/REFERENCE.md, "Project workspaces"). Nothing is written to disk.
+// Cloud project, where the Meet REST API must be enabled alongside Calendar,
+// Drive and Gmail (docs/REFERENCE.md, "Project workspaces"). Nothing is written to disk.
 const http = require('http');
 
 const [clientId, clientSecret] = process.argv.slice(2);
@@ -16,7 +17,7 @@ if (!clientId || !clientSecret) {
   process.exit(1);
 }
 // gmail.send: the welcome email to people who join BOLD (sendWelcome).
-const SCOPES = ['https://www.googleapis.com/auth/calendar.events', 'https://www.googleapis.com/auth/drive.file', 'https://www.googleapis.com/auth/gmail.send'];
+const SCOPES = ['https://www.googleapis.com/auth/calendar.events', 'https://www.googleapis.com/auth/meetings.space.settings', 'https://www.googleapis.com/auth/drive.file', 'https://www.googleapis.com/auth/gmail.send'];
 
 const server = http.createServer(async (req, res) => {
   const url = new URL(req.url, 'http://127.0.0.1');

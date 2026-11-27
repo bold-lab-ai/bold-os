@@ -4071,7 +4071,8 @@ exports.joinProjectChannel = onCall(
 // ones, changes the meeting, and joins or leaves (projectWorkspace).
 //
 // GOOGLE_OAUTH: JSON { client_id, client_secret, refresh_token } for the lab's
-// Google account, with the scopes calendar.events, drive.file and gmail.send
+// Google account, with the scopes calendar.events, meetings.space.settings,
+// drive.file and gmail.send
 // (functions/tools/google-token.js makes it).
 const GOOGLE_OAUTH = defineSecret('GOOGLE_OAUTH');
 const { FieldValue } = require('firebase-admin/firestore');
@@ -4208,6 +4209,43 @@ async function googleFetch(method, url, body, contentType){
 }
 
 const CAL = 'https://www.googleapis.com/calendar/v3/calendars/primary/events';
+const MEET = 'https://meet.googleapis.com/v2/';
+
+// A Calendar-created Meet is a separate Meet "space". Calendar makes the link,
+// then the Meet API makes it Open: anyone with that link joins without knocking.
+// Calendar normally returns conferenceData.conferenceId; the URL is a fallback
+// while older events are brought into line.
+function meetCodeOf(ev){
+  const id = String(ev && ev.conferenceData && ev.conferenceData.conferenceId || '').trim().toLowerCase();
+  if (/^[a-z]+-[a-z]+-[a-z]+$/.test(id)) return id;
+  const m = String(ev && ev.hangoutLink || '').match(/^https:\/\/meet\.google\.com\/([a-z]+-[a-z]+-[a-z]+)(?:[/?#]|$)/i);
+  return m ? m[1].toLowerCase() : '';
+}
+
+// Calendar can finish making conferenceData just after the event itself. Wait a
+// few seconds for its code, resolve the code to Meet's permanent space name, and
+// set that space to Open. → the latest Calendar event (which may now have its link).
+async function ensureMeetOpen(ev, eventId, options){
+  options = options || {};
+  const call = options.googleFetch || googleFetch;
+  const wait = options.wait || function(ms){ return new Promise(function(ok){ setTimeout(ok, ms); }); };
+  let now = ev;
+  for (let n = 0; n < 5 && !meetCodeOf(now); n++){
+    const status = now && now.conferenceData && now.conferenceData.createRequest && now.conferenceData.createRequest.status;
+    if (status && status.statusCode === 'failure') throw new Error('Google couldn\u2019t create the Meet link.');
+    await wait(250 * (n + 1));
+    now = await call('GET', CAL + '/' + encodeURIComponent(eventId));
+  }
+  const code = meetCodeOf(now);
+  if (!code) throw new Error('Google didn\u2019t finish creating the Meet link.');
+  const space = await call('GET', MEET + 'spaces/' + encodeURIComponent(code));
+  if (!space || !/^spaces\/[A-Za-z0-9_-]+$/.test(String(space.name || ''))) throw new Error('Google didn\u2019t return the Meet space.');
+  if (!space.config || space.config.accessType !== 'OPEN') {
+    await call('PATCH', MEET + space.name + '?updateMask=config.accessType', { config: { accessType: 'OPEN' } });
+  }
+  return now;
+}
+
 // Google caps how many events and invitation emails the lab's (Gmail) account sends; past it,
 // Calendar writes fail for a few hours (2026-11-05). So guests are emailed only for what they
 // need to know (an invitation, a new time, who's on it; a cancellation), not for a new title,
@@ -4265,16 +4303,22 @@ exports.onOneOffMeeting = onDocumentCreated({ document: 'oneOffMeetings/{id}', s
   const who = await meetingInvitees(token, d.channel);
   const emails = ((who && who.emails) || []).concat(d.by.email).filter((e, i, a) => a.indexOf(e) === i).slice(0, slackMeeting.MAX_GUESTS + 1);
   const footer = 'Set up by ' + d.by.name + ' for ' + (d.channelName === 'this conversation' ? 'a Slack conversation' : '#' + d.channelName) + ', with /meeting on BOLD.OS.';
+  let created = null, opening = false;
   try {
-    const ev = await googleFetch('POST', CAL + '?conferenceDataVersion=1&sendUpdates=all', slackMeeting.eventOf(d, emails, 'bold-meeting-' + event.params.id, footer));
+    let ev = await googleFetch('POST', CAL + '?conferenceDataVersion=1&sendUpdates=all', slackMeeting.eventOf(d, emails, 'bold-meeting-' + event.params.id, footer));
+    created = ev;
+    await event.data.ref.set({ eventId: ev.id, eventLink: ev.htmlLink || '', meetUrl: d.link || ev.hangoutLink || '', invited: emails.length }, { merge: true });
+    if (!d.link){ opening = true; ev = await ensureMeetOpen(ev, ev.id); opening = false; }
     const meet = d.link || ev.hangoutLink || '';
-    await event.data.ref.set({ doneAt: Date.now(), eventId: ev.id, eventLink: ev.htmlLink || '', meetUrl: meet, invited: emails.length }, { merge: true });
+    await event.data.ref.set({ doneAt: Date.now(), meetUrl: meet }, { merge: true });
     await tell('📅 Invited ' + (emails.length === 1 ? 'you' : emails.length + ' people') + ' to ' + (ev.htmlLink ? linkedTitle(slackText(d.title), ev.htmlLink) : '*' + slackText(d.title) + '*') +
       ', ' + slackMeeting.whenText(d.start, d.minutes) + (meet ? ' · ' + linkedTitle('join', meet) : '') + '. The invitations come from the lab’s Google account.');
   } catch (err){
     logger.warn('A meeting from /meeting failed', { id: event.params.id, error: String(err && err.message || err) });
     await event.data.ref.set({ doneAt: Date.now(), error: String(err && err.message || err).slice(0, 300) }, { merge: true });
-    await tell(isCalendarLimit(err) ? 'Couldn’t send the invites for ' + slackText(d.title) + ': Google’s limit for the lab’s calendar was reached. Try again in a few hours.'
+    await tell(opening ? 'The invitations for ' + slackText(d.title) + ' were sent, but BOLD.OS couldn’t make its Google Meet open to everyone. Open its Calendar event and set Meeting access to Open.'
+      : created ? 'The invitations for ' + slackText(d.title) + ' were sent, but BOLD.OS couldn’t finish setting it up.'
+      : isCalendarLimit(err) ? 'Couldn’t send the invites for ' + slackText(d.title) + ': Google’s limit for the lab’s calendar was reached. Try again in a few hours.'
       : 'Couldn’t send the invites for ' + slackText(d.title) + ' — try again.');
   }
 });
@@ -4760,7 +4804,7 @@ async function syncWorkspace(id, changes){
         }).map(function(m){ return { email: m }; }));
       };
       if (wantEvent && !ws.eventId){
-        const ev = await googleFetch('POST', CAL + '?conferenceDataVersion=1&sendUpdates=all', Object.assign({
+        let ev = await googleFetch('POST', CAL + '?conferenceDataVersion=1&sendUpdates=all', Object.assign({
           summary: ws.title,
           description: eventDescription(ws),
           attendees: attendees([]),
@@ -4771,6 +4815,11 @@ async function syncWorkspace(id, changes){
         patch.eventId = ev.id; patch.eventLink = ev.htmlLink; patch.meetUrl = ws.meeting.link || ev.hangoutLink || '';
         patch.eventMeeting = ws.meeting; patch.eventStart = seriesStart(ev);
         await save();
+        if (!ws.meeting.link){
+          ev = await ensureMeetOpen(ev, ev.id);
+          const url = ev.hangoutLink || '';
+          if (url !== (ws.meetUrl || '')){ patch.meetUrl = url; await save(); }
+        }
       } else if (!wantEvent && ws.eventId){
         await googleFetch('DELETE', CAL + '/' + ws.eventId + '?sendUpdates=all').catch(function(err){ if (err.status !== 410 && err.status !== 404) throw err; });
         patch.eventId = FieldValue.delete(); patch.eventLink = FieldValue.delete();
@@ -4796,6 +4845,7 @@ async function syncWorkspace(id, changes){
           now = await googleFetch('PATCH', CAL + '/' + ws.eventId + '?conferenceDataVersion=1&sendUpdates=' + calendarUpdates(change), change) || ev;
           patch.eventMeeting = ws.meeting; patch.eventPausedAt = ws.pausedAt || FieldValue.delete(); patch.eventStart = seriesStart(now); await save();
         } else if (!ws.eventStart && seriesStart(ev)){ patch.eventStart = seriesStart(ev); await save(); }
+        if (!ws.meeting.link) now = await ensureMeetOpen(now, ws.eventId);
         const url = ws.meeting.link || now.hangoutLink || '';
         if (url !== (ws.meetUrl || '')){ patch.meetUrl = url; await save(); }
         // Its dates moved one by one (a new time for all of them leaves none moved).
@@ -6601,10 +6651,14 @@ async function syncStudyMeeting(email){
     // before it was made waits to be resumed.
     const want = !!s.meeting && !(s.pausedAt && !s.eventId);
     if (want && !s.eventId){
-      const ev = await googleFetch('POST', CAL + '?conferenceDataVersion=1&sendUpdates=all', Object.assign({
+      let ev = await googleFetch('POST', CAL + '?conferenceDataVersion=1&sendUpdates=all', Object.assign({
         summary, description, attendees: attendees([]), guestsCanModify: true   // every guest can change it, as a project's
       }, eventConference(s.meeting, 'bold-study-' + crypto.randomBytes(6).toString('hex')), eventTimes(s.meeting)));
       Object.assign(patch, { eventId: ev.id, eventLink: ev.htmlLink, meetUrl: s.meeting.link || ev.hangoutLink || '', eventMeeting: s.meeting, eventStart: seriesStart(ev) });
+      if (!s.meeting.link){
+        ev = await ensureMeetOpen(ev, ev.id);
+        patch.meetUrl = ev.hangoutLink || patch.meetUrl;
+      }
     } else if (!want && s.eventId){
       await googleFetch('DELETE', CAL + '/' + s.eventId + '?sendUpdates=all').catch(function(err){ if (err.status !== 410 && err.status !== 404) throw err; });
       ['eventId', 'eventLink', 'meetUrl', 'eventMeeting', 'eventPausedAt', 'eventStart'].forEach(function(k){ patch[k] = FieldValue.delete(); });
@@ -6624,6 +6678,7 @@ async function syncStudyMeeting(email){
         now = await googleFetch('PATCH', CAL + '/' + s.eventId + '?conferenceDataVersion=1&sendUpdates=' + calendarUpdates(change), change) || ev;
         patch.eventMeeting = s.meeting; patch.eventPausedAt = s.pausedAt || FieldValue.delete(); patch.eventStart = seriesStart(now);
       } else if (!s.eventStart && seriesStart(ev)) patch.eventStart = seriesStart(ev);
+      if (!s.meeting.link) now = await ensureMeetOpen(now, s.eventId);
       const url = s.meeting.link || now.hangoutLink || '';
       if (url !== (s.meetUrl || '')) patch.meetUrl = url;
       if (!s.pausedAt){
@@ -9760,7 +9815,7 @@ exports.boldApi = agentApi.boldApi;
 exports.calendarFeed = agentApi.calendarFeed;
 // Recurring lab meetings (series.html, Events): functions/series.js.
 const labSeries = require('./series')({ db, onCall, onDocumentWritten, HttpsError, logger, callerEmail, isFullWrite, access, rolesEmails,
-  googleFetch, syncMoves, CAL, calendarUpdates, isCalendarLimit, CALENDAR_LIMIT_MSG, eventConference, eventTimes, conferenceChange, meetingRecurrence, sameMeetingTimes, seriesStart,
+  googleFetch, syncMoves, CAL, calendarUpdates, isCalendarLimit, CALENDAR_LIMIT_MSG, eventConference, eventTimes, conferenceChange, ensureMeetOpen, meetingRecurrence, sameMeetingTimes, seriesStart,
   normalizeMeeting, googleAddressesFor, groupOf, tellStaff, slackText, linkedTitle, SITE_URL, GOOGLE_OAUTH, SLACK_BOT_TOKEN, FieldValue, crypto,
   onSchedule, tellPeople: (emails, text, key) => sendEvent(SLACK_BOT_TOKEN.value(), { key, emails, headline: text }) });
 exports.eventSeries = labSeries.eventSeries;
@@ -9876,7 +9931,7 @@ exports.problemInterview = onCall({ secrets: [BOLD_LLM_KEY], timeoutSeconds: 120
   }
 });
 
-exports._internal = { ownDocs, proposalRoute, proposalHours, asksForMore, replaceEmail, accountEmailsBySlackId, calendarUpdates, isCalendarLimit,
+exports._internal = { ownDocs, proposalRoute, proposalHours, asksForMore, replaceEmail, accountEmailsBySlackId, calendarUpdates, isCalendarLimit, meetCodeOf, ensureMeetOpen,
   slackImagesOf, slackToPlain, pingText, bugReportOf, bugNotes, bugTitle,
   channelsToJoin, setupMissing, setupMissingText, workspaceStarted, normalizeRepo, setupNudgeText, projectHealth,
   trialAction, trialTexts, stepsLeft, addedTo, eligibleSteps, eligibleText, onOthers,
