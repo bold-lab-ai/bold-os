@@ -468,7 +468,7 @@ window.BoldConversations = (function(){
           '<div class="event-form-actions"><button type="submit" class="ev-save">Reply</button><button type="button" class="bs-replycancel">Cancel</button></div></form>' : '');
     }
     // A message: who wrote it, its vote and buttons, its text, and its reply box when open.
-    function msgHtml(m, pid){
+    function msgHtml(m, pid, branches){
       var reply = m.id !== pid, folded = reply && Array.isArray(folds[m.id]), summary = '';
       var toggle = reply ? '<button type="button" class="bs-open" data-fold data-id="' + esc(m.id) + '" aria-expanded="' + !folded +
         '" aria-label="' + (folded ? 'Expand' : 'Collapse') + ' comment by ' + esc(m.name || 'someone') + '">' +
@@ -479,27 +479,27 @@ window.BoldConversations = (function(){
         summary = '<span class="bs-fold-count">' + count(ids.length) +
           (fresh ? ' · <strong>' + fresh + ' new</strong>' : '') + '</span>';
       }
-      return '<li class="bs-line' + (about && about.id === m.id ? ' is-about' : '') + '" id="m-' + esc(m.id) + '">' +
-        '<div class="bs-line-head">' + toggle + '<p class="bs-by">' + by(m, reply) + '</p>' + summary +
+      var tag = reply ? 'article' : 'li';
+      var row = '<' + tag + ' class="bs-line' + (about && about.id === m.id ? ' is-about' : '') + '" id="m-' + esc(m.id) + '">' +
+        '<div class="bs-line-head"><p class="bs-by">' + by(m, reply) + '</p>' + toggle + summary +
         (folded ? '' : '<div class="bs-right">' + vote(m, true) + acts(m, pid) + '</div>') + '</div>' +
-        (folded ? '' : (editing === m.id ? editForm(m, pid) : md(m.body)) + replyForm(m, pid)) + '</li>';
+        (folded ? '' : (editing === m.id ? editForm(m, pid) : md(m.body)) + replyForm(m, pid)) + '</' + tag + '>';
+      return reply ? '<li class="bs-node">' + row + (branches || '') + '</li>' : row;
     }
     function subtreeHtml(m, pid, depth){
-      var html = msgHtml(m, pid);
-      if (folds[m.id]) return html;
+      var children = kids(m.id);
+      if (folds[m.id] || !children.length) return msgHtml(m, pid);
       // Stop indenting long exchanges on a narrow screen. Deeper comments still fold individually.
       if (depth >= 5) {
+        var html = msgHtml(m, pid);
         walkReplies(m.id, function(child){ html += msgHtml(child, pid); return !folds[child.id]; });
         return html;
       }
-      var children = kids(m.id);
-      if (!children.length) return html;
       var label = 'Collapse thread by ' + esc(m.name || 'someone');
       var rail = '<button type="button" class="bs-branch-fold" data-fold data-id="' + esc(m.id) +
         '" aria-expanded="true" aria-label="' + label + '" title="' + label + '"><span aria-hidden="true">−</span></button>';
-      return html + '<li class="bs-branches">' + rail + children.map(function(c){
-        return '<ol class="bs-run">' + subtreeHtml(c, pid, depth + 1) + '</ol>';
-      }).join('') + '</li>';
+      var replies = children.map(function(c){ return subtreeHtml(c, pid, depth + 1); }).join('');
+      return msgHtml(m, pid, '<div class="bs-branches">' + rail + '<ol class="bs-run">' + replies + '</ol></div>');
     }
 
     // ---------- the thread's tree, beside it ----------

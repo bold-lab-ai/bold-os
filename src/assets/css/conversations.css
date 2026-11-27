@@ -80,13 +80,17 @@ a.bs-author:hover, a.bs-author:focus-visible{text-decoration:underline; text-und
 /* The tree: each level indented, with a line down the side of the replies to one message. */
 .bs-replies{list-style:none; margin:6px 0 0; padding:0 0 0 12px; border-left:2px solid var(--rule); display:flex; flex-direction:column; gap:6px;}
 .bs-replies-top{margin-top:0;}
-/* Replies, as on Reddit (conversations-forum.js subtreeHtml): the top level split by hairlines; a message's replies indented under it, each hooked to the line down their left. */
-.bs-blocks, .bs-run, .bs-branches > ol{list-style:none; margin:0; padding:0;}
-.bs-blocks, .bs-branches > ol{display:flex; flex-direction:column; gap:8px;}
-.bs-run{background:none; border:0;}
+/* Each comment starts at its avatar. Its text and editor line up under the author's name. */
+.bs-blocks, .bs-run{list-style:none; margin:0; padding:0;}
+.bs-blocks{display:flex; flex-direction:column; gap:8px;}
 .bs-line{padding:6px 12px 7px;}
-.bs-line + .bs-line, .bs-branches + .bs-line{border-top:1px solid var(--rule);}
-.bs-branches > .bs-run + .bs-run{margin-top:6px; border-top:1px solid var(--rule);}
+.bs-top{--avatar:32px; --author-gap:8px; --branch-indent:32px; --head-size:32px; --comment-pad:10px;
+  --avatar-center:calc(var(--avatar) / 2); --stem-start:calc(var(--comment-pad) + (var(--head-size) + var(--avatar)) / 2);
+  padding:0 12px;}
+.bs-node{position:relative; min-width:0;}
+.bs-top > .bs-node + .bs-node{margin-top:8px;}
+.bs-node > .bs-line{position:relative; padding:var(--comment-pad) 0 12px;}
+.bs-node > .bs-line > :is(.bs-text,.bs-more,.bs-replyform){margin-inline-start:calc(var(--avatar) + var(--author-gap));}
 /* The one you're reasoning about with your agent: an ink bar. */
 .bs-line.is-about{box-shadow:inset 3px 0 0 var(--ink);}
 .bs-line .bs-text{margin:2px 0 0; font-size:14px;}
@@ -94,21 +98,27 @@ a.bs-author:hover, a.bs-author:focus-visible{text-decoration:underline; text-und
 /* A long message folded (conversations.js clampLong): its first lines, fading out, and Show more. */
 .bs-line .bs-text.is-clamped{overflow:hidden; -webkit-mask-image:linear-gradient(to bottom, #000 65%, transparent); mask-image:linear-gradient(to bottom, #000 65%, transparent);}
 .bs-more{display:block; margin:2px 0 0; padding:0; font-size:12px; color:var(--accent);}
-/* An opened thread reads on in the conversation, as its messages: only indented. */
-.bs-branches{--branch-indent:24px; position:relative; padding:0 0 0 var(--branch-indent); background:none;}
-.bs-branches > .bs-run > .bs-line:first-child{border-top:1px solid var(--rule);}
-/* One button owns the gutter beside all of this comment's replies. */
-.bs-branch-fold{position:absolute; inset:0 auto 0 0; width:var(--branch-indent); z-index:1; padding:0; border:0;
-  background:transparent; color:var(--line); cursor:pointer;}
-.bs-branch-fold::before{content:''; position:absolute; inset:0 auto 0 50%; margin-left:-1px; border-left:2px solid currentColor;}
-.bs-branch-fold span{position:absolute; top:20px; left:50%; transform:translate(-50%,-50%); display:grid; place-items:center;
-  box-sizing:border-box; width:14px; height:14px; border:1px solid currentColor; border-radius:50%; background:var(--paper); color:var(--muted); font:600 12px/1 var(--sans);}
-.bs-branch-fold:is(:hover,:focus-visible), .bs-branch-fold:is(:hover,:focus-visible) span{color:var(--accent);}
+/* One continuous rail runs from the avatar, around each elbow, to the last child avatar. */
+.bs-branches{padding-left:var(--branch-indent); display:flow-root;}
+.bs-node:has(> .bs-branches) > .bs-line::before{content:''; position:absolute; left:var(--avatar-center); top:var(--stem-start); bottom:0;
+  border-left:1px solid var(--line); pointer-events:none;}
+.bs-branches > .bs-run > .bs-node::before, .bs-branches > .bs-run > .bs-node:not(:last-child)::after{content:''; position:absolute;
+  left:calc(var(--avatar-center) - var(--branch-indent)); top:0; border-left:1px solid var(--line); pointer-events:none;}
+.bs-branches > .bs-run > .bs-node::before{box-sizing:border-box; width:calc(var(--branch-indent) - var(--avatar-center));
+  height:calc(var(--comment-pad) + var(--head-size) / 2); border-bottom:1px solid var(--line); border-bottom-left-radius:10px;}
+.bs-branches > .bs-run > .bs-node:not(:last-child)::after{bottom:0;}
+/* The minus sits below the body. The same button also catches clicks along the line. */
+.bs-branch-fold{display:grid; place-items:center; width:var(--avatar); height:18px; margin:0 0 -18px calc(0px - var(--branch-indent));
+  padding:0; border:0; background:transparent; cursor:pointer;}
+.bs-branch-fold::before{content:''; position:absolute; z-index:1; left:0; width:var(--branch-indent); top:var(--stem-start); bottom:0;}
+.bs-branch-fold span{position:relative; z-index:2; display:grid; place-items:center; box-sizing:border-box; width:14px; height:14px;
+  border:1px solid currentColor; border-radius:50%; background:var(--paper); color:var(--muted); font:600 12px/1 var(--sans);}
+.bs-branch-fold:is(:hover,:focus-visible) span{color:var(--accent);}
 .bs-branch-fold:focus-visible{outline:none;}
 .bs-branch-fold:focus-visible span{outline:2px solid var(--accent); outline-offset:2px;}
-.bs-branches > .bs-run{position:relative;}
-.bs-branches > .bs-run::before{content:''; position:absolute; right:100%; top:20px; width:calc(var(--branch-indent) / 2); border-top:2px solid var(--line); pointer-events:none;}
-.bs-branch-fold:is(:hover,:focus-visible) ~ .bs-run::before{border-color:var(--accent);}
+.bs-node:has(> .bs-branches > .bs-branch-fold:is(:hover,:focus-visible)) > .bs-line::before,
+.bs-branch-fold:is(:hover,:focus-visible) ~ .bs-run > .bs-node::before,
+.bs-branch-fold:is(:hover,:focus-visible) ~ .bs-run > .bs-node::after{border-color:var(--accent);}
 .bs-open{display:inline-grid; place-items:center; width:32px; height:32px; flex:none; padding:0; border:0; border-radius:var(--radius);
   background:transparent; color:var(--ink-soft); cursor:pointer;}
 .bs-open svg{display:block; fill:none; stroke:currentColor; stroke-width:2.5; stroke-linecap:round; stroke-linejoin:round;}
@@ -118,10 +128,12 @@ a.bs-author:hover, a.bs-author:focus-visible{text-decoration:underline; text-und
 @media (pointer:coarse){ .bs-open{width:44px; height:44px;} }
 .bs-fold-count{color:var(--muted); font:500 12px var(--sans);}
 .bs-fold-count strong{color:var(--ink);}
-.bs-avatar.member-photo{width:26px; height:26px; font-size:10px;}
-.bs-author:has(.bs-avatar){display:inline-flex; align-items:center; gap:7px; vertical-align:middle;}
+.bs-avatar.member-photo{width:var(--avatar); height:var(--avatar); font-size:11px;}
+.bs-top .bs-author:has(.bs-avatar){display:inline-flex; align-items:center; gap:var(--author-gap); vertical-align:middle; color:var(--ink); font-size:14px;}
 .bs-line-head{display:flex; flex-wrap:wrap; align-items:center; padding:3px 0; gap:4px 8px;}
 .bs-line-head .bs-by{margin:0;}
+.bs-top .bs-line-head{min-height:var(--head-size); padding:0;}
+.bs-node > .bs-line > .bs-text{font-size:15px; line-height:1.5;}
 .bs-right{display:flex; align-items:center; justify-content:flex-end; gap:12px; margin-left:auto;}
 .bs-line > .bs-by{margin:0;}
 .bs-vote-inline{flex-direction:row; min-width:0; gap:1px; font-size:12px;}
@@ -253,5 +265,6 @@ body.bs-agent-open .bs-cols{padding-bottom:min(46vh, 420px);}
 .bs-answer [hidden]{display:none;}
 .bs-join .bs-answer{margin:4px 12px 16px;}
 /* On a phone, replies step in less, so a deep one keeps room for its text. */
-@media (max-width:600px){ .bs-branches{--branch-indent:16px;} }
+@media (max-width:600px){ .bs-top{--avatar:28px; --branch-indent:24px; --author-gap:6px; padding:0 4px;} }
+@media (pointer:coarse){ .bs-top{--head-size:44px;} }
 .bs-answer .bs-answer-to{margin-right:auto; font-size:13px; color:var(--muted);}

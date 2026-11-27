@@ -110,6 +110,10 @@ test('deep replies remain reachable and a draft returns after its ancestor is re
 
 test('the connector and its minus button fold their own branch and share the header’s state', () => {
   const thread = openThread(new Map(), 'sam');
+  const header = thread.row('b').querySelector('.bs-line-head');
+  assert.ok(header.querySelector('.bs-avatar'));
+  assert.ok(header.querySelector('.bs-right .bs-up'));
+  assert.ok(header.querySelector('.bs-right .bs-reply-btn'));
   const rail = id => thread.row(id).nextElementSibling?.querySelector(':scope > .bs-branch-fold');
   const originalB = rail('b');
   assert.equal(originalB.getAttribute('aria-label'), 'Collapse thread by River Day');
