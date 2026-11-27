@@ -16,6 +16,8 @@
 // BoldConversations.create({ project?: { id, title: () => its title }, thread?, note? (false: none), title? (false: no thread title), peek? (true: the home page's: no search box or filters, and a conversation opens on Conversations' page) }) → { el (kept: put it back after a redraw), away() }.
 window.BoldConversations = (function(){
   var EYE = '<svg class="bs-readers-eye" viewBox="0 0 16 16" aria-hidden="true" focusable="false"><path d="M1.5 8s2.4-4.5 6.5-4.5S14.5 8 14.5 8 12.1 12.5 8 12.5 1.5 8 1.5 8z"/><circle cx="8" cy="8" r="2"/></svg>';
+  var PIN = '<svg class="bs-pin-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><g transform="rotate(38 12 12)"><path d="M8 3h8v2l-1 1v4l3 3v2H6v-2l3-3V6L8 5zM12 15v7"/></g></svg>';
+  var PINNED = '<span class="bs-pin-label">' + PIN + 'Pinned</span>';
   // Shared comment composer. Keep its DOM node so live updates preserve the draft.
   function replyBox(o){
     var esc = BOLD.escapeHtml, label = o.label || 'Reply';
@@ -683,7 +685,7 @@ window.BoldConversations = (function(){
       var why = t === unassigned ? 'This conversation is awaiting a topic' : canPost ? '' : BOLD.cannotReason('conversations', 'edit');
       return '<div class="bs-topic-tools"><a class="bs-open-topic" href="conversations.html' + topicHref(t.id) + '">' + esc(t.icon + ' ' + t.name) + '</a>' +
         '<button type="button" class="btn-text bs-pin" aria-pressed="' + !!p.pinned + '"' + (why ? ' disabled title="' + esc(why) + '"' : '') + '>' +
-        (p.pinned ? 'Unpin' : 'Pin to topic') + '</button></div>';
+        (p.pinned ? PIN + 'Unpin' : 'Pin to topic') + '</button></div>';
     }
     function matchingReplies(p, query){
       var rank = window.BoldSearchRank;
@@ -696,13 +698,18 @@ window.BoldConversations = (function(){
       }).join('') + '</ul>';
     }
     function topicPreview(topic, list){
-      var rows = list.slice().sort(ConversationTopics.previewOrder).slice(0, 3).map(function(p){
+      var cards = list.slice().sort(ConversationTopics.previewOrder).slice(0, 3).map(function(p){
         var post = topicHref(topic.id) + '&post=' + encodeURIComponent(p.id);
-        return '<li>' + (p.pinned ? '<span class="bs-pin-label">Pinned</span> ' : '') + '<a href="' + esc(post) + '">' + esc(p.title) + '</a>' +
-          (p.private ? ' <span class="bs-private">Private</span>' : '') + '</li>';
+        var upvotes = Object.values(p.votes || {}).filter(function(v){ return Number(v) === 1; }).length;
+        var comments = Number(p.replies) || 0, detail = 'bs-highlight-' + uid + '-' + esc(p.id);
+        var flags = (p.pinned ? PINNED : '') + (p.private ? ' <span class="bs-private">Private</span>' : '');
+        return '<li class="bs-highlight"><a class="bs-highlight-title" href="' + esc(post) + '" aria-describedby="' + detail + '">' + esc(p.title) + '</a>' +
+          '<div class="bs-highlight-detail" id="' + detail + '">' + (flags ? '<div class="bs-highlight-flags">' + flags + '</div>' : '') +
+          '<div class="bs-highlight-counts"><span>' + upvotes + (upvotes === 1 ? ' upvote' : ' upvotes') + '</span> ' +
+          '<span>' + comments + (comments === 1 ? ' comment' : ' comments') + '</span></div></div></li>';
       }).join('');
       return '<li class="bs-topic"><h2><a href="' + topicHref(topic.id) + '"><span aria-hidden="true">' + esc(topic.icon) + '</span> ' + esc(topic.name) + '<span class="bs-topic-arrow" aria-hidden="true">›</span></a></h2>' +
-        (rows ? '<ul>' + rows + '</ul>' : '<p class="detail-muted">No conversations yet.</p>') + '</li>';
+        (cards ? '<ul class="bs-highlights">' + cards + '</ul>' : '<p class="detail-muted">No conversations yet.</p>') + '</li>';
     }
     function render(){
       var open = route().post;
@@ -788,7 +795,7 @@ window.BoldConversations = (function(){
         // A peek (the home page): each opens on Conversations' own page.
         var at = opts.peek ? 'conversations.html#post=' + encodeURIComponent(q.id) : postHash(q.id);
         return '<li class="bs-post' + (mine(q) ? ' is-mine' : '') + '" id="m-' + esc(q.id) + '">' + vote(q) +
-          '<div class="bs-post-main">' + (q.pinned ? '<span class="bs-pin-label">Pinned</span> ' : '') +
+          '<div class="bs-post-main">' + (q.pinned ? PINNED + ' ' : '') +
           (find.trim() ? '<span class="bs-result-topic">' + esc(groupOf(q).icon + ' ' + groupOf(q).name) + '</span>' : '') + '<h3 class="bs-title"><a href="' + at + '">' + esc(q.title) + '</a></h3><p class="bs-by">' + by(q) + (q.private ? ' · <span class="bs-private" title="' + esc(PRIVATE_TIP(q)) + '">Private</span>' : '') + '</p>' +
             (q.body && q.body.trim() !== q.title ? md(q.body).replace('class="bs-text md-desc"', 'class="bs-text md-desc bs-clip"') : '') +
             matchingReplies(q, query) + '<p class="bs-acts"><a href="' + at + '">' + count(q.replies || 0) + '</a></p></div></li>';

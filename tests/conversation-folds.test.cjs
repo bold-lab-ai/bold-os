@@ -141,9 +141,16 @@ test('topic previews are capped and searching within a topic links to a reply in
   const rows = ['first', 'second', 'third', 'fourth', 'old'].map((id, i) => ({
     ...post, id, title: id, topicId: id === 'old' ? 'advice' : 'about-bold', at: i, pinned: id === 'first'
   }));
+  Object.assign(rows[0], { votes: { sam: 1, lee: 1, pat: -1 }, replies: 1 });
   forum.publish('conversations', rows);
   const group = forum.document.querySelector('.bs-topic h2 a[href="#topic=about-bold"]').closest('.bs-topic');
   assert.deepEqual(Array.from(group.querySelectorAll('ul a'), a => a.textContent), ['first', 'fourth', 'third']);
+  const [pinned, recent] = group.querySelectorAll('.bs-highlight');
+  assert.equal(pinned.querySelector('.bs-highlight-counts').textContent, '2 upvotes 1 comment');
+  assert.equal(recent.querySelector('.bs-highlight-counts').textContent, '0 upvotes 0 comments');
+  assert.ok(pinned.querySelector('.bs-pin-label svg[aria-hidden="true"]'));
+  assert.equal(recent.querySelector('.bs-pin-label'), null);
+  assert.equal(pinned.querySelector('a').getAttribute('aria-describedby'), pinned.querySelector('.bs-highlight-detail').id);
   forum.location.hash = '#topic=about-bold';
   forum.publish('conversations', rows);
   assert.equal(forum.document.querySelectorAll('.bs-post').length, 4);
