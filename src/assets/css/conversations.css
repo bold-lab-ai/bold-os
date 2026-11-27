@@ -95,14 +95,20 @@ a.bs-author:hover, a.bs-author:focus-visible{text-decoration:underline; text-und
 .bs-line .bs-text.is-clamped{overflow:hidden; -webkit-mask-image:linear-gradient(to bottom, #000 65%, transparent); mask-image:linear-gradient(to bottom, #000 65%, transparent);}
 .bs-more{display:block; margin:2px 0 0; padding:0; font-size:12px; color:var(--accent);}
 /* An opened thread reads on in the conversation, as its messages: only indented. */
-.bs-branches{padding:0 0 0 24px; background:none;}
+.bs-branches{--branch-indent:24px; position:relative; padding:0 0 0 var(--branch-indent); background:none;}
 .bs-branches > .bs-run > .bs-line:first-child{border-top:1px solid var(--rule);}
-/* Lines from a message to its branches, as a tree: one down the left from the toggle, an elbow into
-   each branch's first message, stopping at the last. */
+/* One button owns the gutter beside all of this comment's replies. */
+.bs-branch-fold{position:absolute; inset:0 auto 0 0; width:var(--branch-indent); z-index:1; padding:0; border:0;
+  background:transparent; color:var(--line); cursor:pointer;}
+.bs-branch-fold::before{content:''; position:absolute; inset:0 auto 0 50%; margin-left:-1px; border-left:2px solid currentColor;}
+.bs-branch-fold span{position:absolute; top:20px; left:50%; transform:translate(-50%,-50%); display:grid; place-items:center;
+  box-sizing:border-box; width:14px; height:14px; border:1px solid currentColor; border-radius:50%; background:var(--paper); color:var(--muted); font:600 12px/1 var(--sans);}
+.bs-branch-fold:is(:hover,:focus-visible), .bs-branch-fold:is(:hover,:focus-visible) span{color:var(--accent);}
+.bs-branch-fold:focus-visible{outline:none;}
+.bs-branch-fold:focus-visible span{outline:2px solid var(--accent); outline-offset:2px;}
 .bs-branches > .bs-run{position:relative;}
-.bs-branches > .bs-run::before{content:''; position:absolute; left:-14px; top:-6px; width:10px; height:24px; border-left:2px solid var(--line); border-bottom:2px solid var(--line); border-bottom-left-radius:6px;}
-.bs-branches > .bs-run:not(:last-child)::after{content:''; position:absolute; left:-14px; top:16px; bottom:-8px; border-left:2px solid var(--line);}
-.bs-branches > .bs-run:first-child::before{top:-4px;}
+.bs-branches > .bs-run::before{content:''; position:absolute; right:100%; top:20px; width:calc(var(--branch-indent) / 2); border-top:2px solid var(--line); pointer-events:none;}
+.bs-branch-fold:is(:hover,:focus-visible) ~ .bs-run::before{border-color:var(--accent);}
 .bs-open{display:inline-grid; place-items:center; width:32px; height:32px; flex:none; padding:0; border:0; border-radius:var(--radius);
   background:transparent; color:var(--ink-soft); cursor:pointer;}
 .bs-open svg{display:block; fill:none; stroke:currentColor; stroke-width:2.5; stroke-linecap:round; stroke-linejoin:round;}
@@ -247,5 +253,5 @@ body.bs-agent-open .bs-cols{padding-bottom:min(46vh, 420px);}
 .bs-answer [hidden]{display:none;}
 .bs-join .bs-answer{margin:4px 12px 16px;}
 /* On a phone, replies step in less, so a deep one keeps room for its text. */
-@media (max-width:600px){ .bs-branches{padding-left:16px;} .bs-branches > .bs-run::before, .bs-branches > .bs-run:not(:last-child)::after{left:-10px;} .bs-branches > .bs-run::before{width:7px;} }
+@media (max-width:600px){ .bs-branches{--branch-indent:16px;} }
 .bs-answer .bs-answer-to{margin-right:auto; font-size:13px; color:var(--muted);}

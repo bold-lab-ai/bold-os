@@ -107,3 +107,22 @@ test('deep replies remain reachable and a draft returns after its ancestor is re
   assert.equal(thread.row('r64'), null);
   assert.match(thread.row('r59').textContent, /5 replies/);
 });
+
+test('the connector and its minus button fold their own branch and share the header’s state', () => {
+  const thread = openThread(new Map(), 'sam');
+  const rail = id => thread.row(id).nextElementSibling?.querySelector(':scope > .bs-branch-fold');
+  const originalB = rail('b');
+  assert.equal(originalB.getAttribute('aria-label'), 'Collapse thread by River Day');
+  originalB.querySelector('span').click();
+  assert.equal(thread.expanded('b'), false);
+  assert.equal(thread.expanded('a'), true);
+  assert.equal(thread.row('c'), null);
+  rail('a').click();
+  assert.equal(thread.expanded('a'), false);
+  assert.equal(thread.row('b'), null);
+  assert.ok(thread.row('sibling').querySelector('.bs-text'));
+  thread.toggle('a');
+  assert.equal(thread.expanded('b'), false);
+  thread.toggle('b');
+  assert.ok(thread.row('c').querySelector('.bs-text'));
+});

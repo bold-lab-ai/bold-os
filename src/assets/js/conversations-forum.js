@@ -470,7 +470,7 @@ window.BoldConversations = (function(){
     // A message: who wrote it, its vote and buttons, its text, and its reply box when open.
     function msgHtml(m, pid){
       var reply = m.id !== pid, folded = reply && Array.isArray(folds[m.id]), summary = '';
-      var toggle = reply ? '<button type="button" class="bs-open" data-id="' + esc(m.id) + '" aria-expanded="' + !folded +
+      var toggle = reply ? '<button type="button" class="bs-open" data-fold data-id="' + esc(m.id) + '" aria-expanded="' + !folded +
         '" aria-label="' + (folded ? 'Expand' : 'Collapse') + ' comment by ' + esc(m.name || 'someone') + '">' +
         '<svg width="16" height="16" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="m8 4 8 8-8 8"/></svg></button>' : '';
       if (folded) {
@@ -493,9 +493,13 @@ window.BoldConversations = (function(){
         return html;
       }
       var children = kids(m.id);
-      return html + (children.length ? '<li class="bs-branches">' + children.map(function(c){
+      if (!children.length) return html;
+      var label = 'Collapse thread by ' + esc(m.name || 'someone');
+      var rail = '<button type="button" class="bs-branch-fold" data-fold data-id="' + esc(m.id) +
+        '" aria-expanded="true" aria-label="' + label + '" title="' + label + '"><span aria-hidden="true">−</span></button>';
+      return html + '<li class="bs-branches">' + rail + children.map(function(c){
         return '<ol class="bs-run">' + subtreeHtml(c, pid, depth + 1) + '</ol>';
-      }).join('') + '</li>' : '');
+      }).join('') + '</li>';
     }
 
     // ---------- the thread's tree, beside it ----------
@@ -938,11 +942,11 @@ window.BoldConversations = (function(){
         ref.update(patch).catch(oops('Voting'));
         return;
       }
-      if (b.classList.contains('bs-open')) {
+      if (b.hasAttribute('data-fold')) {
         if (folds[id]) delete folds[id]; else folds[id] = descendantIds(id);
         saveFolds(); render();
         var button = threadEl.querySelector('.bs-open[data-id="' + CSS.escape(id) + '"]');
-        if (button) button.focus({ preventScroll: true });
+        if (button) button.focus({ preventScroll: !b.classList.contains('bs-branch-fold') });
         return;
       }
       if (b.classList.contains('bs-reply-btn')) {
