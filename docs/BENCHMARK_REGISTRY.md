@@ -24,10 +24,28 @@ Choose **Graph** to explore the same records visually. Select a node to see its 
 
 On **Add problem**, select any broader objectives or problems and, separately, any related problems. On a saved problem, use **Edit family links**. The same problem can appear under several objectives. Its projects, verifiers and history are shared across every path. Add a moonshot with **+ Moonshot**, which opens the project form; rename it or change its northstars on its project page.
 
+## Problem categories
+
+Requested by the owner on 27 November 2026. Each problem has one category. The member chooses it when they add the problem, in the conversation with Sofya or in the form, and can change it on the problem's page.
+
+| Category | Meaning | Verifier |
+| --- | --- | --- |
+| Method | A research problem whose solutions are scored and compared. | Required. **Add verifier** opens AutoKaggle Lite. |
+| Benchmark | Building the benchmark is the goal. | Not required, as before. |
+| Exploration | An observation or a high-level idea to follow. There is nothing to score yet. | Not required. |
+
+- An exploration is defined by a title and by what inspired it (`inspiration`, at most 4,000 characters). Adding one asks for nothing else. Its significance, difficulties and frontier are optional.
+- Only a method problem shows **Add verifier**, gets verifier reminders, can issue a verifier handoff, and accepts a verifier registration. A benchmark and an exploration show **Verifier not required**.
+- `functions/problem-category.js` holds the rule for the server and the pages. A problem saved before categories has no `category`: `builds_benchmark` true is a benchmark, anything else is a method. Nothing is migrated.
+- The server keeps `builds_benchmark` (true for a benchmark only) and still accepts it from an older page or agent. `category` and `builds_benchmark` must agree when a request sends both.
+- The link to Lite adds `category=method` to its fragment and keeps `builds_benchmark=0`, so a Lite release from before categories reads it as before.
+- Deploy the `benchmarkRegistry` and `problemInterview` functions with this page change. A function from before categories refuses a saved exploration and a category edit; the other paths work with either version.
+- A project proposal on an exploration problem still asks for a verifier plan (link one, defer it, or mark the project as a benchmark). The proposal has no exploration choice yet.
+
 ## Onboard an open problem
 
-1. Select **Add problem**. Enter the title, select the person who defined it, and describe its significance, difficulties and current frontier. Link existing projects and name collaborators if applicable. Save the problem. To propose a new project, follow **All projects**, select **Propose a project**, and choose the open problem. If the problem is missing, follow **here** below the project form’s **Open problem** field. The bank opens in a separate tab. Save the problem and return to the proposal to select it. **Refresh list** reloads the choices if needed. The project then appears on the problem page.
-2. Select **Add verifier**. You can start before a project exists. To associate the verifier with a linked project, select it before opening Lite. Confirm the transfer. The handoff includes the problem ID, title, and a research brief of up to 4,000 characters in the URL fragment. It includes a project ID only when selected. Lite asks for storage consent. Each verifier has its own session, releases, data and assets, repository, metrics and score format, submission format, and constraints. Open **Verifiers** to compare releases. Older releases can lack recorded contract details.
+1. Select **Add problem**. Enter the title, choose its category, select the person who defined it, and describe its significance, difficulties and current frontier. For an exploration, describe only what inspired it. Link existing projects and name collaborators if applicable. Save the problem. To propose a new project, follow **All projects**, select **Propose a project**, and choose the open problem. If the problem is missing, follow **here** below the project form’s **Open problem** field. The bank opens in a separate tab. Save the problem and return to the proposal to select it. **Refresh list** reloads the choices if needed. The project then appears on the problem page.
+2. On a method problem, select **Add verifier**. You can start before a project exists. To associate the verifier with a linked project, select it before opening Lite. Confirm the transfer. The handoff includes the problem ID, title, and a research brief of up to 4,000 characters in the URL fragment. It includes a project ID only when selected. Lite asks for storage consent. Each verifier has its own session, releases, data and assets, repository, metrics and score format, submission format, and constraints. Open **Verifiers** to compare releases. Older releases can lack recorded contract details.
 3. **Autoresearch baseline** is planned. This release does not start a baseline run or send a result email.
 
 The submitter can accept or decline reminders when saving. People who submitted older problems can turn reminders on in their problem. The first reminder on a new problem is due at creation. It repeats every seven days until a verifier is registered. Opening Lite does not count. Archiving pauses delivery. Restoring resumes it when the submitter has reminders enabled. The submitter can change this choice on the problem.
