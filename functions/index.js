@@ -41,6 +41,7 @@ const accessLib = require('./access');
 const merge = require('./merge');
 const guideAnchors = require('./guide-anchors');
 const research = require('./research-map');
+const localTime = require('./local-time');
 const { setGlobalOptions } = require('firebase-functions/v2');
 const logger = require('firebase-functions/logger');
 const admin = require('firebase-admin');
@@ -981,6 +982,44 @@ async function emailForSlackId(slackId){
 async function allPeople(){
   const snap = await db.collection('people').get();
   return snap.docs.map(function(d){ return d.data(); });
+}
+
+// ---------- Each person's timezone: their Slack profile's (2026-11-27) ----------
+// people/{slackId}.tz is the timezone Slack has for them (an IANA name, 'America/New_York'; kept by upsertPerson
+// and syncPeopleFromSlack), and what's theirs follows it: the pages show a meeting's time where they are
+// (getMyAccess → BOLD.timeZone, local-time.js), and a reminder due at an hour reaches them at that hour where they
+// are. Whoever has none is taken to be in London, where meetings are entered and kept.
+// Pure: Slack user `u`'s timezone, '' if Slack gives none this runtime knows.
+function slackTz(u){
+  const tz = u && typeof u.tz === 'string' ? u.tz : '';
+  return tz && localTime.zone(tz) === tz ? tz : '';
+}
+async function timeZoneFor(email){
+  if (!email) return localTime.LONDON;
+  const snap = await db.collection('people').where('email', '==', String(email).toLowerCase()).limit(1).get();
+  return localTime.zone(snap.empty ? '' : snap.docs[0].data().tz);
+}
+// → { email: tz } for everyone on the roster with one.
+async function timeZones(){
+  const out = {};
+  (await allPeople()).forEach(function(p){ if (p.email && p.tz) out[String(p.email).toLowerCase()] = p.tz; });
+  return out;
+}
+// The hour (where each person is) the daily reminders reach them.
+const REMINDER_HOUR = 9;
+// Pure: of `emails` (lower-cased, each once), those for whom it's `hour` o'clock where they are at `now`
+// (`zones`: { email: tz }), on `day` ('MO'…) if one is given. A reminder that used to go to everyone at 09:00
+// London runs every hour and sends to these: each person hears once, at 09:00 their time.
+function atLocalHour(emails, zones, hour, now, day){
+  return Array.from(new Set((emails || []).map((e) => String(e || '').trim().toLowerCase()).filter(Boolean)))
+    .filter((e) => localTime.isHour((zones || {})[e], hour, now, day));
+}
+// reminded/{id} (server only): a reminder that went to one person, so the hourly runs send each theirs once.
+// → true the first time `key` is claimed for `email`.
+async function remindOnce(key, email){
+  const id = crypto.createHash('sha256').update(key + '|' + String(email).toLowerCase()).digest('hex').slice(0, 40);
+  try { await db.collection('reminded').doc(id).create({ key, at: Date.now() }); return true; }
+  catch (err){ if (err.code === 6) return false; throw err; }
 }
 
 // Sorts a query snapshot's docs by updatedAt descending and caps to
@@ -3312,9 +3351,11 @@ async function upsertPerson(u, teamId){
   if (u.deleted || (teamId && u.team_id && u.team_id !== teamId) || slackExternal(u, teamId)) { if ((await ref.get()).exists) { await ref.delete(); logger.info('upsertPerson: removed', { slackId: u.id }); } return; }
   if (!u.profile || !u.profile.email) { logger.warn('upsertPerson: no email (users:read.email?)', { slackId: u.id }); return; }
   // Emails lower case, as everywhere else on BOLD.OS (Slack keeps whatever case was typed).
-  const p = withAccountEmail({ slackId: u.id, email: String(u.profile.email).toLowerCase(), name: u.profile.real_name || u.real_name || u.name || u.profile.email }, await accountEmailFor(u.id));
+  // Their timezone too, when Slack gives it (slackTz): what's theirs on BOLD.OS follows it.
+  const tz = slackTz(u);
+  const p = withAccountEmail(Object.assign({ slackId: u.id, email: String(u.profile.email).toLowerCase(), name: u.profile.real_name || u.real_name || u.name || u.profile.email }, tz ? { tz } : {}), await accountEmailFor(u.id));
   const was = (await ref.get()).data();
-  if (was && was.name === p.name && was.email === p.email && (was.slackEmail || '') === (typeof p.slackEmail === 'string' ? p.slackEmail : '')) return;
+  if (was && was.name === p.name && was.email === p.email && (was.slackEmail || '') === (typeof p.slackEmail === 'string' ? p.slackEmail : '') && (!tz || was.tz === tz)) return;
   await ref.set(p, { merge: true });
   logger.info('upsertPerson: ' + (was ? 'updated' : 'added'), { slackId: u.id });
   // New on the BOLD Slack: PAN-BOLD's channels (Settings › Slack channels), before any record of theirs.
@@ -3371,11 +3412,13 @@ exports.getMyAccess = onCall(
   async (request) => {
     const email = signedInEmail(request);
     try { await recordSignUp(request.auth.uid, email.toLowerCase()); } catch (err){ logger.warn('Recording a first sign-in failed', { error: String(err && err.message || err) }); }
-    const [fullWrite, group, pages] = await Promise.all([isFullWrite(email.toLowerCase()), access.groupFor(email), access.table()]);
+    const [fullWrite, group, pages, tz] = await Promise.all([isFullWrite(email.toLowerCase()), access.groupFor(email), access.table(),
+      timeZoneFor(email).catch(() => localTime.LONDON)]);
     // Their group and Who can see what, for the pages to show what's theirs (BOLD.can);
     // viewAs: the group a PI or admin is viewing the site as (View as), so the page says so.
+    // tz: their Slack profile's timezone, for meeting times where they are (BOLD.timeZone).
     const as = viewingAs(email);
-    return Object.assign({ fullWrite, group, pages }, as ? { viewAs: as } : {});
+    return Object.assign({ fullWrite, group, pages, tz }, as ? { viewAs: as } : {});
   }
 );
 
@@ -7065,7 +7108,7 @@ async function syncPeopleFromSlack(token){
   const ours = u => !team || ((!u.team_id || u.team_id === team) && !slackExternal(u, team));
   const people = members
     .filter(u => !u.deleted && ours(u) && !u.is_bot && u.id !== 'USLACKBOT' && u.profile && u.profile.email)
-    .map(u => ({ slackId: u.id, email: String(u.profile.email).toLowerCase(), name: u.profile.real_name || u.real_name || u.name || u.profile.email }));
+    .map(u => Object.assign({ slackId: u.id, email: String(u.profile.email).toLowerCase(), name: u.profile.real_name || u.real_name || u.name || u.profile.email }, slackTz(u) ? { tz: slackTz(u) } : {}));
   if (!people.length) {
     logger.error('syncPeople: Slack returned nobody with an email — is users:read.email granted? Nothing written.', { members: members.length });
     throw new Error('Slack returned nobody with an email (is users:read.email granted?)');
@@ -7081,7 +7124,7 @@ async function syncPeopleFromSlack(token){
   people.forEach(p => {
     const was = current[p.slackId];
     const slackEmail = typeof p.slackEmail === 'string' ? p.slackEmail : '';
-    if (!was || was.name !== p.name || was.email !== p.email || (was.slackEmail || '') !== slackEmail) writes.push({ id: p.slackId, data: p, added: !was });
+    if (!was || was.name !== p.name || was.email !== p.email || (was.slackEmail || '') !== slackEmail || (p.tz && was.tz !== p.tz)) writes.push({ id: p.slackId, data: p, added: !was });
   });
   // On the roster but not on Slack's list at all (someone from elsewhere, out of every shared channel):
   // gone too, unless Slack's list looks short (then nobody is removed this way, and it's logged).
@@ -8936,8 +8979,9 @@ function inviteReminderStage(expires, todayIso){
   return days <= 3 ? 'soon' : '';
 }
 
+// Every hour: each PI and admin is told once for each stage, at 09:00 where they are (atLocalHour, remindOnce).
 exports.remindJoinInvite = onSchedule(
-  { schedule: '0 9 * * *', timeZone: 'Europe/London', secrets: [SLACK_BOT_TOKEN] },
+  { schedule: '0 * * * *', timeZone: 'Europe/London', secrets: [SLACK_BOT_TOKEN] },
   async function(){
     const ref = db.collection('settings').doc('joinInvite');
     const snap = await ref.get();
@@ -8945,14 +8989,16 @@ exports.remindJoinInvite = onSchedule(
     const stage = inviteReminderStage(inv.slackInviteExpires || '', todayIsoLondon());
     if (!stage || !inv.slackInviteUrl) return;
     const key = stage + ':' + inv.slackInviteExpires + ':' + inv.slackInviteUrl;
+    // `reminded`: from when it went to everyone at once, at 09:00 London; one sent then isn't sent again.
     if (inv.reminded === key) return;
     const headline = (stage === 'expired'
       ? '⚠️ The Slack invite link in the welcome email expired on ' + inv.slackInviteExpires + ': welcome emails wait until there’s a new one. '
       : '⏳ The Slack invite link in the welcome email expires on ' + inv.slackInviteExpires + '. ') +
       'In Slack: Invite people → Copy invite link (the longest expiry), then ' + linkedTitle('add it under Settings', SITE_URL + 'settings.html') + ' with its new expiry date.';
-    const staff = (await rolesEmails('pis')).concat(await rolesEmails('admins'));
-    await sendEvent(SLACK_BOT_TOKEN.value(), { key: 'invite-link-reminder', emails: staff, headline });
-    await ref.set({ reminded: key }, { merge: true });
+    const staff = atLocalHour((await rolesEmails('pis')).concat(await rolesEmails('admins')), await timeZones(), REMINDER_HOUR, Date.now());
+    const to = [];
+    for (const e of staff) if (await remindOnce('invite-link:' + key, e)) to.push(e);
+    if (to.length) await sendEvent(SLACK_BOT_TOKEN.value(), { key: 'invite-link-reminder', emails: to, headline });
   }
 );
 
@@ -9082,6 +9128,18 @@ function letterRemindersDue(requests, today){
     const due = LETTER_REMIND_DAYS.filter((n) => left <= n && left >= 0 && (r.reminded || []).indexOf(n) === -1);
     if (due.length) out.push({ id: q.id, recipientId: r.id, days: Math.min.apply(null, due), left });
   }));
+  return out;
+}
+
+// Pure: the reminders due at `now`: those of the requests whose writer it's 09:00 for where they are (`zones`:
+// { email: tz }), each counted from the writer's own date → letterRemindersDue's.
+function letterRemindersNow(requests, zones, now){
+  const out = [];
+  (requests || []).forEach((q) => {
+    const tz = (zones || {})[String(q.writerEmail || '').toLowerCase()];
+    if (!localTime.isHour(tz, REMINDER_HOUR, now)) return;
+    letterRemindersDue([q], localTime.at(tz, now).date).forEach((x) => out.push(x));
+  });
   return out;
 }
 
@@ -9257,13 +9315,15 @@ exports.letterWriters = onCall(async (request) => {
   return { writers: await letterWriters() };
 });
 
+// Every hour: each writer's reminders at 09:00 where they are, the days left counted from their own date.
 exports.remindLetterWriters = onSchedule(
-  { schedule: '0 9 * * *', timeZone: 'Europe/London', secrets: [SLACK_BOT_TOKEN] },
+  { schedule: '0 * * * *', timeZone: 'Europe/London', secrets: [SLACK_BOT_TOKEN] },
   async function(){
     const snap = await db.collection('letterRequests').where('open', '==', true).get();
+    if (snap.empty) return;
     const byId = {};
     snap.docs.forEach((doc) => { byId[doc.id] = doc.data(); });
-    const due = letterRemindersDue(snap.docs.map((doc) => ({ id: doc.id, recipients: doc.data().recipients })), todayIsoLondon());
+    const due = letterRemindersNow(snap.docs.map((doc) => ({ id: doc.id, writerEmail: doc.data().writerEmail, recipients: doc.data().recipients })), await timeZones(), Date.now());
     for (const x of due) {
       const q = byId[x.id];
       const r = q.recipients.filter((y) => y.id === x.recipientId)[0];
@@ -9440,26 +9500,41 @@ function venueCallMessage(name, year, group, inv){
     ' is on OpenReview' + (when ? ': ' + when : '') + '.';
 }
 
-// Mondays 09:00 London: looks for each venue's next call, in its window, and
-// DMs the PIs and admins once when it appears (venueCalls/{name}-{year},
-// server only).
+// Every hour, for the PIs and admins it's Monday 09:00 for where they are: looks for each venue's next call, in
+// its window, and DMs each of them once when it appears (venueCalls/{name}-{year}, server only: its `text`, and
+// `notified`, who has had it). One found is passed on for a week (VENUE_CALL_DAYS), so everyone's Monday comes.
+// A call from before (no `text`) went to everyone at once, at 09:00 London.
+const VENUE_CALL_DAYS = 8;
 exports.checkVenueCalls = onSchedule(
-  { schedule: '0 9 * * 1', timeZone: 'Europe/London', secrets: [SLACK_BOT_TOKEN] },
+  { schedule: '0 * * * *', timeZone: 'Europe/London', secrets: [SLACK_BOT_TOKEN] },
   async function(){
+    const now = Date.now();
+    const to = atLocalHour((await rolesEmails('pis')).concat(await rolesEmails('admins')), await timeZones(), REMINDER_HOUR, now, 'MO');
+    if (!to.length) return;
     for (const v of venueCallsToCheck(todayIsoLondon())) {
       const ref = db.collection('venueCalls').doc(v.name + '-' + v.year);
-      if ((await ref.get()).exists) continue;
-      let inv;
-      try { inv = await openReviewSubmission(v.group, v.year); }
-      catch (err) { logger.warn('checkVenueCalls: OpenReview failed', { venue: v.name, year: v.year, error: String(err) }); continue; }
-      if (!inv) continue;
-      const text = venueCallMessage(v.name, v.year, v.group, inv);
-      const to = Array.from(new Set((await rolesEmails('pis')).concat(await rolesEmails('admins')).map((e) => e.toLowerCase())));
-      for (const email of to) await dmByEmail(SLACK_BOT_TOKEN.value(), email, text, 'venue-calls');
-      await ref.set({ venue: v.name, year: v.year, cdate: inv.cdate || null, duedate: inv.duedate || null, notified: to, at: FieldValue.serverTimestamp() });
+      let call = (await ref.get()).data();
+      if (!call) {
+        let inv;
+        try { inv = await openReviewSubmission(v.group, v.year); }
+        catch (err) { logger.warn('checkVenueCalls: OpenReview failed', { venue: v.name, year: v.year, error: String(err) }); continue; }
+        if (!inv) continue;
+        call = { venue: v.name, year: v.year, cdate: inv.cdate || null, duedate: inv.duedate || null, text: venueCallMessage(v.name, v.year, v.group, inv), notified: [], foundAt: now };
+        await ref.set(Object.assign({ at: FieldValue.serverTimestamp() }, call));
+      }
+      for (const email of venueCallRecipients(call, to, now)) {
+        await ref.update({ notified: FieldValue.arrayUnion(email) });
+        await dmByEmail(SLACK_BOT_TOKEN.value(), email, call.text, 'venue-calls');
+      }
     }
   }
 );
+// Pure: who of `to` (lower-cased emails) still gets the call found `call` ({ text, notified, foundAt }) at `now`.
+function venueCallRecipients(call, to, now){
+  if (!call || !call.text || !(now - call.foundAt < VENUE_CALL_DAYS * 86400000)) return [];
+  const had = (call.notified || []).map((e) => String(e).toLowerCase());
+  return (to || []).filter((e) => had.indexOf(e) < 0);
+}
 
 // ---------- Interactions: who did what with whom, for Connections and Network ----------
 // interactions/{id}: { kind, group, from, to, at, title, href, thing, source }; `thing`
@@ -9847,7 +9922,8 @@ exports.calendarFeed = agentApi.calendarFeed;
 const labSeries = require('./series')({ db, onCall, onDocumentWritten, HttpsError, logger, callerEmail, isFullWrite, access, rolesEmails,
   googleFetch, syncMoves, CAL, calendarUpdates, isCalendarLimit, CALENDAR_LIMIT_MSG, eventConference, eventTimes, conferenceChange, openMeetOnce, meetingRecurrence, sameMeetingTimes, seriesStart,
   normalizeMeeting, googleAddressesFor, groupOf, tellStaff, slackText, linkedTitle, SITE_URL, GOOGLE_OAUTH, SLACK_BOT_TOKEN, FieldValue, crypto,
-  onSchedule, tellPeople: (emails, text, key) => sendEvent(SLACK_BOT_TOKEN.value(), { key, emails, headline: text }) });
+  onSchedule, tellPeople: (emails, text, key) => sendEvent(SLACK_BOT_TOKEN.value(), { key, emails, headline: text }),
+  atLocalHour, timeZones, remindOnce, REMINDER_HOUR });
 exports.eventSeries = labSeries.eventSeries;
 exports.onMemberGroupChanged = labSeries.onMemberGroupChanged;
 exports.seriesNudges = labSeries.seriesNudges;
@@ -9961,7 +10037,7 @@ exports.problemInterview = onCall({ secrets: [BOLD_LLM_KEY], timeoutSeconds: 120
   }
 });
 
-exports._internal = { ownDocs, proposalRoute, proposalHours, asksForMore, replaceEmail, accountEmailsBySlackId, calendarUpdates, isCalendarLimit, meetCodeOf, ensureMeetOpen, openMeetOnce,
+exports._internal = { slackTz, atLocalHour, letterRemindersNow, venueCallRecipients, ownDocs, proposalRoute, proposalHours, asksForMore, replaceEmail, accountEmailsBySlackId, calendarUpdates, isCalendarLimit, meetCodeOf, ensureMeetOpen, openMeetOnce,
   slackImagesOf, slackToPlain, pingText, bugReportOf, bugNotes, bugTitle,
   channelsToJoin, setupMissing, setupMissingText, workspaceStarted, normalizeRepo, setupNudgeText, projectHealth,
   trialAction, trialTexts, stepsLeft, addedTo, eligibleSteps, eligibleText, onOthers,

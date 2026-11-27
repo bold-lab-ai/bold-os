@@ -1035,6 +1035,20 @@
     return level === 'none' ? 'nobody' : level === 'everyone' ? 'everyone signed in' : LEVEL_NAMES[level] + ' and above';
   };
   BOLD.myGroup = function(){ return access ? access.group : null; };
+  // The viewer's timezone: their Slack profile's (getMyAccess; people/{slackId}.tz), London until it's known or
+  // without one. Meeting times are shown in it (meetingTextLocal, project-fields.js); a page that shows them
+  // draws again on BOLD.onTimeZone.
+  BOLD.timeZone = function(){ return (access && access.tz) || 'Europe/London'; };
+  // fn(tz) when the viewer's timezone turns out not to be the one the page was drawn with (the last visit's, or
+  // London): a page showing meeting times draws again.
+  var tzDrawn = BOLD.timeZone(), tzListeners = [];
+  BOLD.onTimeZone = function(fn){ tzListeners.push(fn); };
+  accessListeners.push(function(){
+    var tz = BOLD.timeZone();
+    if (tz === tzDrawn) return;
+    tzDrawn = tz;
+    tzListeners.slice().forEach(function(fn){ try { fn(tz); } catch (e){} });
+  });
   // The event and series levels (`visibleTo`) the viewer sees: from 'public' (anyone, even signed out)
   // up to their group's (firestore.rules visibleLevels; functions/access.js). Lists query with them.
   var VIS = ['public', 'everyone', 'associate', 'internal', 'staff', 'exec'];
@@ -1080,14 +1094,14 @@
     Promise.all([table, mine]).then(function(r){
       var known = access && access.e === (user.email || '') ? access : null;
       // Viewing as a group: the server says which (getMyAccess), not the member record.
-      if (!viewAs) setAccess({ e: user.email || '', group: known && known.fullWrite ? 'exec' : r[1], pages: r[0], fullWrite: !!(known && known.fullWrite) });
+      if (!viewAs) setAccess({ e: user.email || '', group: known && known.fullWrite ? 'exec' : r[1], pages: r[0], fullWrite: !!(known && known.fullWrite), tz: (known && known.tz) || '' });
       // PIs and admins count as BOLD-exec and change who can see what, which only the server knows.
       withFunctions(function(){
         firebase.app().functions('europe-west2').httpsCallable('getMyAccess')().then(function(x){
           var d = x.data || {};
           // Asked to view as a group but not a PI or admin: the server ignored it, and so do we.
           if (viewAs && !d.viewAs) { viewAs = null; try { sessionStorage.removeItem('boldViewAs'); } catch (e){} }
-          setAccess(Object.assign({ e: user.email || '', group: d.group || r[1], pages: d.pages || r[0], fullWrite: !!d.fullWrite }, d.viewAs ? { viewAs: d.viewAs } : {}));
+          setAccess(Object.assign({ e: user.email || '', group: d.group || r[1], pages: d.pages || r[0], fullWrite: !!d.fullWrite, tz: d.tz || '' }, d.viewAs ? { viewAs: d.viewAs } : {}));
           if (!d.viewAs) groupChanged(user.email || '', d.group || r[1]);
         }).catch(function(){});
       });
