@@ -72,6 +72,15 @@ button.lt-open:hover{color:var(--link); text-decoration:underline; text-decorati
 .lt-rrow input[disabled], .lt-rrow select[disabled]{opacity:.6;}
 @media (max-width:560px){ .lt-rrow{grid-template-columns:1fr;} }
 .edit-hint{margin:0 0 10px; color:var(--muted);}
+/* The text boxes grow with their text (letters.js grow), so there's nothing to drag or scroll. */
+.lt-form textarea.lt-grow, .lt-dform textarea.lt-grow{resize:none; overflow:hidden;}
+/* Drafts kept in this browser (letter-drafts.js): when one was saved, beside the form's buttons;
+   a request not asked yet, as a line of the list; a request's changes not saved yet. */
+.lt-form .event-form-actions, .lt-dform .event-form-actions{flex-wrap:wrap; align-items:center;}
+.lt-saved{font-family:var(--sans); font-size:13px; color:var(--muted);}
+.lt-saved:empty{display:none;}
+.lt-draft .lt-status{margin-right:8px;}
+.lt-unsaved .btn-text{margin-left:6px;}
 
 /* Person picker: type to search the Slack roster (as the speaker picker, session.css). */
 .spk-search{position:relative; margin-top:4px;}

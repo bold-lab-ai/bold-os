@@ -8,6 +8,9 @@
 // PhD student who supervised their project): they see the request on a third tab and
 // send the draft here; the referee reads it on the request (letterDrafts, the two of
 // them only), and the applicant sees only that it's in.
+// What's typed and not sent yet is kept as a draft in this browser only (letter-drafts.js):
+// saved as it's typed, and by "Save as draft". No draft reaches the server, so a request
+// changes, and its people hear, only when its form is sent. The text boxes grow with their text.
 (function(){
   var esc = BOLD.escapeHtml;
   var main = document.getElementById('letters');
@@ -24,6 +27,31 @@
   var shown = {};
   // The first drafts being typed (not sent yet): id → true.
   var typed = {};
+  // The viewer's drafts in this browser (BoldLetterDrafts.store), null if it keeps none; the
+  // open request form's draft: { kind: 'ask' | 'edit', id, base (the form as it'd open without
+  // a draft, as JSON), opened (as it did open), was (the draft then), timer }; the first drafts
+  // waiting to be saved: id → timer; and the requests with changes not saved yet: id → draft.
+  var store = null, formDraft = null, firstTimers = {}, unsaved = {};
+  var SAVE_AFTER = 600;
+  var NO_STORE = 'This browser doesn’t let BOLD.OS keep a draft';
+  var KEEP_TIP = 'Keep it in this browser to finish later. Nobody is told.';
+
+  // When a draft was saved: the time if today, the day too before.
+  function savedAt(t){
+    var d = new Date(t), time = d.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' });
+    return d.toDateString() === new Date().toDateString() ? time : d.toLocaleDateString('en-GB', { day: 'numeric', month: 'short' }) + ', ' + time;
+  }
+
+  // A text box as tall as its text (never shorter than its rows), so it's read without
+  // scrolling inside it. One on a tab that isn't shown has no height to measure: showTab() does it.
+  function grow(ta){
+    if (!ta.offsetHeight) return;
+    var y = window.scrollY;
+    ta.style.height = 'auto';
+    ta.style.height = (ta.scrollHeight + ta.offsetHeight - ta.clientHeight) + 'px';
+    if (window.scrollY !== y) window.scrollTo(window.scrollX, y);   // measuring it mustn't move the page
+  }
+  function growAll(){ Array.prototype.forEach.call(main.querySelectorAll('textarea.lt-grow'), grow); }
 
   function day(iso){ return iso ? new Date(iso + 'T00:00:00').toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' }) : ''; }
   function when(t){ return t ? new Date(t).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' }) : ''; }
@@ -142,16 +170,22 @@
 
   function draftFormHtml(q, dr){
     dr = dr || {};
+    // What they typed and didn't send (kept in this browser) comes before what they sent.
+    var mine = store ? store.get('first', q.id) : null;
+    if (mine) dr = mine;
     var b = busy[q.id] ? ' disabled' : '';
     return '<div class="event-form lt-dform" data-id="' + esc(q.id) + '">' +
       '<p class="detail-muted">' + esc(first(q.requesterName)) + ' asked you to write a first draft for ' + esc(q.writerName) +
         '. Only ' + esc(first(q.writerName)) + ' and you read it; ' + esc(first(q.requesterName)) + ' sees only that it’s in.</p>' +
-      '<label>The draft<textarea class="lt-dtext no-tags" rows="12" maxlength="20000">' + esc(dr.text || '') + '</textarea></label>' +
+      '<label>The draft<textarea class="lt-dtext lt-grow no-tags" rows="12" maxlength="20000">' + esc(dr.text || '') + '</textarea></label>' +
       '<label>Or a link to it (optional)<input type="url" class="lt-durl" maxlength="1000" value="' + esc(dr.url || '') + '" placeholder="https://…"></label>' +
-      '<label>A note for ' + esc(first(q.writerName)) + ' (optional)<textarea class="lt-dnote no-tags" rows="3" maxlength="2000">' + esc(dr.note || '') + '</textarea></label>' +
+      '<label>A note for ' + esc(first(q.writerName)) + ' (optional)<textarea class="lt-dnote lt-grow no-tags" rows="3" maxlength="2000">' + esc(dr.note || '') + '</textarea></label>' +
       '<p class="ev-error" hidden></p><div class="event-form-actions">' +
         '<button type="button" class="ev-save lt-dsave" data-id="' + esc(q.id) + '"' + b + '>' + (q.draftAt ? 'Update the draft' : 'Send the first draft') + '</button>' +
-        (q.draftAt ? '<span class="detail-muted">Sent ' + when(q.draftAt) + '</span>' : '') + '</div></div>';
+        '<button type="button" class="lt-dkeep" data-id="' + esc(q.id) + '"' + (store ? ' title="' + KEEP_TIP + '"' : ' disabled title="' + NO_STORE + '"') + '>Save without sending</button>' +
+        '<button type="button" class="lt-ddiscard" data-id="' + esc(q.id) + '" title="Back to ' + (q.draftAt ? 'the draft you sent' : 'an empty draft') + '"' + (mine ? '' : ' hidden') + '>Discard</button>' +
+        (q.draftAt ? '<span class="detail-muted">Sent ' + when(q.draftAt) + '</span>' : '') +
+        '<span class="lt-saved" role="status">' + (mine ? 'Saved ' + savedAt(mine.at) + ' · not sent' : '') + '</span></div></div>';
   }
 
   // role: 'writer' (As referee), 'requester' (As applicant) or 'drafter' (As first drafter).
@@ -170,8 +204,10 @@
       : '<button type="button" class="btn-text lt-edit" data-id="' + esc(q.id) + '"' + b + '>Edit</button>' +
         '<button type="button" class="btn-text danger lt-withdraw" data-id="' + esc(q.id) + '"' + b + '>Withdraw</button>';
     var open = !!shown[q.id] || editing === q.id;
+    // The applicant's changes to it, kept as a draft in this browser.
+    var mine = role === 'requester' ? unsaved[q.id] : null;
     var head = '<button type="button" class="lt-title lt-open" data-id="' + esc(q.id) + '" aria-expanded="' + open + '">' + esc(q.purpose) + '</button>' +
-      '<span class="lt-meta">' + meta + ' · ' + summary(q) + '</span>';
+      '<span class="lt-meta">' + meta + ' · ' + summary(q) + (mine ? ' · changes not saved yet' : '') + '</span>';
     if (!open) return '<li class="lt-item" id="l-' + esc(q.id) + '">' + head + '</li>';
     return '<li class="lt-item is-open" id="l-' + esc(q.id) + '">' + head +
       '<span class="lt-label">Where it goes</span><ul class="lt-recipients">' +
@@ -184,8 +220,22 @@
       (asWriter && q.open !== false ? '<span class="lt-label">For your agent</span><div class="lt-agent">' +
         '<p class="detail-muted">Paste it into Claude Code to draft the letter with the <a href="skill.html?skill=' + SKILL + '">' + SKILL + '</a> skill.</p>' +
         BOLD.copyBoxHtml(agentPrompt(q)) + '</div>' : '') +
+      (mine ? '<p class="lt-draft-state lt-unsaved">Your changes from ' + savedAt(mine.at) + ' aren’t saved yet: they’re kept in this browser. ' +
+        '<button type="button" class="btn-text lt-edit" data-id="' + esc(q.id) + '"' + b + '>Continue editing</button> ' +
+        '<button type="button" class="btn-text danger lt-drop" data-kind="edit" data-id="' + esc(q.id) + '">Discard them</button></p>' : '') +
       (controls ? '<div class="event-controls">' + controls + '</div>' : '') +
       (editing === q.id ? formHtml(q) : '') + '</li>';
+  }
+
+  // A request not asked yet, kept as a draft in this browser: one line, as a request is.
+  function askDraftHtml(d){
+    var id = esc(d.id);
+    return '<li class="lt-item lt-draft" data-did="' + id + '">' +
+      '<button type="button" class="lt-title lt-open lt-resume" data-did="' + id + '">' + esc(String(d.purpose || '').trim() || 'Untitled request') + '</button>' +
+      '<span class="lt-meta"><span class="lt-status">Draft</span>Not asked yet' + (d.writer ? ' · referee: ' + esc(d.writer.name) : '') +
+        ' · saved ' + savedAt(d.at) + ' · kept in this browser</span>' +
+      '<div class="event-controls"><button type="button" class="btn-text lt-resume" data-did="' + id + '">Continue</button>' +
+        '<button type="button" class="btn-text danger lt-drop" data-kind="ask" data-id="' + id + '">Discard</button></div></li>';
   }
 
   function rowHtml(r){
@@ -201,22 +251,24 @@
       '<button type="button" class="btn-text danger lt-rremove">Remove</button></div>';
   }
 
-  // The form, empty (asking) or filled from q (editing).
-  function formHtml(q){
+  // The form, empty (asking) or filled from q (editing); d: a draft of it, shown instead.
+  function formHtml(q, d){
+    var v = d || q || {};
+    var rows = d ? BoldLetterDrafts.rows(d.recipients, q ? q.recipients : []) : q ? q.recipients : null;
     var who = q
       ? '<label>Referee<span class="spk-chosen">' + esc(q.writerName) + '</span></label>'
       : '<label>Referee</label><div class="lt-who"></div>';
     return '<div class="event-form lt-form" data-id="' + esc(q ? q.id : '') + '">' + who +
-      '<label>What it’s for<input type="text" class="lt-purpose" maxlength="300" value="' + esc(q ? q.purpose : '') + '" placeholder="e.g. PhD applications, Fall 2027"></label>' +
+      '<label>What it’s for<input type="text" class="lt-purpose" maxlength="300" value="' + esc(v.purpose || '') + '" placeholder="e.g. PhD applications, Fall 2027"></label>' +
       '<fieldset><legend>Where it goes</legend><div class="lt-rows">' +
-        ((q ? q.recipients : null) || [null]).map(rowHtml).join('') + '</div>' +
+        (rows || [null]).map(rowHtml).join('') + '</div>' +
         '<button type="button" class="btn-text lt-radd">+ Add a recipient</button></fieldset>' +
       '<fieldset><legend>Materials for the referee</legend>' +
-        '<label>CV (link)<input type="url" class="lt-cv" maxlength="1000" value="' + esc(q ? q.cv || '' : '') + '" placeholder="https://…"></label>' +
-        '<label>Cover letter or research statement (link, optional)<input type="url" class="lt-statement" maxlength="1000" value="' + esc(q ? q.statement || '' : '') + '" placeholder="https://…"></label>' +
+        '<label>CV (link)<input type="url" class="lt-cv" maxlength="1000" value="' + esc(v.cv || '') + '" placeholder="https://…"></label>' +
+        '<label>Cover letter or research statement (link, optional)<input type="url" class="lt-statement" maxlength="1000" value="' + esc(v.statement || '') + '" placeholder="https://…"></label>' +
       '</fieldset>' +
       '<fieldset><legend>About your work with me</legend>' + WORK.map(function(w){
-        return '<label>' + esc(w.q) + '<textarea class="lt-w no-tags" data-key="' + w.key + '" rows="' + (w.key === 'howWorked' ? 7 : 4) + '" maxlength="' + (w.key === 'howWorked' ? 6000 : 3000) + '">' + esc(q ? q[w.key] || '' : '') + '</textarea></label>';
+        return '<label>' + esc(w.q) + '<textarea class="lt-w lt-grow no-tags" data-key="' + w.key + '" rows="' + (w.key === 'howWorked' ? 7 : 4) + '" maxlength="' + (w.key === 'howWorked' ? 6000 : 3000) + '">' + esc(v[w.key] || '') + '</textarea></label>';
       }).join('') + '</fieldset>' +
       '<fieldset><legend>First draft (optional)</legend>' +
         '<p class="detail-muted lt-hint">If someone you worked with closely, such as the PhD student who supervised your project, will write a first draft for your referee, choose them. They see this request and send the draft here; you see only when it’s in.</p>' +
@@ -226,7 +278,9 @@
       '</fieldset>' +
       '<p class="ev-error" hidden></p><div class="event-form-actions">' +
         '<button type="button" class="ev-save lt-save">' + (q ? 'Save' : 'Ask for the letter') + '</button>' +
-        '<button type="button" class="lt-cancel">Cancel</button></div></div>';
+        '<button type="button" class="lt-keep"' + (store ? ' title="' + KEEP_TIP + '"' : ' disabled title="' + NO_STORE + '"') + '>Save as draft</button>' +
+        '<button type="button" class="lt-cancel">Cancel</button>' +
+        '<span class="lt-saved" role="status"></span></div></div>';
   }
 
   function render(){
@@ -235,6 +289,10 @@
     if (editing) return; // don't redraw over a form being filled in
     var openOf = ofMe.filter(function(q){ return q.open; }).length, openBy = byMe.filter(function(q){ return q.open; }).length;
     var openFor = forMe.filter(function(q){ return q.open && !q.draftAt; }).length;
+    // The drafts kept in this browser: requests not asked yet, and changes not saved yet.
+    var asks = store ? store.list('ask') : [];
+    unsaved = {};
+    if (store) store.list('edit').forEach(function(d){ unsaved[d.id] = d; });
     // A draft being written survives the redraw (a snapshot can come in while it's typed).
     var kept = {}, focus = document.activeElement && document.activeElement.closest && document.activeElement.closest('.lt-dform') ? document.activeElement : null;
     Array.prototype.forEach.call(main.querySelectorAll('.lt-dform'), function(f){
@@ -253,6 +311,7 @@
         (ofMe.length ? '<ul class="lt-list">' + sorted(ofMe).map(function(q){ return requestHtml(q, 'writer'); }).join('') + '</ul>' : '<p class="proj-msg">Nobody has asked you for a letter.</p>') + '</section>' +
       '<section class="lt-panel" id="applicant">' +
         (byMe.length ? '<ul class="lt-list">' + sorted(byMe).map(function(q){ return requestHtml(q, 'requester'); }).join('') + '</ul>' : '<p class="proj-msg">You haven’t asked for a letter yet.</p>') +
+        (asks.length ? '<ul class="lt-list lt-drafts">' + asks.map(askDraftHtml).join('') + '</ul>' : '') +
         '<div class="lt-new"><button type="button" class="event-add lt-ask">+ Ask for a letter</button></div></section>' +
       (forMe.length ? '<section class="lt-panel" id="drafter">' +
         '<ul class="lt-list">' + sorted(forMe).map(function(q){ return requestHtml(q, 'drafter'); }).join('') + '</ul></section>' : '');
@@ -290,8 +349,10 @@
       a.classList.toggle('is-current', on);
       if (on) a.setAttribute('aria-current', 'page'); else a.removeAttribute('aria-current');
     });
+    growAll();   // the text boxes on the tab now shown
   }
   window.addEventListener('hashchange', function(){ if (byMe && ofMe && forMe) { if (location.hash === '#ask') render(); else showTab(); } });
+  window.addEventListener('resize', growAll);   // a narrower box wraps its text onto more lines
 
   // ---------- choosing the writer: a list of the BOLD.OS users, filtered by typing ----------
   // key: 'writer' (the referee) or 'drafter' (the first drafter, optional: it can be removed).
@@ -303,9 +364,9 @@
       wrap.innerHTML = '<span class="spk-chosen">' + esc(chosen.name) + ' <span class="detail-muted">' + esc(chosen.email) + '</span>' +
         '<button type="button" class="btn-text lt-who-change">Change</button>' +
         (key === 'drafter' ? '<button type="button" class="btn-text danger lt-who-remove">Remove</button>' : '') + '</span>';
-      wrap.querySelector('.lt-who-change').addEventListener('click', function(){ form[key] = null; mountWho(wrap, form, key); wrap.querySelector('input').focus(); });
+      wrap.querySelector('.lt-who-change').addEventListener('click', function(){ form[key] = null; mountWho(wrap, form, key); wrap.querySelector('input').focus(); touch(); });
       var rm = wrap.querySelector('.lt-who-remove');
-      if (rm) rm.addEventListener('click', function(){ form[key] = null; mountWho(wrap, form, key); });
+      if (rm) rm.addEventListener('click', function(){ form[key] = null; mountWho(wrap, form, key); touch(); });
       return;
     }
     wrap.innerHTML = '<div class="spk-search"><input type="text" class="lt-who-q" placeholder="' + (key === 'drafter' ? 'Nobody; or choose, or type a name…' : 'Choose, or type a name…') +
@@ -313,7 +374,7 @@
       '<ul class="spk-results" role="listbox" hidden></ul></div>';
     var input = wrap.querySelector('input'), list = wrap.querySelector('ul'), found = [], active = 0;
     var fold = function(s){ return String(s || '').toLowerCase().normalize('NFKD').replace(/[̀-ͯ]/g, ''); };
-    function pick(k){ if (!found[k]) return; form[key] = { name: found[k].name || found[k].email, email: found[k].email }; mountWho(wrap, form, key); }
+    function pick(k){ if (!found[k]) return; form[key] = { name: found[k].name || found[k].email, email: found[k].email }; mountWho(wrap, form, key); touch(); }
     function show(){
       var words = fold(input.value).split(/\s+/).filter(Boolean);
       var not = form[other] && form[other].email;
@@ -363,42 +424,152 @@
     }).catch(function(err){ console.error('[BOLD Letters] loading the BOLD.OS users failed', err); writers = []; });
   }
 
-  function openForm(id){
+  // did: the draft to go on with (a request not asked yet). A request being edited opens with
+  // its changes not saved yet, if this browser kept any.
+  function openForm(id, did){
     editing = id;
     if (id === 'new') {
-      newForm = { writer: null, drafter: null, was: '' };
+      var d = did && store ? store.get('ask', did) : null;
+      newForm = { writer: (d && d.writer) || null, drafter: (d && d.drafter) || null, was: '' };
       var wrap = main.querySelector('.lt-new');
-      wrap.innerHTML = formHtml(null);
+      wrap.innerHTML = formHtml(null, d);
+      var line = d && main.querySelector('.lt-draft[data-did="' + did + '"]');
+      if (line) line.hidden = true;   // it's the form now
       mountWho(wrap.querySelector('.lt-who'), newForm, 'writer');
       mountWho(wrap.querySelector('.lt-drafter'), newForm, 'drafter');
       loadWriters();
-      wrap.querySelector('.lt-who-q').focus();
+      startDraft('ask', d ? did : newId(), null, { writer: null, drafter: null }, d);
+      wrap.querySelector(d ? '.lt-purpose' : '.lt-who-q').focus();
       return;
     }
     var q = byMe.filter(function(x){ return x.id === id; })[0], li = document.getElementById('l-' + id);
     if (!q || !li) { editing = null; return; }
-    newForm = { writer: { name: q.writerName, email: q.writerEmail },
-      drafter: q.drafterEmail ? { name: q.drafterName || q.drafterEmail, email: q.drafterEmail } : null, was: q.drafterEmail || '' };
-    li.insertAdjacentHTML('beforeend', formHtml(q));
+    var e = store ? store.get('edit', id) : null;
+    var asIs = { writer: { name: q.writerName, email: q.writerEmail },
+      drafter: q.drafterEmail ? { name: q.drafterName || q.drafterEmail, email: q.drafterEmail } : null };
+    // Who drafts it can't change once the draft is in, whatever was chosen before.
+    newForm = { writer: asIs.writer, drafter: e && !q.draftAt ? e.drafter || null : asIs.drafter, was: q.drafterEmail || '' };
+    li.insertAdjacentHTML('beforeend', formHtml(q, e));
+    var note = li.querySelector('.lt-unsaved');
+    if (note) note.hidden = true;   // they're in the form now
     var dw = li.querySelector('.lt-drafter');
     if (dw) { mountWho(dw, newForm, 'drafter'); loadWriters(); }
+    startDraft('edit', id, q, asIs, e);
     li.querySelector('.lt-purpose').focus();
   }
 
-  function closeForm(){ editing = null; newForm = null; render(); }
+  function closeForm(){
+    if (formDraft) clearTimeout(formDraft.timer);
+    editing = null; newForm = null; formDraft = null; render();
+  }
 
-  function readForm(f){
-    var v = function(c){ return f.querySelector(c).value.trim(); };
+  // The form's fields; raw: as typed (for a draft), else trimmed (to send).
+  function fields(f, raw){
+    var v = function(el){ return raw ? el.value : el.value.trim(); }, at = function(c){ return v(f.querySelector(c)); };
     return {
-      purpose: v('.lt-purpose'), cv: v('.lt-cv'), statement: v('.lt-statement'),
-      howWorked: v('[data-key="howWorked"]'), best: v('[data-key="best"]'), extra: v('[data-key="extra"]'),
-      drafterEmail: newForm && newForm.drafter ? newForm.drafter.email : '',
+      purpose: at('.lt-purpose'), cv: at('.lt-cv'), statement: at('.lt-statement'),
+      howWorked: at('[data-key="howWorked"]'), best: at('[data-key="best"]'), extra: at('[data-key="extra"]'),
       recipients: Array.prototype.map.call(f.querySelectorAll('.lt-rrow'), function(row){
-        return { id: row.getAttribute('data-rid') || undefined, name: row.querySelector('.lt-rn').value.trim(), url: row.querySelector('.lt-ru').value.trim(),
+        return { id: row.getAttribute('data-rid') || undefined, name: v(row.querySelector('.lt-rn')), url: v(row.querySelector('.lt-ru')),
           deadline: row.querySelector('.lt-rd').value, sentBy: row.querySelector('.lt-rs').value };
       }),
     };
   }
+
+  function readForm(f){
+    var d = fields(f);
+    d.drafterEmail = newForm && newForm.drafter ? newForm.drafter.email : '';
+    return d;
+  }
+
+  // ---------- drafts, kept in this browser (letter-drafts.js) ----------
+  function newId(){ return 'd' + Date.now().toString(36) + Math.random().toString(36).slice(2, 7); }
+
+  // A request form as a draft: what's typed, as typed, and who was chosen.
+  function snap(f, people){
+    var d = fields(f, true);
+    d.writer = people.writer || null; d.drafter = people.drafter || null;
+    return d;
+  }
+  function saved(text, f){
+    var el = f && f.querySelector('.lt-saved');
+    if (el) el.textContent = text;
+  }
+
+  // The open form's draft. base: the form as it'd open without one (empty, or the request as
+  // it is), so a draft that says nothing new isn't kept; opened: as it did open, for Cancel.
+  function startDraft(kind, id, q, asIs, was){
+    var blank = document.createElement('div');
+    blank.innerHTML = formHtml(q, null);
+    var f = main.querySelector('.lt-form');
+    formDraft = { kind: kind, id: id, base: JSON.stringify(snap(blank.querySelector('.lt-form'), asIs)),
+      opened: JSON.stringify(snap(f, newForm)), was: was || null, timer: null };
+    growAll();
+    if (was) saved(kind === 'edit' ? 'Your changes from ' + savedAt(was.at) + ', not saved yet' : 'Draft saved ' + savedAt(was.at), f);
+  }
+
+  // Keeps the open form as a draft now. → false only if the browser refused it.
+  function keepForm(){
+    if (!formDraft) return true;
+    clearTimeout(formDraft.timer); formDraft.timer = null;
+    var f = main.querySelector('.lt-form');
+    if (!f || !store) return false;
+    var d = snap(f, newForm);
+    if (JSON.stringify(d) === formDraft.base) { store.drop(formDraft.kind, formDraft.id); saved('', f); return true; }
+    var at = store.put(formDraft.kind, formDraft.id, d);
+    saved(at ? (formDraft.kind === 'edit' ? 'Changes saved as a draft ' : 'Draft saved ') + savedAt(at) : 'Couldn’t save a draft: this browser’s storage is full', f);
+    return !!at;
+  }
+  // A change to the open form: it's saved as a draft once the typing pauses.
+  function touch(){
+    if (!formDraft || !store) return;
+    clearTimeout(formDraft.timer);
+    formDraft.timer = setTimeout(keepForm, SAVE_AFTER);
+  }
+
+  // Cancel undoes what was typed since the form opened (after asking): a draft it opened from
+  // stays as it was; the draft's own Discard deletes it.
+  function cancelForm(){
+    var f = main.querySelector('.lt-form');
+    if (formDraft && f && JSON.stringify(snap(f, newForm)) !== formDraft.opened) {
+      if (!window.confirm('Discard what you’ve typed?' + (store ? ' To keep it for later, choose “Save as draft”.' : ''))) return;
+      clearTimeout(formDraft.timer); formDraft.timer = null;
+      if (store && formDraft.was) store.put(formDraft.kind, formDraft.id, formDraft.was, formDraft.was.at);
+      else if (store) store.drop(formDraft.kind, formDraft.id);
+    }
+    closeForm();
+  }
+
+  // The same for a first draft being typed: saved once the typing pauses, unless it's what was sent.
+  function keepFirst(id){
+    clearTimeout(firstTimers[id]); delete firstTimers[id];
+    var f = main.querySelector('.lt-dform[data-id="' + id + '"]');
+    if (!f || !store) return false;
+    var d = { text: f.querySelector('.lt-dtext').value, url: f.querySelector('.lt-durl').value, note: f.querySelector('.lt-dnote').value };
+    var discard = f.querySelector('.lt-ddiscard');
+    if (BoldLetterDrafts.sameFirst(d, drafts[id])) { store.drop('first', id); saved('', f); discard.hidden = true; return true; }
+    var at = store.put('first', id, d);
+    saved(at ? 'Saved ' + savedAt(at) + ' · not sent' : 'Couldn’t save it: this browser’s storage is full', f);
+    discard.hidden = !at;
+    return !!at;
+  }
+  function touchFirst(id){
+    if (!store) return;
+    clearTimeout(firstTimers[id]);
+    firstTimers[id] = setTimeout(function(){ keepFirst(id); }, SAVE_AFTER);
+  }
+  function forgetFirst(id){
+    clearTimeout(firstTimers[id]); delete firstTimers[id]; delete typed[id];
+    if (store) store.drop('first', id);
+  }
+
+  // What's waiting to be saved is saved before the page goes (closed, reloaded, left).
+  function flush(){
+    if (formDraft && formDraft.timer) keepForm();
+    Object.keys(firstTimers).forEach(keepFirst);
+  }
+  document.addEventListener('visibilitychange', function(){ if (document.hidden) flush(); });
+  window.addEventListener('pagehide', flush);
 
   function problem(d, isNew){
     if (isNew && !newForm.writer) return 'Choose your referee.';
@@ -439,7 +610,10 @@
   function send(f, btn, id, d, err){
     btn.disabled = true; err.hidden = true;
     var data = Object.assign(d, id ? { action: 'update', id: id } : { action: 'create', writerEmail: newForm.writer.email });
-    call(data).then(function(){ closeForm(); }).catch(function(e){
+    call(data).then(function(){
+      if (formDraft && store) store.drop(formDraft.kind, formDraft.id);   // sent: no draft of it is left
+      closeForm();
+    }).catch(function(e){
       console.error('[BOLD Letters] saving failed', e);
       err.textContent = e && e.message && e.code !== 'functions/internal' ? e.message : 'Couldn’t save — try again.';
       err.hidden = false; btn.disabled = false;
@@ -458,8 +632,11 @@
   main.addEventListener('input', function(e){
     var f = e.target.closest('.lt-form, .lt-dform'), err = f && f.querySelector('.ev-error');
     if (err) err.hidden = true;
-    if (f && f.classList.contains('lt-dform')) typed[f.getAttribute('data-id')] = true;
+    if (f && f.classList.contains('lt-dform')) { typed[f.getAttribute('data-id')] = true; touchFirst(f.getAttribute('data-id')); }
+    else if (f) touch();
+    if (e.target.classList.contains('lt-grow')) grow(e.target);
   });
+  main.addEventListener('change', function(e){ if (e.target.closest('.lt-form')) touch(); });
 
   function sendDraft(f, btn){
     var id = f.getAttribute('data-id'), err = f.querySelector('.ev-error');
@@ -473,7 +650,7 @@
         .concat(q.draftAt ? [] : ['Tell ' + q.requesterName + ' on Slack that their referee has it (not what it says)']) }).then(function(ok){
       if (!ok) return;
       btn.disabled = true; err.hidden = true;
-      call(d).then(function(){ delete typed[id]; render(); }).catch(function(e){
+      call(d).then(function(){ forgetFirst(id); render(); }).catch(function(e){
         console.error('[BOLD Letters] sending the draft failed', e);
         err.textContent = e && e.message && e.code !== 'functions/internal' ? e.message : 'Couldn’t send it — try again.';
         err.hidden = false; btn.disabled = false;
@@ -485,16 +662,34 @@
     var t = e.target.closest('button');
     if (!t || t.disabled) return;
     var f = t.closest('.lt-form');
+    if (t.classList.contains('lt-resume')) { if (!editing) openForm('new', t.getAttribute('data-did')); return; }
+    if (t.classList.contains('lt-drop')) {
+      var kind = t.getAttribute('data-kind');
+      if (!editing && store && window.confirm(kind === 'edit' ? 'Discard your changes? The request stays as it is.' : 'Discard this draft? It’s deleted from this browser.')) {
+        store.drop(kind, t.getAttribute('data-id')); render();
+      }
+      return;
+    }
+    if (t.classList.contains('lt-keep')) { if (keepForm()) closeForm(); return; }
+    if (t.classList.contains('lt-dkeep')) { keepFirst(t.getAttribute('data-id')); return; }
+    if (t.classList.contains('lt-ddiscard')) {
+      var did = t.getAttribute('data-id'), sent = drafts[did] || {}, df = t.closest('.lt-dform');
+      if (!window.confirm(drafts[did] ? 'Discard what you haven’t sent? The draft you sent stays as it is.' : 'Discard what you’ve typed?')) return;
+      forgetFirst(did);
+      df.querySelector('.lt-dtext').value = sent.text || ''; df.querySelector('.lt-durl').value = sent.url || ''; df.querySelector('.lt-dnote').value = sent.note || '';
+      saved('', df); t.hidden = true; growAll();
+      return;
+    }
     if (t.classList.contains('lt-open')) { if (!editing) { var oid = t.getAttribute('data-id'); shown[oid] = !shown[oid]; render(); } return; }
     if (t.classList.contains('lt-ask')) { if (!editing) openForm('new'); return; }
     if (t.classList.contains('lt-edit')) { if (!editing) openForm(t.getAttribute('data-id')); return; }
-    if (t.classList.contains('lt-cancel')) { closeForm(); return; }
+    if (t.classList.contains('lt-cancel')) { cancelForm(); return; }
     if (t.classList.contains('lt-save')) { save(f, t); return; }
     if (t.classList.contains('lt-dsave')) { sendDraft(t.closest('.lt-dform'), t); return; }
-    if (t.classList.contains('lt-radd')) { f.querySelector('.lt-rows').insertAdjacentHTML('beforeend', rowHtml(null)); f.querySelector('.lt-rrow:last-child .lt-rn').focus(); return; }
+    if (t.classList.contains('lt-radd')) { f.querySelector('.lt-rows').insertAdjacentHTML('beforeend', rowHtml(null)); f.querySelector('.lt-rrow:last-child .lt-rn').focus(); touch(); return; }
     if (t.classList.contains('lt-rremove')) {
       var row = t.closest('.lt-rrow');
-      if (f.querySelectorAll('.lt-rrow').length > 1) row.parentNode.removeChild(row);
+      if (f.querySelectorAll('.lt-rrow').length > 1) { row.parentNode.removeChild(row); touch(); }
       return;
     }
     if (editing) return;
@@ -515,20 +710,28 @@
   });
 
   BOLD.onUser(function(user){
+    flush();   // whoever was signed in keeps what they were typing
+    if (formDraft) clearTimeout(formDraft.timer);
     unsubs.forEach(function(u){ u(); }); unsubs = [];
     me = user ? { email: (user.email || '').toLowerCase() } : null;
     byMe = null; ofMe = null; forMe = null; editing = null; drafts = {}; draftsAs = { writer: {}, drafter: {} };
+    store = null; formDraft = null; unsaved = {};
     if (!user) return;
+    // Each account's drafts are its own; a browser that refuses storage keeps none.
+    try { store = BoldLetterDrafts.store(window.localStorage, user.uid); } catch (e){ store = null; }
     render();
-    var listen = function(field, set){
+    // gone: the kind of draft to drop once the server says its request is no longer here.
+    var listen = function(field, set, gone){
       unsubs.push(db.collection('letterRequests').where(field, '==', me.email).onSnapshot(function(snap){
-        set(snap.docs.map(function(d){ return Object.assign({ id: d.id }, d.data()); }));
+        var list = snap.docs.map(function(d){ return Object.assign({ id: d.id }, d.data()); });
+        set(list);
+        if (gone && store && snap.metadata && snap.metadata.fromCache === false) store.prune(gone, list.map(function(q){ return q.id; }));
         render();
       }, function(err){ console.error('[BOLD Letters] loading requests failed', err); set([]); render(); }));
     };
-    listen('requesterEmail', function(v){ byMe = v; });
+    listen('requesterEmail', function(v){ byMe = v; }, 'edit');
     listen('writerEmail', function(v){ ofMe = v; });
-    listen('drafterEmail', function(v){ forMe = v; });
+    listen('drafterEmail', function(v){ forMe = v; }, 'first');
     // The first drafts: those sent to the viewer as referee, and those they wrote.
     ['writer', 'drafter'].forEach(function(as){
       unsubs.push(db.collection('letterDrafts').where(as + 'Email', '==', me.email).onSnapshot(function(snap){
