@@ -28,6 +28,10 @@ test('creating a topic selects it without submitting or resetting the draft', as
   const q = s => document.querySelector(s);
   const input = (s, value) => { q(s).value = value; q(s).dispatchEvent(new window.Event('input')); };
   assert.equal(picker.required(), false);
+  input('[type=search]', ' A ');
+  assert.deepEqual(Array.from(q('.bs-topic-options').children, b => b.dataset.topic), ['about-bold', 'advice']);
+  input('[type=search]', '');
+  assert.equal(q('.bs-topic-options').children.length, topics.starters.length);
   input('[type=search]', 'adv');
   assert.equal(q('.bs-topic-options').children.length, 1);
   q('[data-topic=advice]').click();

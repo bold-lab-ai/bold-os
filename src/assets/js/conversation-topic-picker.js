@@ -19,7 +19,7 @@ function conversationTopicPicker(host){
     summary.setAttribute('aria-label', hit ? 'Topic: ' + hit.name : 'Choose a topic');
     summary.textContent = hit ? hit.icon + ' ' + hit.name : 'Choose a topic';
     var query = search.value.trim().toLowerCase();
-    options.innerHTML = topics.filter(function(t){ return t.name.toLowerCase().includes(query); }).map(function(t){
+    options.innerHTML = topics.filter(function(t){ return t.name.toLowerCase().startsWith(query); }).map(function(t){
       return '<button type="button" class="btn-text" data-topic="' + esc(t.id) + '">' + esc(t.icon + ' ' + t.name) + '</button>';
     }).join('');
   }
