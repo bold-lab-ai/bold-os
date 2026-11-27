@@ -22,7 +22,7 @@ window.BoldConversations = (function(){
     var el = document.createElement('section');
     el.className = 'ha-box bs-answer';
     el.innerHTML = '<button type="button" class="btn-box bs-comment-button" aria-expanded="false">' + esc(label) + '</button>' +
-      '<div class="ha-fold" hidden><form class="ha-form" novalidate><textarea class="md-field" data-md-breaks="true" data-preview-class="bs-text md-desc" rows="2" maxlength="10000" aria-label="' + esc(label) + '"></textarea>' +
+      '<div class="ha-fold" hidden><form class="ha-form" novalidate><textarea class="md-field" data-md-breaks="true" data-preview-class="bs-text md-desc" rows="2" maxlength="10000" placeholder="Your comment" aria-label="' + esc(label) + '"></textarea>' +
       '<div class="ha-actions"><span class="bs-answer-to"></span><button type="button" class="btn-text ha-close">Close</button><button type="submit" class="btn-box is-primary">' + esc(o.button || 'Reply') + '</button></div></form></div>';
     var line = el.querySelector('.bs-comment-button'), form = el.querySelector('form'), box = form.querySelector('textarea'), go = form.querySelector('button[type=submit]');
     function open(yes){

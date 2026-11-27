@@ -23,6 +23,9 @@ test('the comment button opens an empty editor and submits only the reader’s d
   button.click();
   assert.equal(focused, true);
   assert.equal(editor.value, '');
+  assert.equal(editor.getAttribute('placeholder'), 'Your comment');
+  form.dispatchEvent(new window.Event('submit', { bubbles: true, cancelable: true }));
+  assert.deepEqual(sent, []);
   assert.equal(form.parentNode.hidden, false);
   assert.equal(form.querySelector('button[type=submit]').textContent, 'Post comment');
   editor.value = 'My comment';
