@@ -315,7 +315,7 @@ window.BoldConversations = (function(){
       });
     }
     function invite(pid, to){ return col().doc(pid).collection('invites').add({ to: to, by: me.email, byName: me.name, at: FV().serverTimestamp() }); }
-    var sort = 'top', opened = {}, replying = '', editing = '', said = [], draft = null, about = null;   // about: { pid, id }
+    var sort = 'top', replying = '', editing = '', said = [], draft = null, about = null;   // about: { pid, id }
     var unwatch = [];   // the lists' listeners, replaced when access changes
     var db = function(){ return firebase.firestore(BOLD.getApp()); };
     var col = function(){ return db().collection('conversations'); };
@@ -328,36 +328,67 @@ window.BoldConversations = (function(){
     var mine = function(m){ return !!me.email && m.createdBy === me.email; };
     // A message's replies in the order they were written, whatever their votes: a conversation reads in order.
     // (Votes order the posts on the list: Top.)
-    // A thread is a tree: each message answers its parent. A Slack thread came in as replies to the post,
-    // one after another: each is read as answering the one before (slack-<n> → slack-<n-1>); so did a
-    // comment thread made a conversation (cm-<n>, functions/comment-conversation.js).
-    var CHAINED = { slack: 'slack-', comment: 'cm-' };
-    var parentOf = function(x){
-      var pre = CHAINED[x.source], k = pre && x.parent === openId && new RegExp('^' + pre + '(\\d+)$').exec(x.id);
-      if (k && +k[1] > 0 && (messages[openId] || []).some(function(y){ return y.id === pre + (k[1] - 1); })) return pre + (k[1] - 1);
-      return x.parent;
-    };
-    var kids = function(id){ return (messages[openId] || []).filter(function(x){ return parentOf(x) === id; }).sort(function(a, b){ return ms(a.at) - ms(b.at); }); };
-    // Laid out as on Reddit (2026-11-11, #316): the post, Join the conversation under it, then its replies,
-    // each with its own replies indented under it, and so on. A reply written now answers the message it was
-    // written on (`branch: true`, nested under it). Before, a reply could instead go on with its message's
-    // column (no `branch`: the first such reply), and a Slack thread came in as such a run: a run is read as
-    // replies side by side at the same level, so old threads don't step in at every message.
-    var goesOn = function(id){ return kids(id).filter(function(x){ return !x.branch; })[0] || null; };
-    var runFrom = function(m){ var out = [], k = 0; while (m && k++ < 2000) { out.push(m); m = goesOn(m.id); } return out; };
-    var byTime = function(a, b){ return ms(a.at) - ms(b.at); };
-    // What shows under a message, indented: its replies (with their runs), in the order they were written.
-    // Under the post: the top level.
-    var under = function(id){
-      var g = id === openId ? null : goesOn(id);
-      return kids(id).filter(function(x){ return x !== g; }).reduce(function(a, x){ return a.concat(runFrom(x)); }, []).sort(byTime);
-    };
-    var total = function(id){ return kids(id).reduce(function(s, x){ return s + 1 + total(x.id); }, 0); };
-    var below = function(id){ return under(id).reduce(function(s, x){ return s + 1 + below(x.id); }, 0); };
-    var isOpen = function(id){ return opened[id] !== false; };
+    // A reply folds with its stored parent. Imported Slack messages addressed to the post
+    // stay together at the top level in chronological order.
+    var childrenByParent = new Map(), messageById = new Map();
+    function indexReplies(pid, items){
+      childrenByParent.clear(); messageById.clear();
+      items.slice().sort(function(a, b){ return ms(a.at) - ms(b.at); }).forEach(function(m){
+        if (m.id === pid) return;
+        messageById.set(m.id, m);
+        if (!childrenByParent.has(m.parent)) childrenByParent.set(m.parent, []);
+        childrenByParent.get(m.parent).push(m);
+      });
+    }
+    function kids(id){ return childrenByParent.get(id) || []; }
+    // Depth-first, in reading order. Returning false skips that comment's descendants.
+    function walkReplies(id, visit){
+      var stack = [{ children: kids(id), index: 0 }];
+      while (stack.length) {
+        var level = stack[stack.length - 1];
+        if (level.index === level.children.length) { stack.pop(); continue; }
+        var m = level.children[level.index++];
+        if (visit(m, stack.length) !== false && kids(m.id).length) {
+          stack.push({ children: kids(m.id), index: 0 });
+        }
+      }
+    }
+    // Store only message IDs, scoped to this reader and post. A later deletion or a
+    // reimport of old Slack messages must not turn a new reply count negative.
+    var folds = Object.create(null);
+    function foldKey(){ return 'boldConversationFolds:' + me.uid + ':' + openId; }
+    function loadFolds(){
+      folds = Object.create(null);
+      if (!me.uid || !openId) return;
+      try {
+        var saved = JSON.parse(localStorage.getItem(foldKey()) || '{}');
+        Object.keys(saved).forEach(function(id){ if (Array.isArray(saved[id])) folds[id] = saved[id]; });
+      } catch (e){}
+    }
+    function saveFolds(){
+      if (!me.uid || !openId) return;
+      try {
+        if (Object.keys(folds).length) localStorage.setItem(foldKey(), JSON.stringify(folds));
+        else localStorage.removeItem(foldKey());
+      } catch (e){}
+    }
+    function descendantIds(id){
+      var ids = [];
+      walkReplies(id, function(m){ ids.push(m.id); });
+      return ids;
+    }
+    function reveal(id){
+      var seen = new Set(), changed = false;
+      while (messageById.has(id) && !seen.has(id)) {
+        seen.add(id);
+        if (folds[id]) { delete folds[id]; changed = true; }
+        id = messageById.get(id).parent;
+      }
+      if (changed) saveFolds();
+    }
     var count = function(k){ return k + (k === 1 ? ' reply' : ' replies'); };
     var postOf = function(id){ return (posts || []).filter(function(p){ return p.id === id; })[0]; };
-    var msgOf = function(pid, id){ return pid === id ? postOf(pid) : (messages[pid] || []).filter(function(x){ return x.id === id; })[0]; };
+    var msgOf = function(pid, id){ return pid === id ? postOf(pid) : (pid === openId ? messageById.get(id) : null); };
 
     function vote(m, inline){
       var v = (m.votes || {})[me.uid] || 0;
@@ -370,9 +401,10 @@ window.BoldConversations = (function(){
     // Who wrote it, first and clearly, then when. Where a thread came from (Slack) is said after, at the
     // foot of its post (origin), not here.
     // The author: their profile (person.html), found by their email, or, for a Slack reply, by their name.
-    function by(m){
+    function by(m, avatar){
       var id = idByEmail[String(m.createdBy || '').toLowerCase()] || (!m.createdBy && m.source === 'slack' && idOf[m.name]) || '';
       var n = esc(m.name || 'someone') + (m.viaAgent ? '’s agent' : '');
+      if (avatar) n = '<span class="bs-avatar member-photo" aria-hidden="true" data-id="' + esc(id) + '" data-name="' + esc(m.name || 'Someone') + '"></span>' + n;
       return (id ? '<a class="bs-author" href="person.html?id=' + encodeURIComponent(id) + '">' + n + '</a>' : '<span class="bs-author">' + n + '</span>') + ' · ' + ago(m.at) +
         // Changed after it was written (Edit): said, with when on hover.
         (m.editedAt ? ' <span class="bs-edited" title="Edited ' + esc(ago(m.editedAt)) + '">(edited)</span>' : '');
@@ -437,35 +469,33 @@ window.BoldConversations = (function(){
     }
     // A message: who wrote it, its vote and buttons, its text, and its reply box when open.
     function msgHtml(m, pid){
+      var reply = m.id !== pid, folded = reply && Array.isArray(folds[m.id]), summary = '';
+      var toggle = reply ? '<button type="button" class="bs-open" data-id="' + esc(m.id) + '" aria-expanded="' + !folded +
+        '" aria-label="' + (folded ? 'Expand' : 'Collapse') + ' comment by ' + esc(m.name || 'someone') + '">' +
+        '<svg width="16" height="16" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="m8 4 8 8-8 8"/></svg></button>' : '';
+      if (folded) {
+        var ids = descendantIds(m.id), seen = new Set(folds[m.id]);
+        var fresh = ids.filter(function(id){ return !seen.has(id); }).length;
+        summary = '<span class="bs-fold-count">' + count(ids.length) +
+          (fresh ? ' · <strong>' + fresh + ' new</strong>' : '') + '</span>';
+      }
       return '<li class="bs-line' + (about && about.id === m.id ? ' is-about' : '') + '" id="m-' + esc(m.id) + '">' +
-        // The author, and on the same line, on the right, its vote and buttons.
-        '<div class="bs-line-head"><p class="bs-by">' + by(m) + '</p><div class="bs-right">' + vote(m, true) + acts(m, pid) + '</div></div>' +
-        (editing === m.id ? editForm(m, pid) : md(m.body)) + replyForm(m, pid) + '</li>';
+        '<div class="bs-line-head">' + toggle + '<p class="bs-by">' + by(m, reply) + '</p>' + summary +
+        (folded ? '' : '<div class="bs-right">' + vote(m, true) + acts(m, pid) + '</div>') + '</div>' +
+        (folded ? '' : (editing === m.id ? editForm(m, pid) : md(m.body)) + replyForm(m, pid)) + '</li>';
     }
-    var lastAt = function(id){ return under(id).reduce(function(t, x){ return Math.max(t, ms(x.at), lastAt(x.id)); }, 0); };
-    // A message's replies show under it, indented (each hooked to the line down its left), and fold behind a
-    // toggle: "Hide 3 replies", folded "3 replies · last 2 h ago".
-    function foldToggle(m){
-      var k = below(m.id), on = isOpen(m.id), what = count(k);
-      return '<li class="bs-thread-toggle"><button type="button" class="btn-text bs-open" data-id="' + esc(m.id) + '" aria-expanded="' + on + '">' +
-        '<span class="bs-caret" aria-hidden="true">' + (on ? '\u25be' : '\u25b8') + '</span>' + (on ? 'Hide ' + what : what + '<span class="bs-last"> · last ' + ago(lastAt(m.id)) + '</span>') + '</button></li>';
-    }
-    // A message and, under it, its replies, each with its own (depth: how far in, for the guard below).
     function subtreeHtml(m, pid, depth){
-      var u = depth < 60 ? under(m.id) : [];
-      return msgHtml(m, pid) + (u.length ? foldToggle(m) + (isOpen(m.id) ? '<li class="bs-branches">' + u.map(function(c){ return '<ol class="bs-run">' + subtreeHtml(c, pid, depth + 1) + '</ol>'; }).join('') + '</li>' : '') : '');
-    }
-
-    // Expand all / Collapse all: every message's replies, over the thread; shown when any has replies.
-    function branchingIds(p){ return (messages[p.id] || []).filter(function(m){ return under(m.id).length; }).map(function(m){ return m.id; }); }
-    function foldAllHtml(p){
-      var ids = branchingIds(p);
-      if (!ids.length) return '';
-      var all = ids.every(isOpen);
-      // The guides' look (guide.js foldAllButton): arrows, then the words, on the title's line.
-      var icon = '<svg viewBox="0 0 16 16" width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' +
-        (all ? '<path d="M4 7.5 8 3.5l4 4M4 12.5l4-4 4 4"/>' : '<path d="M4 3.5 8 7.5l4-4M4 8.5l4 4 4-4"/>') + '</svg>';
-      return '<button type="button" class="bs-fold-all-btn" data-open="' + (all ? '0' : '1') + '">' + icon + (all ? 'Collapse all' : 'Expand all') + '</button>';
+      var html = msgHtml(m, pid);
+      if (folds[m.id]) return html;
+      // Stop indenting long exchanges on a narrow screen. Deeper comments still fold individually.
+      if (depth >= 5) {
+        walkReplies(m.id, function(child){ html += msgHtml(child, pid); return !folds[child.id]; });
+        return html;
+      }
+      var children = kids(m.id);
+      return html + (children.length ? '<li class="bs-branches">' + children.map(function(c){
+        return '<ol class="bs-run">' + subtreeHtml(c, pid, depth + 1) + '</ol>';
+      }).join('') + '</li>' : '');
     }
 
     // ---------- the thread's tree, beside it ----------
@@ -481,9 +511,9 @@ window.BoldConversations = (function(){
         document.body.appendChild(treeEl);
         treeEl.addEventListener('click', function(e){
           var n = e.target.closest('[data-id]'); if (!n) return;
-          var id = n.getAttribute('data-id'), m = msgOf(openId, id), k = 0;
+          var id = n.getAttribute('data-id');
           treeSel = id;
-          while (m && parentOf(m) && k++ < 500) { opened[parentOf(m)] = true; m = msgOf(openId, parentOf(m)); }
+          reveal(id);
           render();
           var el = document.getElementById('m-' + id); if (el) el.scrollIntoView({ block: 'center', behavior: 'smooth' });
         });
@@ -495,15 +525,13 @@ window.BoldConversations = (function(){
       var row = {}, lane = {}, next = 1;
       all.forEach(function(m, i){ row[m.id] = i; });
       // Lanes: how far in each message is shown (the post 0, its replies 1, theirs 2, …).
-      (function walk(id, l){
-        lane[id] = l; next = Math.max(next, l + 1);
-        if (l < 60) under(id).forEach(function(c){ walk(c.id, l + 1); });
-      })(p.id, 0);
+      lane[p.id] = 0;
+      walkReplies(p.id, function(m, depth){ lane[m.id] = Math.min(depth, 5); next = Math.max(next, lane[m.id] + 1); });
       var R = all.length > 60 ? 8 : 12, L = 12, X = function(id){ return 8 + (lane[id] || 0) * L; }, Y = function(id){ return 8 + row[id] * R; };
       var W = 16 + (next - 1) * L, H = 16 + (all.length - 1) * R;
       var paths = '', dots = '';
       all.forEach(function(m){
-        var par = m.id === p.id ? null : parentOf(m);
+        var par = m.id === p.id ? null : m.parent;
         if (par && row[par] !== undefined) {
           var x0 = X(par), y0 = Y(par), x1 = X(m.id), y1 = Y(m.id);
           paths += '<path data-to="' + esc(m.id) + '" d="M' + x0 + ' ' + y0 + (x0 === x1 ? 'V' + y1 : 'V' + (y1 - 4) + 'Q' + x0 + ' ' + y1 + ' ' + (x0 + 4) + ' ' + y1 + 'H' + x1) + '"/>';
@@ -519,7 +547,7 @@ window.BoldConversations = (function(){
     function markSelected(){
       if (!treeEl) return;
       var on = {}, m = treeSel && msgOf(openId, treeSel), k = 0;
-      while (m && k++ < 500) { on[m.id] = 1; m = parentOf(m) && parentOf(m) !== openId ? msgOf(openId, parentOf(m)) : null; }
+      while (m && k++ < 500) { on[m.id] = 1; m = m.parent && m.parent !== openId ? msgOf(openId, m.parent) : null; }
       var svg = treeEl.querySelector('svg'); if (svg) svg.classList.toggle('has-sel', !!treeSel);
       Array.prototype.forEach.call(treeEl.querySelectorAll('circle'), function(c){ var id = c.getAttribute('data-id'); c.classList.toggle('is-selected', id === treeSel); c.classList.toggle('is-path', !!on[id] || (!!treeSel && id === openId)); });
       Array.prototype.forEach.call(treeEl.querySelectorAll('path[data-to]'), function(x){ x.classList.toggle('is-path', !!on[x.getAttribute('data-to')]); });
@@ -596,10 +624,11 @@ window.BoldConversations = (function(){
     function msgLink(pid, id){ return location.origin + location.pathname + postHash(pid, id); }
     // The linked message: its branches unfolded down to it, selected (as from the tree), in view.
     function showLinked(pid){
-      var id = linkedMsg, m = msgOf(pid, id), n = 0;
+      if (pid !== openId || !linkedMsg) return;
+      var id = linkedMsg, m = msgOf(pid, id);
       linkedMsg = '';
       if (!m) return;
-      while (m && parentOf(m) && n++ < 500) { opened[parentOf(m)] = true; m = msgOf(pid, parentOf(m)); }
+      reveal(id);
       treeSel = id;
       render();
       var el = document.getElementById('m-' + id); if (el) el.scrollIntoView({ block: 'center' });
@@ -607,7 +636,7 @@ window.BoldConversations = (function(){
     // ---------- Top-level comment composer (replyBox) ----------
     // A reply to the post itself: the top level. One element, kept across the redraws (moved into each new
     // .bs-join), so what's written in it stays; a message's own Reply opens its own box.
-    var answer = null, answerPid = '';
+    var answer = null, answerPid = '', parkedForm = null;
     function drawAnswer(p){
       var slot = threadEl.querySelector('.bs-join');
       if (!canPost || !slot) return;
@@ -635,24 +664,27 @@ window.BoldConversations = (function(){
         if (!p) { threadEl.innerHTML = '<a class="back-link" href="' + esc(listHref()) + '">&larr; All posts</a><p class="proj-msg">No such post: it may have been removed.</p>'; return; }
         // An open reply box is carried across the redraw (a reply or a vote arriving), with what's typed in it
         // and its Write | Preview tab.
-        var keep = threadEl.querySelector('.bs-replyform');
+        var keep = threadEl.querySelector('.bs-replyform') || parkedForm;
+        parkedForm = null;
         // The post, under its title: its first message, with where it came from. With no text of its own (a card
         // with no description), only where it came from: Add a comment is right under the title.
         var first = Object.assign({}, p, { body: p.body && p.body.trim() !== p.title ? p.body : '' });
         var head = first.body ? '<ol class="bs-run bs-post-run">' + (function(h){ var i = h.lastIndexOf('</li>'); return h.slice(0, i) + origin(p) + h.slice(i); })(msgHtml(first, p.id)) + '</ol>' : origin(p);
-        var top = under(p.id);
+        var top = kids(p.id);
         threadEl.innerHTML = (opts.thread ? '' : '<a class="back-link" href="' + esc(listHref()) + '">&larr; All posts</a>') +
-          // Its title, unless the page shows it already (a card's, title: false); the head stays for Expand all.
-        '<div class="bs-thread-head">' + (opts.title === false ? '' : '<h2 class="bs-title bs-thread-title">' + esc(p.title) + '</h2>') + foldAllHtml(p) + '</div>' +
+          (opts.title === false ? '' : '<h2 class="bs-title bs-thread-title">' + esc(p.title) + '</h2>') +
           // Who can read it, and Invite right after it, on one line (readersHtml).
           '<div class="bs-meta">' + readersHtml(p) + '</div>' + inviteHtml(p) + head + '<div class="bs-join"></div>' +
           (top.length ? '<ol class="bs-run bs-top">' + top.map(function(m){ return subtreeHtml(m, p.id, 1); }).join('') + '</ol>' : '');
+        BOLD.photo.mountMany(threadEl.querySelectorAll('.bs-avatar'));
         clampLong();
         drawTree(p);
         if (linkedMsg) { setTimeout(function(){ showLinked(p.id); }, 0); }
         drawAnswer(p);
         var fresh = threadEl.querySelector('.bs-replyform');
         if (keep && fresh && keep.getAttribute('data-id') === fresh.getAttribute('data-id') && keep.getAttribute('data-edit') === fresh.getAttribute('data-edit')) fresh.replaceWith(keep);
+        else if (!fresh && keep && keep.getAttribute('data-pid') === p.id &&
+                 keep.getAttribute('data-id') === (editing || replying)) parkedForm = keep;
         else { var f = fresh && fresh.querySelector('textarea'); if (f) f.focus(); }
         return;
       }
@@ -689,11 +721,17 @@ window.BoldConversations = (function(){
     function watchThread(id){
       if (stopMsgs) { stopMsgs(); stopMsgs = null; }
       openId = id;
+      childrenByParent.clear(); messageById.clear(); parkedForm = null;
+      loadFolds();
       if (!id) return;
+      delete messages[id];
       stopMsgs = col().doc(id).collection('messages').onSnapshot(function(snap){
+        if (openId !== id) return;
         messages[id] = snap.docs.map(function(d){ return Object.assign({ id: d.id }, d.data()); });
-        if (!threadEl.querySelector('.bs-replyform textarea:focus, .bs-answer textarea:focus')) render();   // typing: wait (the box is kept anyway)
-      }, function(err){ console.error('[BOLD Lab] loading replies failed', err); messages[id] = []; render(); });
+        indexReplies(id, messages[id]);
+        var active = document.activeElement;
+        if (!threadEl.contains(active) || !active.matches('.bs-replyform textarea, .bs-answer textarea')) render();
+      }, function(err){ if (openId !== id) return; console.error('[BOLD Lab] loading replies failed', err); messages[id] = []; indexReplies(id, []); render(); });
     }
 
     // ---------- writing ----------
@@ -710,7 +748,7 @@ window.BoldConversations = (function(){
     function newReply(pid, parent, body, viaAgent){
       var o = { parent: parent, body: body, name: me.name, createdBy: me.email, at: FV().serverTimestamp(), source: 'site', viaAgent: !!viaAgent, votes: {}, branch: true };
       o.votes[me.uid] = 1;
-      opened[parent] = true;
+      if (folds[parent]) reveal(parent);
       return col().doc(pid).collection('messages').add(o);
     }
     var oops = function(what){ return function(e){ console.error('[BOLD Lab] ' + what + ' failed', e); alertBox(what + ' failed: ' + (e && e.message || e)); }; };
@@ -810,10 +848,7 @@ window.BoldConversations = (function(){
       if (location.hash !== h) location.hash = h.slice(1); else render();
       // Its thread open, all the way up, so it's in sight.
       setTimeout(function(){
-        var m = mid && msgOf(pid, mid), n = 0;
-        while (m && parentOf(m) && parentOf(m) !== pid && n++ < 50) { opened[parentOf(m)] = true; m = msgOf(pid, parentOf(m)); }
-        opened[pid] = true;
-        if (n) render();
+        if (mid && msgOf(pid, mid)) { reveal(mid); render(); }
         var el = mid && document.getElementById('m-' + mid); if (el) el.scrollIntoView({ block: 'center' });
       }, 300);
     }
@@ -903,11 +938,12 @@ window.BoldConversations = (function(){
         ref.update(patch).catch(oops('Voting'));
         return;
       }
-      if (b.classList.contains('bs-open')) { opened[id] = !isOpen(id); render(); return; }
-      if (b.classList.contains('bs-fold-all-btn')) {
-        var on = b.getAttribute('data-open') === '1', fp = postOf(openId);
-        if (fp) branchingIds(fp).forEach(function(x){ opened[x] = on; });
-        render(); return;
+      if (b.classList.contains('bs-open')) {
+        if (folds[id]) delete folds[id]; else folds[id] = descendantIds(id);
+        saveFolds(); render();
+        var button = threadEl.querySelector('.bs-open[data-id="' + CSS.escape(id) + '"]');
+        if (button) button.focus({ preventScroll: true });
+        return;
       }
       if (b.classList.contains('bs-reply-btn')) {
         if (replying === id) replying = ''; else { replying = id; editing = ''; }
@@ -937,7 +973,7 @@ window.BoldConversations = (function(){
       }
       if (b.classList.contains('bs-discuss')) {
         setAbout({ pid: pid, id: id }); render();
-        var k = id === pid ? total(pid) : total(id);
+        var k = descendantIds(id).length;
         add('Your agent', 'Let’s reason about ' + esc(label(about)) + '. ' + (k ? count(k) + ' under it so far. ' : '') + 'What do you make of it?');
         openAgent();
         var el = document.getElementById('m-' + id);
@@ -1045,7 +1081,7 @@ window.BoldConversations = (function(){
     });
 
     // ---------- who, and what's there ----------
-    BOLD.onUser(function(u){ me.name = (u && u.displayName) || 'You'; me.uid = (u && u.uid) || ''; });
+    BOLD.onUser(function(u){ me.name = (u && u.displayName) || 'You'; me.uid = (u && u.uid) || ''; loadFolds(); });
     BOLD.onAccess(function(a){
       me.email = String((a && a.e) || '').toLowerCase();
       canPost = BOLD.can('conversations', 'edit'); full = BOLD.isFullWrite();

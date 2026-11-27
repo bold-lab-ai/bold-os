@@ -85,7 +85,7 @@ a.bs-author:hover, a.bs-author:focus-visible{text-decoration:underline; text-und
 .bs-blocks, .bs-branches > ol{display:flex; flex-direction:column; gap:8px;}
 .bs-run{background:none; border:0;}
 .bs-line{padding:6px 12px 7px;}
-.bs-line + .bs-line, .bs-thread-toggle + .bs-line, .bs-branches + .bs-line{border-top:1px solid var(--rule);}
+.bs-line + .bs-line, .bs-branches + .bs-line{border-top:1px solid var(--rule);}
 .bs-branches > .bs-run + .bs-run{margin-top:6px; border-top:1px solid var(--rule);}
 /* The one you're reasoning about with your agent: an ink bar. */
 .bs-line.is-about{box-shadow:inset 3px 0 0 var(--ink);}
@@ -99,22 +99,22 @@ a.bs-author:hover, a.bs-author:focus-visible{text-decoration:underline; text-und
 .bs-branches > .bs-run > .bs-line:first-child{border-top:1px solid var(--rule);}
 /* Lines from a message to its branches, as a tree: one down the left from the toggle, an elbow into
    each branch's first message, stopping at the last. */
-.bs-branches > .bs-run{position:relative; background:color-mix(in srgb, var(--accent) 6%, transparent);}
-/* Each level deeper a little darker: the tints stack (6%, ~12%, ~17%…), so a change of nesting shows. */
+.bs-branches > .bs-run{position:relative;}
 .bs-branches > .bs-run::before{content:''; position:absolute; left:-14px; top:-6px; width:10px; height:24px; border-left:2px solid var(--line); border-bottom:2px solid var(--line); border-bottom-left-radius:6px;}
 .bs-branches > .bs-run:not(:last-child)::after{content:''; position:absolute; left:-14px; top:16px; bottom:-8px; border-left:2px solid var(--line);}
 .bs-branches > .bs-run:first-child::before{top:-4px;}
-.bs-thread-toggle{padding:0 12px 6px; margin-top:-2px;}
-/* A thread's toggle: a pill in the accent colour (light blue in dark mode), not text like the rest. */
-.bs-thread-toggle .bs-open{display:inline-flex; align-items:center; gap:6px; font:inherit; font-family:var(--sans); font-size:12px; font-weight:600; color:var(--accent); text-decoration:none;
-  background:color-mix(in srgb, var(--accent) 12%, transparent); border:1px solid color-mix(in srgb, var(--accent) 35%, transparent); border-radius:0; padding:2px 10px; cursor:pointer;}
-.bs-thread-toggle .bs-open:hover{background:color-mix(in srgb, var(--accent) 22%, transparent);}
-.bs-thread-toggle .bs-open:focus-visible{outline:2px solid var(--accent); outline-offset:2px;}
-.bs-caret{font-size:10px;}
-.bs-last{font-weight:400; color:var(--muted);}
-.bs-run > .bs-thread-toggle + .bs-branches{border-top:0;}
-/* Under the message: its votes, then Reply and Remove. */
-.bs-line-head{display:flex; flex-wrap:wrap; align-items:center; gap:2px 12px;}
+.bs-open{display:inline-grid; place-items:center; width:32px; height:32px; flex:none; padding:0; border:0; border-radius:var(--radius);
+  background:transparent; color:var(--ink-soft); cursor:pointer;}
+.bs-open svg{display:block; fill:none; stroke:currentColor; stroke-width:2.5; stroke-linecap:round; stroke-linejoin:round;}
+.bs-open[aria-expanded="true"] svg{transform:rotate(90deg);}
+.bs-open:hover, .bs-open:focus-visible{background:var(--wash); color:var(--ink);}
+.bs-open:focus-visible{outline:2px solid var(--accent); outline-offset:1px;}
+@media (pointer:coarse){ .bs-open{width:44px; height:44px;} }
+.bs-fold-count{color:var(--muted); font:500 12px var(--sans);}
+.bs-fold-count strong{color:var(--ink);}
+.bs-avatar.member-photo{width:26px; height:26px; font-size:10px;}
+.bs-author:has(.bs-avatar){display:inline-flex; align-items:center; gap:7px; vertical-align:middle;}
+.bs-line-head{display:flex; flex-wrap:wrap; align-items:center; padding:3px 0; gap:4px 8px;}
 .bs-line-head .bs-by{margin:0;}
 .bs-right{display:flex; align-items:center; justify-content:flex-end; gap:12px; margin-left:auto;}
 .bs-line > .bs-by{margin:0;}
@@ -170,14 +170,8 @@ body.bs-agent-open .bs-cols{padding-bottom:min(46vh, 420px);}
 .bs-tree circle.is-path{stroke:var(--accent);}
 .bs-tree circle.is-selected{fill:var(--accent); stroke:color-mix(in srgb, var(--accent) 35%, transparent); stroke-width:6; paint-order:stroke;}
 .bs-line{cursor:default;}
-.bs-line.is-selected{background:color-mix(in srgb, var(--ink) 6%, transparent);}
+.bs-line.is-selected{box-shadow:inset 2px 0 0 var(--accent);}
 @media (max-width:900px){ .bs-tree{display:none;} }
-/* A thread's title, and on its line, on the right, Expand all / Collapse all (conversations.js foldAllHtml; the guides' look). */
-.bs-thread-head{display:flex; flex-wrap:wrap; align-items:baseline; gap:4px 16px; margin:0 0 6px;}
-.bs-thread-head .bs-thread-title{margin:0; flex:1 1 auto;}
-.bs-fold-all-btn{display:inline-flex; align-items:center; gap:6px; margin-left:auto; padding:4px 0; border:0; background:none; cursor:pointer;
-  font-family:var(--sans); font-size:13px; font-weight:600; color:var(--ink-soft); white-space:nowrap;}
-.bs-fold-all-btn:hover{color:var(--link);}
 /* A back link outside Conversations' own page (a project's tab). */
 .bs-forum .back-link{font-family:var(--sans); font-size:13px; color:var(--muted); text-decoration:none; display:inline-block; margin-bottom:12px;}
 .bs-forum .back-link:hover{color:var(--link);}
