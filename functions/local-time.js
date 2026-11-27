@@ -67,5 +67,7 @@
   }
   // Pure: one London date and time as it falls in `tz` → { date, day, time }.
   function fromLondon(date, time, tz){ return at(tz, instant(date, time, LONDON)); }
-  return { LONDON: LONDON, zone: zone, at: at, instant: instant, isHour: isHour, meetingIn: meetingIn, fromLondon: fromLondon };
+  // Pure: and back: a date and time in `tz` as London's (what a meeting dragged on the Calendar is saved as).
+  function toLondon(date, time, tz){ return at(LONDON, instant(date, time, tz)); }
+  return { LONDON: LONDON, zone: zone, at: at, instant: instant, isHour: isHour, meetingIn: meetingIn, fromLondon: fromLondon, toLondon: toLondon };
 });

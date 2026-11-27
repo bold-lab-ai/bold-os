@@ -10,6 +10,7 @@ const L = require('../functions/local-time.js');
 const { slackTz, atLocalHour, letterRemindersNow, venueCallRecipients } = require('../functions/index.js')._internal;
 
 const at = (iso) => Date.parse(iso);
+const pick = (x) => ({ date: x.date, time: x.time });
 const NY = 'America/New_York', TOKYO = 'Asia/Tokyo';
 
 test('a timezone this runtime doesn’t know, or none, is London', () => {
@@ -56,6 +57,24 @@ test('the two places’ clocks don’t change together: the time is its next dat
 test('one London date and time where its reader is', () => {
   assert.deepStrictEqual(L.fromLondon('2026-11-30', '14:00', TOKYO), { date: '2026-11-30', day: 'MO', hour: 23, minute: 0, time: '23:00' });
   assert.strictEqual(L.fromLondon('2026-11-30', '20:00', TOKYO).date, '2026-12-01');
+});
+
+test('and back to London: what a meeting dropped on the Calendar is saved as', () => {
+  // A day shift each way.
+  assert.deepStrictEqual(pick(L.toLondon('2026-12-01', '08:30', TOKYO)), { date: '2026-11-30', time: '23:30' });
+  assert.deepStrictEqual(pick(L.toLondon('2026-11-29', '20:00', NY)), { date: '2026-11-30', time: '01:00' });
+  // There and back, across each place's change of clocks (UK 25 Oct 2026, US 1 Nov 2026) and in half-hour zones.
+  for (const tz of [NY, TOKYO, 'Asia/Kolkata', 'Asia/Kathmandu', 'Pacific/Auckland', L.LONDON]) {
+    for (const date of ['2026-10-24', '2026-10-26', '2026-10-31', '2026-11-02', '2026-03-30', '2026-07-01']) {
+      for (const time of ['00:15', '09:00', '14:00', '23:45']) {
+        const h = L.fromLondon(date, time, tz);
+        assert.deepStrictEqual(pick(L.toLondon(h.date, h.time, tz)), { date, time }, tz + ' ' + date + ' ' + time);
+      }
+    }
+  }
+  // Between the two changes New York is 4 hours behind London, not 5.
+  assert.deepStrictEqual(pick(L.toLondon('2026-10-26', '10:00', NY)), { date: '2026-10-26', time: '14:00' });
+  assert.deepStrictEqual(pick(L.toLondon('2026-11-02', '09:00', NY)), { date: '2026-11-02', time: '14:00' });
 });
 
 test('09:00 comes once a day in each timezone, a half-hour one included', () => {

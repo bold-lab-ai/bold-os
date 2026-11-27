@@ -83,6 +83,28 @@
 
   // Meeting times are in the reader's timezone (their Slack profile's), once it's known.
   BOLD.onTimeZone(function(){ render(); });
+  // Meetings are kept, and changed, in London time; the week and the cards show them where the reader is
+  // (local-time.js). here: a London date and time → theirs; london: theirs → London's. In London, unchanged.
+  var LT = window.BoldLocalTime;
+  function zoned(){ return !!LT && BOLD.timeZone() !== LT.LONDON; }
+  function here(date, time){
+    if (!zoned() || !/^\d\d:\d\d$/.test(time || '')) return { date: date, time: time };
+    var x = LT.fromLondon(date, time, BOLD.timeZone());
+    return { date: x.date, time: x.time };
+  }
+  function london(date, time){
+    if (!zoned()) return { date: date, time: time };
+    var x = LT.toLondon(date, time, BOLD.timeZone());
+    return { date: x.date, time: x.time };
+  }
+  // Whether the reader's clock reads another time than London's now: then times say whose they are.
+  function away(){ return zoned() && LT.at(BOLD.timeZone(), Date.now()).time !== LT.at(LT.LONDON, Date.now()).time; }
+  // "Mon 30 Nov, 09:00–10:00", where the reader is: with London's beside it when it's another.
+  function occText(date, time, mins){
+    var h = here(date, time);
+    if (h.date === date && h.time === time) return dayText(date) + ', ' + time + (mins ? '–' + endOf(time, mins) : '');
+    return dayText(h.date) + ', ' + h.time + (mins ? '–' + endOf(h.time, mins) : '') + ' your time (' + (h.date !== date ? dayText(date) + ', ' : '') + time + ' London)';
+  }
   function render(){
     // Not while a meeting is being dragged (live data would redraw the block from under the pointer): after.
     if (drag && drag.on) { drag.redraw = true; return; }
@@ -115,8 +137,8 @@
       '<div class="proj-badges">' + kindBadge(m.kind) + (m.w ? groupBadge(m.w) : '') + pausedBadge(m) + ownBadge(m) + '</div>' +
       titleHtml(m, 'proj-title') + '<span class="proj-meta">' + meta.join(' \u00b7 ') + '</span>';
     // This date of it (a block of the week), moved or not; and changing it, for whoever may.
-    if (o) html += '<p class="cal-pop-when">This occurrence: ' + esc(dayText(o.date) + ', ' + o.time + '–' + endOf(o.time, o.minutes)) +
-      (o.cancelled ? ' <span class="badge">Cancelled</span>' : o.moved ? ' <span class="badge">Moved</span> <span class="cal-pop-from">from ' + esc(dayText(o.orig) + ', ' + m.meeting.time) + '</span>' : '') + '</p>';
+    if (o) html += '<p class="cal-pop-when">This occurrence: ' + esc(occText(o.date, o.time, o.minutes)) +
+      (o.cancelled ? ' <span class="badge">Cancelled</span>' : o.moved ? ' <span class="badge">Moved</span> <span class="cal-pop-from">from ' + esc(occText(o.orig, m.meeting.time)) + '</span>' : '') + '</p>';
     if (m.canEdit && !m.paused && !(m.hidden && pop.orig)) {
       var off = busy[keyOf(m)] ? ' disabled' : '', one = o && m.start;
       html += pop.edit ? editHtml(m, o)
@@ -164,6 +186,7 @@
     return '<div class="cal-edit">' + scopes + '<div class="cal-e-row">' + when +
       '<input type="time" class="cal-e-time" step="900" value="' + esc(e.time) + '" aria-label="Time"' + off + '>' +
       '<select class="cal-e-min" aria-label="How long"' + off + '>' + lens.map(function(n){ return '<option value="' + n + '"' + (n === +e.minutes ? ' selected' : '') + '>' + (n < 60 ? n + ' min' : n % 60 ? Math.floor(n / 60) + ' h ' + (n % 60) : n / 60 + (n === 60 ? ' hour' : ' hours')) + '</option>'; }).join('') + '</select></div>' +
+      (away() ? '<p class="cal-pop-note">The day and time here are London\u2019s.</p>' : '') +
       '<p class="cal-pop-note">' + (once ? 'Only this occurrence changes.' : 'All occurrences change' + (moves ? '; the ' + (moves === 1 ? 'one' : moves) + ' moved or cancelled on ' + (moves === 1 ? 'its' : 'their') + ' own ' + (moves === 1 ? 'goes' : 'go') + ' back to the new time' : '') + '.') +
       ' Google emails its ' + (m.people === 1 ? 'guest' : m.people + ' guests') + ' the new time.</p>' +
       '<div class="cal-e-act"><button type="button" class="join-btn cal-e-save"' + off + '>' + (busy[k] ? 'Saving…' : 'Save') + '</button>' +
@@ -266,7 +289,7 @@
         // Its coming dates moved one by one.
         Object.keys(m.moved || {}).sort().filter(function(k){ return k >= today || (!m.moved[k].cancelled && m.moved[k].date >= today); }).slice(0, 3).forEach(function(k){
           var x = m.moved[k];
-          meta.push(esc(x.cancelled ? dayText(k) + ' cancelled' : dayText(k) + ' moved to ' + dayText(x.date) + ', ' + x.time));
+          meta.push(esc(x.cancelled ? dayText(k) + ' cancelled' : dayText(k) + ' moved to ' + occText(x.date, x.time)));
         });
         if (m.mine && m.meetUrl) meta.push('<a href="' + esc(m.meetUrl) + '" target="_blank" rel="noopener">' + meetLabel(m.meeting) + '</a>');
         html += '<li' + (greyed(m) ? ' class="is-paused"' : '') + '><div class="proj-main">' + titleHtml(m, 'proj-title') +
@@ -340,20 +363,23 @@
       var pm = ms.filter(function(x){ return keyOf(x) === pop.key; })[0];
       var po = pm && occIn(pm, addDays(pop.orig, -62), addDays(pop.orig, 62)).filter(function(x){ return x.orig === pop.orig; })[0];
       if (po && (pop.edit.date !== po.date || pop.edit.time !== po.time || +pop.edit.minutes !== po.minutes))
-        pend = { m: pm, orig: pop.orig, from: po.date, date: pop.edit.date, time: pop.edit.time, minutes: +pop.edit.minutes || po.minutes };
+        pend = { m: pm, orig: pop.orig, from: po.date, fromHere: here(po.date, po.time).date, date: pop.edit.date, time: pop.edit.time, minutes: +pop.edit.minutes || po.minutes };
     }
-    // Each meeting's dates this week, moved ones where they were moved to.
-    var occs = [];
-    ms.forEach(function(m){ occIn(m, iso(dates[0]), iso(dates[6])).forEach(function(o){ occs.push({ m: m, o: o }); }); });
-    evs.filter(function(x){ return timed(x) && x.startDate >= iso(dates[0]) && x.startDate <= iso(dates[6]); }).forEach(function(x){
-      occs.push({ m: { kind: 'event', id: x.slug, title: x.title, href: eventUrl(x), hidden: !!x.hidden, meeting: { time: x.startTime, minutes: evMinutes(x) }, ev: x },
-        o: { orig: x.startDate, date: x.startDate, time: x.startTime, minutes: evMinutes(x), moved: false } });
+    // Each meeting's dates this week, moved ones where they were moved to: each { m, o, d, t }, `d` and `t` its
+    // day and time where the reader is (here), which is where it's drawn; `o` stays London's. A day either
+    // side is looked at too, since a London day's meeting can fall on the day before or after there.
+    var first = iso(dates[0]), last = iso(dates[6]), occs = [];
+    var add = function(m, o){ var h = here(o.date, o.time); if (h.date >= first && h.date <= last) occs.push({ m: m, o: o, d: h.date, t: h.time }); };
+    ms.forEach(function(m){ occIn(m, addDays(first, -1), addDays(last, 1)).forEach(function(o){ add(m, o); }); });
+    evs.filter(function(x){ return timed(x) && x.startDate >= addDays(first, -1) && x.startDate <= addDays(last, 1); }).forEach(function(x){
+      add({ kind: 'event', id: x.slug, title: x.title, href: eventUrl(x), hidden: !!x.hidden, meeting: { time: x.startTime, minutes: evMinutes(x) }, ev: x },
+        { orig: x.startDate, date: x.startDate, time: x.startTime, minutes: evMinutes(x), moved: false });
     });
     var cols = MEETING_DAYS.map(function(d, i){ return i; }).filter(function(i){
-      return i < 5 || occs.some(function(x){ return x.o.date === iso(dates[i]); }) || onDay(i).length;
+      return i < 5 || occs.some(function(x){ return x.d === iso(dates[i]); }) || onDay(i).length;
     });
-    var from = Math.min.apply(null, occs.map(function(x){ return Math.floor(minutes(x.o.time) / 60); }).concat([CORE_FROM]));
-    var to = Math.min(24, Math.max.apply(null, occs.map(function(x){ return Math.ceil((minutes(x.o.time) + x.o.minutes) / 60); }).concat([CORE_TO])));
+    var from = Math.min.apply(null, occs.map(function(x){ return Math.floor(minutes(x.t) / 60); }).concat([CORE_FROM]));
+    var to = Math.min(24, Math.max.apply(null, occs.map(function(x){ return Math.ceil((minutes(x.t) + x.o.minutes) / 60); }).concat([CORE_TO])));
     // Where a minute of the day sits: squashed before and after the core hours.
     var y = function(min){
       var h = Math.min(Math.max(min / 60, from), to);
@@ -394,8 +420,8 @@
       '<div class="week-hours">' + hours.map(function(h){ return '<span style="top:' + y(h * 60) + 'px">' + pad(h) + ':00</span>'; }).join('') + '</div>';
     cols.forEach(function(i){
       // Not before its first date or after its end date, and only in its weeks.
-      var day = occs.filter(function(x){ return x.o.date === iso(dates[i]); })
-        .map(function(x){ var s = minutes(x.o.time); return { m: x.m, o: x.o, s: s, e: s + x.o.minutes }; })
+      var day = occs.filter(function(x){ return x.d === iso(dates[i]); })
+        .map(function(x){ var s = minutes(x.t); return { m: x.m, o: x.o, d: x.d, t: x.t, s: s, e: s + x.o.minutes }; })
         .sort(function(a, b){ return a.s - b.s || a.e - b.e; });
       // Side by side: each meeting takes the first lane free at its start; a group of
       // overlapping meetings shares its width among the lanes it needed.
@@ -408,10 +434,11 @@
       });
       html += '<div class="week-day">' + squash + hours.map(function(h){ return '<span class="week-line" style="top:' + y(h * 60) + 'px"></span>'; }).join('');
       // A move being decided in its card (dropped there, or typed in): where it would go, as the drag's preview.
-      if (pend && pend.date === iso(dates[i]) && /^\d\d:\d\d$/.test(pend.time)) {
-        var ps = minutes(pend.time), pm = pend.m;
+      var ph = pend && /^\d\d:\d\d$/.test(pend.time) ? here(pend.date, pend.time) : null;
+      if (ph && ph.date === iso(dates[i])) {
+        var ps = minutes(ph.time), pm = pend.m;
         html += '<span class="week-block cal-' + pm.kind + (pm.mine ? ' is-mine' : '') + ' week-ghost is-pending" aria-hidden="true" style="top:' + y(ps) + 'px;height:' + Math.max(18, y(ps + pend.minutes) - y(ps) - 2) + 'px">' +
-          '<span class="week-time">' + esc((pend.date !== pend.from ? dayText(pend.date) + ', ' : '') + pend.time + '–' + endOf(pend.time, pend.minutes)) + '</span> ' + esc(pm.title) + '</span>';
+          '<span class="week-time">' + esc((ph.date !== pend.fromHere ? dayText(ph.date) + ', ' : '') + ph.time + '–' + endOf(ph.time, pend.minutes)) + '</span> ' + esc(pm.title) + '</span>';
       }
       groups.forEach(function(g){
         g.items.forEach(function(b){
@@ -419,16 +446,15 @@
           var drag = m.canEdit && !m.paused && !m.hidden && m.start && !o.cancelled;
           html += '<' + tag + ' class="week-block cal-' + m.kind + (m.mine ? ' is-mine' : '') + (greyed(m) || o.cancelled ? ' is-paused' : '') + (o.moved ? ' is-moved' : '') + (o.cancelled ? ' is-cancelled' : '') + (drag ? ' is-draggable' : '') + (pend && pend.m === m && pend.orig === o.orig ? ' is-drag-source' : '') + '" data-key="' + esc(keyOf(m)) + '" data-orig="' + o.orig + '" draggable="false"' + (m.href ? ' href="' + esc(m.href) + '"' : '') +
             ' style="top:' + y(b.s) + 'px;height:' + Math.max(18, y(b.e) - y(b.s) - 2) + 'px;' +
-            'left:calc(' + (b.lane * 100 / n) + '% + 2px);width:calc(' + (100 / n) + '% - 4px)" title="' + esc(m.title + ' · ' + (o.cancelled ? 'This occurrence is cancelled · ' : '') + (o.moved ? dayText(o.date) + ', ' + o.time + '–' + endOf(o.time, o.minutes) + ', moved from ' + dayText(o.orig) + ' · ' : '') + (m.ev ? dayText(o.date) + ', ' + o.time + '–' + endOf(o.time, o.minutes) + (m.ev.place ? ' · ' + m.ev.place : '') : meetingTextLocal(m.meeting)) + ' · ' + KIND_LABELS[m.kind] + (m.hidden ? ' · Hidden' : m.paused ? ' · Paused' : '') + (m.meeting.link ? ' · Own link' : '') + (drag ? ' · Drag to move this occurrence' : '')) + '">' +
-            '<span class="week-time">' + esc(o.time) + '</span> ' + esc(m.title) + (o.cancelled ? ' <span class="badge">Cancelled</span>' : o.moved ? ' <span class="badge">Moved</span>' : '') + (m.w ? ' ' + groupBadge(m.w) : '') + (m.meeting.link ? ' ' + ownBadge(m) : '') + '</' + tag + '>';
+            'left:calc(' + (b.lane * 100 / n) + '% + 2px);width:calc(' + (100 / n) + '% - 4px)" title="' + esc(m.title + ' · ' + (o.cancelled ? 'This occurrence is cancelled · ' : '') + (o.moved ? occText(o.date, o.time, o.minutes) + ', moved from ' + dayText(here(o.orig, m.meeting.time).date) + ' · ' : '') + (m.ev ? occText(o.date, o.time, o.minutes) + (m.ev.place ? ' · ' + m.ev.place : '') : meetingTextLocal(m.meeting)) + ' · ' + KIND_LABELS[m.kind] + (m.hidden ? ' · Hidden' : m.paused ? ' · Paused' : '') + (m.meeting.link ? ' · Own link' : '') + (drag ? ' · Drag to move this occurrence' : '')) + '">' +
+            '<span class="week-time">' + esc(b.t) + '</span> ' + esc(m.title) + (o.cancelled ? ' <span class="badge">Cancelled</span>' : o.moved ? ' <span class="badge">Moved</span>' : '') + (m.w ? ' ' + groupBadge(m.w) : '') + (m.meeting.link ? ' ' + ownBadge(m) : '') + '</' + tag + '>';
         });
       });
       html += '</div>';
     });
-    // The week is laid out in London time, where meetings are entered and moved; a reader elsewhere is told.
-    var L = window.BoldLocalTime, away = L && L.at(BOLD.timeZone(), Date.now()).time !== L.at(L.LONDON, Date.now()).time;
+    // Laid out where the reader is; said to whoever isn't on London's clock.
     html += '</div></div>' +
-      (away ? '<p class="week-note">The week is in London time. A meeting\u2019s card gives its time where you are.</p>' : '') +
+      (away() ? '<p class="week-note">The week is in your time (' + esc(BOLD.timeZone().replace(/_/g, ' ')) + ', from Slack). Meetings are kept in London time.</p>' : '') +
       '<p class="week-note"><span class="week-key"></span> Yours' +
       (kind === 'all' ? ' <span class="week-key is-outline cal-project"></span> Projects <span class="week-key is-outline cal-study"></span> Supervision <span class="week-key is-outline cal-series"></span> Recurring' : '') +
       (ms.some(function(m){ return m.paused; }) ? ' <span class="week-key is-outline is-paused"></span> Paused' : '') +
@@ -542,7 +568,9 @@
     var m = meetings(true).filter(function(x){ return keyOf(x) === key; })[0];
     var o = m && occIn(m, addDays(orig, -62), addDays(orig, 62)).filter(function(x){ return x.orig === orig; })[0];
     if (!o) return;
-    drag = { b: b, m: m, o: o, key: key, x: e.clientX, y: e.clientY, grab: e.clientY - b.getBoundingClientRect().top, col: Math.max(0, geom.dates.indexOf(o.date)), on: false };
+    // `at`: where it's drawn (the reader's day and time); the grid's days and heights are theirs.
+    var at = here(o.date, o.time);
+    drag = { b: b, m: m, o: o, at: at, key: key, x: e.clientX, y: e.clientY, grab: e.clientY - b.getBoundingClientRect().top, col: Math.max(0, geom.dates.indexOf(at.date)), on: false };
   });
   document.addEventListener('pointermove', function(e){
     if (!drag) return;
@@ -561,7 +589,7 @@
     if (!t) return;
     drag.col = t.col; drag.to = t;
     var end = endOf(t.time, drag.o.minutes);
-    drag.ghost.innerHTML = '<span class="week-time">' + (t.date !== drag.o.date ? esc(dayText(t.date)) + ', ' : '') + t.time + '–' + end + '</span> ' + esc(drag.m.title);
+    drag.ghost.innerHTML = '<span class="week-time">' + (t.date !== drag.at.date ? esc(dayText(t.date)) + ', ' : '') + t.time + '–' + end + '</span> ' + esc(drag.m.title);
     drag.ghost.style.top = geom.y(t.mins) + 'px';
     drag.ghost.style.height = Math.max(18, geom.y(t.mins + drag.o.minutes) - geom.y(t.mins) - 2) + 'px';
     if (drag.ghost.parentNode !== t.el) t.el.appendChild(drag.ghost);
@@ -572,10 +600,12 @@
     if (!d.on) return;
     swallowClick();
     var t = d.to;
-    if (!t || (t.date === d.o.date && t.time === d.o.time)) return;
+    if (!t || (t.date === d.at.date && t.time === d.at.time)) return;
     var a = el('meetings').querySelector('.week-block[data-key="' + d.key.replace(/["\\]/g, '\\$&') + '"][data-orig="' + d.o.orig + '"]') || d.b;
     pop = { key: d.key, orig: d.o.orig, rect: a.getBoundingClientRect() };
-    startEdit(d.m, { scope: 'once', date: t.date, time: t.time, minutes: d.o.minutes, day: weekdayOf(t.date) });
+    // Dropped at a day and time where the reader is: saved as London's.
+    var to = london(t.date, t.time);
+    startEdit(d.m, { scope: 'once', date: to.date, time: to.time, minutes: d.o.minutes, day: weekdayOf(to.date) });
   });
   document.addEventListener('keydown', function(e){ if (e.key === 'Escape' && drag) { var d = endDrag(); if (d && d.on) { swallowClick(); } } });
 
