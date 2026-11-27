@@ -32,11 +32,11 @@ permalink: "profile.html"
     <a class="guide-tab" href="#connections">Connections</a>
     <a class="guide-tab" href="#linked-accounts">Linked accounts</a>
     <a class="guide-tab" href="#agents">Agents</a>
+    <a class="guide-tab" href="#settings">Settings</a>
   </nav>
 
   <section class="profile-panel" id="details">
     <div id="memberDetails"><p class="proj-msg">Loading&hellip;</p></div>
-    <label class="confirm-setting" id="confirmSetting" hidden><input type="checkbox" id="confirmAsk"> Ask me before BOLD.OS does something outside it for me (Slack, Google Calendar and Drive, GitHub, email)</label>
     <p class="profile-delete" id="profileDelete" hidden><button type="button" class="btn-text profile-delete-btn" id="profileDeleteBtn">Delete my profile</button></p>
   </section>
 
@@ -71,6 +71,16 @@ permalink: "profile.html"
 
   <section class="profile-panel" id="agents" hidden>
     <div id="agentsBody"><span class="proj-msg">Loading&hellip;</span></div>
+  </section>
+
+  <section class="profile-panel" id="settings" hidden>
+    <fieldset class="profile-photo-style" id="photoStyle" aria-describedby="photoStyleHint">
+      <legend>Profile pictures</legend>
+      <p class="event-form-hint" id="photoStyleHint">How everyone’s profile pictures appear to you in this browser.</p>
+      <label><input type="radio" name="photoStyle" value="greyscale" checked> Greyscale</label>
+      <label><input type="radio" name="photoStyle" value="original"> Original colours</label>
+    </fieldset>
+    <label class="confirm-setting" id="confirmSetting" hidden><input type="checkbox" id="confirmAsk"> Ask me before BOLD.OS does something outside it for me (Slack, Google Calendar and Drive, GitHub, email)</label>
   </section>
 
 </main>

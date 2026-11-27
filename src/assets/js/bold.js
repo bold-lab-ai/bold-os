@@ -859,6 +859,24 @@
     BOLD.onAccess(draw);
   }
 
+  // Profile > Settings chooses how everyone’s portraits look in this browser, independently of the theme.
+  BOLD.getPhotoStyle = function(){
+    return document.documentElement.getAttribute('data-photo-style') === 'original' ? 'original' : 'greyscale';
+  };
+  function applyPhotoStyle(style){
+    var root = document.documentElement;
+    if (style === 'original') root.setAttribute('data-photo-style', 'original'); else root.removeAttribute('data-photo-style');
+    document.dispatchEvent(new Event('bold:photostyle'));
+  }
+  BOLD.setPhotoStyle = function(style){
+    style = style === 'original' ? 'original' : 'greyscale';
+    try { localStorage.setItem('boldPhotoStyle', style); } catch (e){}
+    applyPhotoStyle(style);
+  };
+  window.addEventListener('storage', function(e){
+    if (e.key === 'boldPhotoStyle' || e.key === null) applyPhotoStyle(e.newValue);
+  });
+
   // The theme: the masthead's sun/moon button shows the one in use, and opens a menu choosing Light, Dark
   // or Auto (light from sunrise to sunset in London, dark otherwise: sun.js, inlined in base.njk). The choice is
   // kept in localStorage (boldTheme: light, dark, auto, or the lamp) and applied before the page paints by the
