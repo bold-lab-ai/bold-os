@@ -9885,6 +9885,11 @@ exports.publicEvent = require('./public-event')({ db, onCall, HttpsError }).publ
 // Slack threads into Conversations (functions/slack-thread.js): Import from Slack on the page, Take it to the BOLD OS in Slack.
 const conversationsSlack = require('./slack-thread')({ db, onCall, onDocumentCreated, onDocumentUpdated, HttpsError, logger, SLACK_BOT_TOKEN, signedInEmail, access, slackIdForEmail, FieldValue, SITE_URL, postInChannel, slackText, nudgeInThread, noteFor, dmByEmail, emailForSlackId, rolesEmails });
 exports.slackThread = conversationsSlack.slackThread;
+exports.removeConversationTopic = onCall(async request => {
+  await access.requireAccess(signedInEmail(request).toLowerCase(), 'conversations', 'edit');
+  await require('./conversation-topic-writes').removeEmpty(db, (request.data || {}).topicId);
+  return { removed: true };
+});
 // A comment thread on the BOLDiquette or a guide, or a board card's comments, made a conversation (functions/comment-conversation.js).
 exports.commentConversation = require('./comment-conversation')({ db, onCall, HttpsError, signedInEmail, access, FieldValue, SITE_URL, rank: accessLib.rank, guideArea: accessLib.guideArea, projectPageUrl }).commentConversation;
 exports.onConversationImport = conversationsSlack.onConversationImport;

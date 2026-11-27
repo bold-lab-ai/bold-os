@@ -958,7 +958,7 @@ service cloud.firestore {
     }
     function existingTopic(d) {
       return d.topicId is string && d.topicId.size() <= 180 && d.topicId.matches('^[^/]+$')
-        && exists(/databases/$(database)/documents/conversationTopics/$(d.topicId));
+        && existsAfter(/databases/$(database)/documents/conversationTopics/$(d.topicId));
     }
     match /conversations/{pid} {
       allow read: if seesConversation(resource.data);

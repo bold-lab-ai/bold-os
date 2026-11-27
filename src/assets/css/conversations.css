@@ -301,6 +301,11 @@ body.bs-agent-open .bs-cols{padding-bottom:min(46vh, 420px);}
 .bs-topic-icon::after {content:""; width:6px; height:6px; border:solid currentColor; border-width:0 1.5px 1.5px 0; transform:translateY(-2px) rotate(45deg);}
 .bs-topic-icon[aria-expanded=true]::after {transform:translateY(2px) rotate(225deg);}
 .bs-icon-panel {grid-column:1/-1; border:1px solid var(--line); padding:8px;}
+.bs-icon-caption, .bs-topic-hint {margin:6px 0 0; color:var(--muted); font:14px/1.4 var(--sans);}
+.bs-topic-hint {grid-column:1/-1;}
+.bs-topic-option {display:flex; align-items:baseline;}
+.bs-topic-option [data-topic] {flex:1; min-width:0;}
+.bs-topic-option .bs-topic-remove {color:var(--muted); font-size:14px;}
 .bs-icon-grid {display:grid; grid-template-columns:repeat(auto-fill, minmax(40px,1fr)); gap:3px; max-height:13rem; overflow:auto; margin-top:6px;}
 .bs-icon-choice {min-height:40px; border:1px solid transparent; border-radius:var(--radius); font:22px/1 var(--sans);}
 .bs-icon-choice:hover, .bs-icon-choice[aria-pressed=true] {border-color:var(--underline); background:var(--paper);}

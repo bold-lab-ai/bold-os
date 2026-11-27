@@ -161,7 +161,7 @@ function threadReplyOf(e){
 }
 
 module.exports = function({ db, onCall, onDocumentCreated, onDocumentUpdated, HttpsError, logger, SLACK_BOT_TOKEN, signedInEmail, access, slackIdForEmail, FieldValue, SITE_URL, postInChannel, slackText, nudgeInThread, noteFor, dmByEmail, emailForSlackId, rolesEmails }){
-  const topics = require('./conversation-topics');
+  const { withTopic } = require('./conversation-topic-writes');
   const PAGE = SITE_URL + 'conversations.html';
   // A thread newly in Conversations says so in the thread, for everyone in it (pilot conversation-sent;
   // until it's live its testers get it instead). Not when one is refreshed. Never fails the send.
@@ -245,7 +245,7 @@ module.exports = function({ db, onCall, onDocumentCreated, onDocumentUpdated, Ht
   // Saves the thread as a post → { id, title, existed }. Sent again, it's refreshed: its text and its Slack
   // replies as they are now (new ones added), its votes and the replies written on BOLD.OS kept.
   // about: { project, projectTitle } when brought in from a project's Conversations tab (a new, open thread only).
-  async function saveThread(token, link, team, sender, about, topicId){
+  async function saveThread(token, link, team, sender, about, topicId, draftTopic){
     const id = postIdOf(link.channel, link.thread), ref = db.collection('conversations').doc(id);
     const had = await ref.get();
     const { t, ch, members } = await readThread(token, link, sender.slackId);
@@ -257,9 +257,9 @@ module.exports = function({ db, onCall, onDocumentCreated, onDocumentUpdated, Ht
     const title = first.length > 120 ? first.slice(0, 117).replace(/\s+\S*$/, '') + '…' : first;
     const slack = { channel: link.channel, channelName: ch.name ? '#' + ch.name : '', thread: link.thread,
       permalink: (team || 'https://slack.com') + '/archives/' + link.channel + '/p' + link.thread.replace('.', '') };
-    const batch = db.batch();
     const reply = (r) => ({ parent: id, body: r.text, name: r.who, createdBy: '', at: r.at, source: 'slack' });
     if (had.exists) {
+      const batch = db.batch();
       const old = had.data(), mine = (await ref.collection('messages').where('source', '==', 'slack').get()).size;
       // Who reads it follows the channel again, unless someone set it by hand (accessBy: Who can read it › Change).
       batch.set(ref, Object.assign({ title, body: t.post.text, slack, slackReaders: vis.readers, slackReplies: t.replies.length,
@@ -270,12 +270,13 @@ module.exports = function({ db, onCall, onDocumentCreated, onDocumentUpdated, Ht
       await batch.commit();
       return { id, title, existed: true };
     }
-    if (!(await topics.exists(db, topicId))) throw new HttpsError('invalid-argument', 'Choose a conversation topic.');
-    batch.create(ref, Object.assign({ topicId, title, body: t.post.text, name: t.post.who, createdBy: '', at: t.post.at, source: 'slack', slack, private: vis.private, readers: vis.readers, slackReaders: vis.readers, votes: {}, replies: t.replies.length, slackReplies: t.replies.length,
-      broughtBy: { email: sender.email, name: sender.name || '' }, broughtAt: FieldValue.serverTimestamp() }, about && !vis.private ? about : {}));
-    t.replies.forEach((r, i) => batch.set(ref.collection('messages').doc('slack-' + i), Object.assign(reply(r), { votes: {} })));
-    try { await batch.commit(); }
-    catch (e) { const again = await ref.get(); if (again.exists) return { id, title: again.data().title, existed: true }; throw e; }
+    try {
+      await withTopic(db, topicId, draftTopic, tx => {
+        tx.create(ref, Object.assign({ topicId, title, body: t.post.text, name: t.post.who, createdBy: '', at: t.post.at, source: 'slack', slack, private: vis.private, readers: vis.readers, slackReaders: vis.readers, votes: {}, replies: t.replies.length, slackReplies: t.replies.length,
+          broughtBy: { email: sender.email, name: sender.name || '' }, broughtAt: FieldValue.serverTimestamp() }, about && !vis.private ? about : {}));
+        t.replies.forEach((r, i) => tx.set(ref.collection('messages').doc('slack-' + i), Object.assign(reply(r), { votes: {} })));
+      });
+    } catch (e) { const again = await ref.get(); if (again.exists) return { id, title: again.data().title, existed: true }; throw e; }
     return { id, title, existed: false, channelName: ch.name || '', replies: t.replies.length, private: vis.private };
   }
   async function personFor(email){
@@ -305,7 +306,7 @@ module.exports = function({ db, onCall, onDocumentCreated, onDocumentUpdated, Ht
     }
     const topicId = request.data.topicId;
     const p = await personFor(email);
-    const token = SLACK_BOT_TOKEN.value(), r = await saveThread(token, link, new URL(String(request.data.url)).origin, { email, name: p.name || '', slackId: p.slackId || await slackIdForEmail(email) }, about, topicId);
+    const token = SLACK_BOT_TOKEN.value(), r = await saveThread(token, link, new URL(String(request.data.url)).origin, { email, name: p.name || '', slackId: p.slackId || await slackIdForEmail(email) }, about, topicId, request.data.newTopic);
     await announce(token, link, r.channelName, r, p.name, p.slackId || '');
     return r;
   });

@@ -749,12 +749,22 @@ window.BoldConversations = (function(){
     // readers: private to them (Slack ids, you among them), else open.
     function newPost(title, body, viaAgent, readers){
       if (!postPicker.required()) return Promise.reject(new Error('Choose a topic.'));
-      var o = { topicId: postPicker.value(), title: title, body: body, name: me.name, createdBy: me.email, at: FV().serverTimestamp(), source: 'site', viaAgent: !!viaAgent, votes: {}, private: !!readers };
+      var selection = postPicker.selection();
+      var o = { topicId: selection.topicId, title: title, body: body, name: me.name, createdBy: me.email, at: FV().serverTimestamp(), source: 'site', viaAgent: !!viaAgent, votes: {}, private: !!readers };
       if (readers) o.readers = readers;
       // In a project: about it (firestore.rules: one its poster sees).
       if (project) { o.project = project.id; o.projectTitle = String((project.title && project.title()) || '').slice(0, 300); }
       o.votes[me.uid] = 1;
-      return col().add(o);
+      var post = col().doc(), topic = db().collection('conversationTopics').doc(selection.topicId);
+      return db().runTransaction(async function(tx){
+        var existing = await tx.get(topic);
+        if (!existing.exists) {
+          if (!selection.newTopic) throw new Error('That topic was removed. Choose another topic.');
+          tx.set(topic, selection.newTopic);
+        }
+        tx.set(post, o);
+        return post;
+      });
     }
     // A reply answers `parent`, shown nested under it (`branch: true`; also read by older clients).
     function newReply(pid, parent, body, viaAgent){
@@ -918,7 +928,7 @@ window.BoldConversations = (function(){
       var input = importEl.querySelector('input'), err = importEl.querySelector('.ev-error'), go = importEl.querySelector('button[type=submit]');
       if (!slackPicker.required()) return;
       err.hidden = true; go.disabled = true; go.textContent = 'Bringing it in…';
-      firebase.app().functions('europe-west2').httpsCallable('slackThread')(Object.assign({ url: input.value.trim(), topicId: slackPicker.value() }, project ? { project: project.id } : {})).then(function(res){
+      firebase.app().functions('europe-west2').httpsCallable('slackThread')(Object.assign({ url: input.value.trim() }, slackPicker.selection(), project ? { project: project.id } : {})).then(function(res){
         input.value = ''; slackPicker.reset(); importEl.hidden = true;
         show(res.data.id);
       }, function(x){

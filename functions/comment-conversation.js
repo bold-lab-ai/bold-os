@@ -248,7 +248,6 @@ module.exports = function({ db, onCall, HttpsError, signedInEmail, access, Field
       const had = await ref.get();
       if (had.exists) return { id, title: had.data().title, existed: true };
     }
-    if (!(await require('./conversation-topics').exists(db, data.topicId))) throw new HttpsError('invalid-argument', 'Choose a conversation topic.');
     const replies = (await comments.where('parent', '==', cid).get()).docs.map((d) => d.data()).sort((a, b) => (a.at || 0) - (b.at || 0));
     const doc = docSnap.exists ? docSnap.data() : {};
     const part = (doc.parts || []).filter((p) => p.id === root.partId)[0];
@@ -256,15 +255,17 @@ module.exports = function({ db, onCall, HttpsError, signedInEmail, access, Field
     const from = { kind: 'comment', on: page.collection + '/' + page.slug, commentId: cid, partId: String(root.partId || ''),
       page: String(doc.title || (page.collection === 'handbook' ? 'BOLDiquette' : page.slug)).slice(0, 200), part: String((part && part.title) || '').slice(0, 200),
       url: SITE_URL + page.href + '#c=' + encodeURIComponent(cid) };
-    const batch = db.batch();
-    batch.create(ref, Object.assign({ title, body: bodyOf(root.quote, root.text), at: root.at || Date.now(), source: 'comment', topicId: data.topicId, from,
-      private: false, readers: [], votes: {}, replies: replies.length, commentReplies: replies.length,
-      broughtBy: { email, name: await nameOf(email) }, broughtAt: FieldValue.serverTimestamp() }, by(root)));
-    // In order, each answering the one before (conversations.js parentOf), as a Slack thread's.
-    replies.forEach((r, i) => batch.set(ref.collection('messages').doc('cm-' + i), Object.assign({ parent: id, body: String(r.text || ''), at: r.at || Date.now(), source: 'comment', votes: {} }, by(r))));
-    batch.update(rootSnap.ref, { conversation: id, conversationAt: Date.now(), conversationBy: email });
-    try { await batch.commit(); }
-    catch (e) { const again = await ref.get(); if (again.exists) return { id, title: again.data().title, existed: true }; throw e; }
+    const name = await nameOf(email);
+    try {
+      await require('./conversation-topic-writes').withTopic(db, data.topicId, data.newTopic, tx => {
+        tx.create(ref, Object.assign({ title, body: bodyOf(root.quote, root.text), at: root.at || Date.now(), source: 'comment', topicId: data.topicId, from,
+          private: false, readers: [], votes: {}, replies: replies.length, commentReplies: replies.length,
+          broughtBy: { email, name }, broughtAt: FieldValue.serverTimestamp() }, by(root)));
+        // In order, each answering the one before (conversations.js parentOf), as a Slack thread's.
+        replies.forEach((r, i) => tx.set(ref.collection('messages').doc('cm-' + i), Object.assign({ parent: id, body: String(r.text || ''), at: r.at || Date.now(), source: 'comment', votes: {} }, by(r))));
+        tx.update(rootSnap.ref, { conversation: id, conversationAt: Date.now(), conversationBy: email });
+      });
+    } catch (e) { const again = await ref.get(); if (again.exists) return { id, title: again.data().title, existed: true }; throw e; }
     return { id, title, existed: false, replies: replies.length };
   });
   return { commentConversation };

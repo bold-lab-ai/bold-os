@@ -43,15 +43,13 @@ test('creating a topic selects it without submitting or resetting the draft', as
   vm.runInNewContext(fs.readFileSync(require.resolve('../src/assets/js/conversation-topic-picker.js'), 'utf8'), ctx);
   ctx.BoldEmoji = { names: async () => new Map([['telescope', '🔭']]),
     search: async query => query === 'octopus' ? [{ e: '🐙', name: 'octopus' }] : [] };
-  const saved = [];
-  ctx.conversationTopicPicker.create = async (id, name, icon) => { const topic = { id, name, icon }; saved.push(topic); return topic; };
   const picker = ctx.conversationTopicPicker(document.querySelector('.slot'));
   picker.update(topics.starters);
   const q = s => document.querySelector(s);
   const input = (s, value) => { q(s).value = value; q(s).dispatchEvent(new window.Event('input')); };
   assert.equal(picker.required(), false);
   input('[type=search]', ' A ');
-  assert.deepEqual(Array.from(q('.bs-topic-options').children, b => b.dataset.topic), ['about-bold', 'advice']);
+  assert.deepEqual(Array.from(q('.bs-topic-options').querySelectorAll('[data-topic]'), b => b.dataset.topic), ['about-bold', 'advice']);
   input('[type=search]', '');
   assert.equal(q('.bs-topic-options').children.length, topics.starters.length);
   input('[type=search]', 'adv');
@@ -66,14 +64,24 @@ test('creating a topic selects it without submitting or resetting the draft', as
   input('.bs-topic-name', 'Telescope club'); await new Promise(setImmediate);
   assert.equal(icon.textContent, '🔭');
   icon.click();
+  assert.equal(q('.bs-icon-panel input').getAttribute('placeholder'), 'Search all icons');
+  assert.equal(q('.bs-icon-caption').hidden, false);
   input('.bs-icon-panel input', 'octopus');
+  assert.equal(q('.bs-icon-caption').hidden, true);
   await new Promise(setImmediate);
   q('[data-icon="🐙"]').click();
   input('.bs-topic-name', 'Reading circle');
   assert.equal(icon.getAttribute('aria-label'), 'Choose icon: octopus');
   q('.bs-topic-save').click(); await new Promise(setImmediate);
-  assert.deepEqual(saved[0], { id: 'reading-circle', name: 'Reading circle', icon: '🐙' });
+  picker.update(topics.starters);
+  assert.deepEqual({ ...picker.selection().newTopic }, { name: 'Reading circle', icon: '🐙' });
+  assert.equal(q('summary').textContent, '🐙 Reading circle');
+  assert.equal(q('.bs-topic-discard').hidden, false);
+  assert.equal(q('.bs-topic-save').textContent, 'Create topic');
   assert.equal(picker.value(), 'reading-circle');
+  q('.bs-topic-discard').click();
+  assert.equal(picker.value(), '');
+  assert.equal(q('.bs-topic-discard').hidden, true);
   assert.equal(q('[name=title]').value, 'My draft');
   assert.equal(q('textarea').value, 'Unfinished text');
   q('.bs-topic-new').click();
@@ -86,27 +94,34 @@ test('creating a topic selects it without submitting or resetting the draft', as
   file.click();
   icon.click(); q('.bs-icon-restore').click();
   q('.bs-topic-save').click(); await new Promise(setImmediate);
-  assert.equal(saved[1].icon, topics.suggestIcon('Paper club'));
+  assert.equal(picker.selection().newTopic.icon, topics.suggestIcon('Paper club'));
   assert.equal(picker.required(), true);
+  picker.update([...topics.starters, { id: 'paper-club', name: 'Paper Club', icon: '📝' }]);
+  assert.equal(q('summary').textContent, '📝 Paper Club');
+  assert.equal(picker.selection().newTopic, undefined);
+  assert.equal(q('[data-remove-topic]').dataset.removeTopic, 'paper-club');
+  picker.update(topics.starters);
+  assert.equal(picker.required(), false);
 });
 
 test('saving while emoji names load uses the final topic name', async () => {
   const { document, window } = parseHTML('<div class="slot"></div>');
-  let loadNames, saved;
+  let loadNames;
   const ctx = { document, BOLD: { escapeHtml: String }, ConversationTopics: topics,
     BoldEmoji: { names: () => new Promise(resolve => { loadNames = resolve; }) } };
   vm.runInNewContext(fs.readFileSync(require.resolve('../src/assets/js/conversation-topic-picker.js'), 'utf8'), ctx);
-  ctx.conversationTopicPicker.create = async (id, name, icon) => (saved = { id, name, icon });
-  ctx.conversationTopicPicker(document.querySelector('.slot'));
+  const picker = ctx.conversationTopicPicker(document.querySelector('.slot'));
   document.querySelector('.bs-topic-new').click();
   const field = document.querySelector('.bs-topic-name');
-  for (const value of ['Coffee', 'Telescope club']) {
+  for (const value of ['Coffee', 'Bear']) {
     field.value = value; field.dispatchEvent(new window.Event('input'));
   }
   document.querySelector('.bs-topic-save').click();
-  loadNames(new Map([['telescope', '🔭']]));
+  loadNames(new Map([['bear', '🐻']]));
   await new Promise(setImmediate);
-  assert.deepEqual(saved, { id: 'telescope-club', name: 'Telescope club', icon: '🔭' });
+  assert.deepEqual({ ...picker.selection().newTopic }, { name: 'Bear', icon: '🐻' });
+  picker.reset();
+  assert.equal(picker.selection().newTopic, undefined);
 });
 
 test('a pending topic creation cannot select a topic in the next draft after cancel', async () => {
@@ -114,8 +129,7 @@ test('a pending topic creation cannot select a topic in the next draft after can
   const ctx = { document, BOLD: { escapeHtml: String }, ConversationTopics: topics };
   vm.runInNewContext(fs.readFileSync(require.resolve('../src/assets/js/conversation-topic-picker.js'), 'utf8'), ctx);
   let finishSave;
-  ctx.BoldEmoji = { names: async () => new Map() };
-  ctx.conversationTopicPicker.create = () => new Promise(resolve => { finishSave = resolve; });
+  ctx.BoldEmoji = { names: () => new Promise(resolve => { finishSave = resolve; }) };
   const picker = ctx.conversationTopicPicker(document.querySelector('.slot'));
   picker.update(topics.starters);
   document.querySelector('[data-topic=advice]').click();
@@ -124,7 +138,7 @@ test('a pending topic creation cannot select a topic in the next draft after can
   document.querySelector('.bs-topic-save').click();
   await new Promise(setImmediate);
   picker.reset();
-  finishSave({ id: 'paper-club', name: 'Paper club', icon: '📖' });
+  finishSave(new Map());
   await new Promise(setImmediate);
   assert.equal(document.querySelector('summary').textContent, 'Choose a topic');
   assert.equal(picker.value(), '');

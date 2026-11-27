@@ -24,6 +24,7 @@ function conversationIconChooser(editor){
   }
   async function results(){
     var query = search.value.trim().toLowerCase();
+    panel.querySelector('.bs-icon-caption').hidden = !!query;
     var choices = featured.filter(function(x){ return x[0] === query || (x[1] + ' ' + x[2]).toLowerCase().includes(query); });
     if (query) {
       grid.innerHTML = '<span class="bs-no-icons">Searching…</span>';
@@ -81,35 +82,56 @@ function conversationIconChooser(editor){
 // A searchable disclosure with ordinary keyboard-operable buttons. Topic creation is
 // inline in the existing composer, so title, text, and visibility survive the choice.
 function conversationTopicPicker(host){
-  var esc = BOLD.escapeHtml, topics = [], selected = '', choiceVersion = 0;
+  var esc = BOLD.escapeHtml, topics = [], selected = '', pending = null, choiceVersion = 0;
   host.innerHTML = '<details class="bs-topic-picker"><summary aria-label="Choose a topic">Choose a topic</summary><div class="bs-topic-menu">' +
     '<input type="search" aria-label="Find a topic" placeholder="Find a topic" maxlength="60">' +
     '<div class="bs-topic-options"></div><button type="button" class="btn-text bs-topic-new">Create a topic…</button>' +
     '<div class="bs-topic-create" hidden><label>Topic name<input class="bs-topic-name" maxlength="60"></label>' +
     '<div class="bs-icon-field"><span>Icon</span><button type="button" class="bs-topic-icon" aria-label="Choose icon" aria-expanded="false"></button></div>' +
-    '<div class="bs-icon-panel" hidden><input type="search" class="no-emoji" aria-label="Search icons" placeholder="Search icons" maxlength="60">' +
-    '<div class="bs-icon-grid" role="group" aria-label="Icons"></div><button type="button" class="btn-text bs-icon-restore" hidden>Use suggested icon</button></div>' +
-    '<button type="button" class="btn-box bs-topic-save">Create topic</button></div>' +
-    '<p class="field-error" role="alert" hidden></p></div></details>';
+    '<div class="bs-icon-panel" hidden><input type="search" class="no-emoji" aria-label="Search all icons" placeholder="Search all icons" maxlength="60">' +
+    '<p class="bs-icon-caption">Featured icons</p><div class="bs-icon-grid" role="group" aria-label="Icons"></div><button type="button" class="btn-text bs-icon-restore" hidden>Use suggested icon</button></div>' +
+    '<p class="bs-topic-hint">You can remove the topic from your draft before posting. It’s saved when you post.</p><button type="button" class="btn-box bs-topic-save">Create topic</button></div>' +
+    '<p class="field-error" role="alert" hidden></p></div></details>' +
+    '<button type="button" class="btn-text bs-topic-discard" hidden>Remove from draft</button>';
   var details = host.querySelector('details'), summary = host.querySelector('summary'), search = host.querySelector('[type=search]');
   var options = host.querySelector('.bs-topic-options'), add = host.querySelector('.bs-topic-new'), editor = host.querySelector('.bs-topic-create');
   var name = host.querySelector('.bs-topic-name'), icon = conversationIconChooser(editor), save = host.querySelector('.bs-topic-save');
-  var error = host.querySelector('[role=alert]');
+  var discard = host.querySelector('.bs-topic-discard'), error = host.querySelector('[role=alert]');
   function report(message){ error.textContent = message; error.hidden = !message; }
   function draw(){
-    var hit = topics.find(function(t){ return t.id === selected; });
+    discard.hidden = !pending;
+    var hit = topics.find(function(t){ return t.id === selected; }) || pending;
     summary.setAttribute('aria-label', hit ? 'Topic: ' + hit.name : 'Choose a topic');
     summary.textContent = hit ? hit.icon + ' ' + hit.name : 'Choose a topic';
     var query = search.value.trim().toLowerCase();
     options.innerHTML = topics.filter(function(t){ return t.name.toLowerCase().startsWith(query); }).map(function(t){
-      return '<button type="button" class="btn-text" data-topic="' + esc(t.id) + '"><span aria-hidden="true">' + esc(t.icon) + '</span> ' + esc(t.name) + '</button>';
+      var starter = ConversationTopics.starters.some(function(s){ return s.id === t.id; });
+      var remove = starter ? '' : '<button type="button" class="btn-text bs-topic-remove" data-remove-topic="' + esc(t.id) +
+        '" aria-label="Remove ' + esc(t.name) + ' topic">Remove</button>';
+      return '<div class="bs-topic-option"><button type="button" class="btn-text" data-topic="' + esc(t.id) + '"><span aria-hidden="true">' + esc(t.icon) + '</span> ' + esc(t.name) + '</button>' + remove + '</div>';
     }).join('');
   }
-  function choose(id){
+  function choose(id, draft){
+    pending = draft || null;
     choiceVersion++; save.disabled = false;
     selected = id; search.value = ''; editor.hidden = true; details.open = false; report(''); draw();
   }
-  options.addEventListener('click', function(e){
+  discard.addEventListener('click', function(){ choose(''); summary.focus(); });
+  options.addEventListener('click', async function(e){
+    var remove = e.target.closest('[data-remove-topic]');
+    if (remove) {
+      var topic = topics.find(function(t){ return t.id === remove.dataset.removeTopic; });
+      if (!topic) return;
+      if (!await BOLD.confirmAlways({ title: 'Remove “' + topic.name + '”?', go: 'Remove topic',
+        effects: ['Remove this topic from the list for everyone. Only empty topics can be removed.'] })) return;
+      remove.disabled = true;
+      try {
+        await firebase.app().functions('europe-west2').httpsCallable('removeConversationTopic')({ topicId: topic.id });
+        report(''); search.focus();
+      } catch (err){ report(err.message || 'Couldn’t remove the topic.'); }
+      finally { remove.disabled = false; }
+      return;
+    }
     var b = e.target.closest('[data-topic]');
     if (b) { choose(b.dataset.topic); summary.focus(); }
   });
@@ -127,11 +149,8 @@ function conversationTopicPicker(host){
     try {
       var emoji = await icon.value(title);
       if (version !== choiceVersion) return;
-      var topic = await conversationTopicPicker.create(id, title, emoji);
-      // Cancel or choosing a different topic takes precedence over a pending save.
-      if (version !== choiceVersion) return;
-      if (!topics.some(function(t){ return t.id === topic.id; })) topics = topics.concat(topic);
-      choose(topic.id); summary.focus();
+      var existing = topics.some(function(t){ return t.id === id; });
+      choose(id, existing ? null : { id: id, name: title, icon: emoji }); summary.focus();
     } catch (e){
       if (version === choiceVersion) { save.disabled = false; report(e.message || 'Couldn’t create the topic.'); }
     }
@@ -141,30 +160,29 @@ function conversationTopicPicker(host){
     if (e.key === 'Enter' && e.target.tagName === 'INPUT') {
       e.preventDefault();
       if (editor.contains(e.target)) save.click();
-      else if (options.firstElementChild) options.firstElementChild.focus();
+      else if (options.querySelector('[data-topic]')) options.querySelector('[data-topic]').focus();
       else add.focus();
     }
   });
   return {
-    update: function(items){ topics = items; draw(); },
+    update: function(items){
+      topics = items;
+      if (topics.some(function(t){ return t.id === selected; })) pending = null;
+      else if (!pending) selected = '';
+      draw();
+    },
+    selection: function(){
+      return pending ? { topicId: selected, newTopic: { name: pending.name, icon: pending.icon } } : { topicId: selected };
+    },
     value: function(){ return selected; },
     reset: function(){ choose(''); },
     required: function(){
-      if (topics.some(function(t){ return t.id === selected; })) return true;
+      if (pending || topics.some(function(t){ return t.id === selected; })) return true;
       details.open = true; search.focus(); report('Choose a topic before continuing.'); return false;
     },
   };
 }
 
-conversationTopicPicker.create = function(id, name, icon){
-  var db = firebase.firestore(BOLD.getApp()), ref = db.collection('conversationTopics').doc(id);
-  return db.runTransaction(async function(tx){
-    var existing = await tx.get(ref);
-    if (existing.exists) return ConversationTopics.fromDoc(existing);
-    tx.set(ref, { name: name, icon: icon });
-    return { id: id, name: name, icon: icon };
-  });
-};
 conversationTopicPicker.watch = function(update, fail){
   return firebase.firestore(BOLD.getApp()).collection('conversationTopics').onSnapshot(function(snap){
     var topics = snap.docs.map(ConversationTopics.fromDoc);
@@ -187,7 +205,7 @@ conversationTopicPicker.prompt = function(){
     function finish(id){ stop(); dialog.close(); dialog.remove(); resolve(id); }
     dialog.querySelector('[data-cancel]').onclick = function(){ finish(''); };
     dialog.addEventListener('cancel', function(e){ e.preventDefault(); finish(''); });
-    dialog.querySelector('[data-continue]').onclick = function(){ if (picker.required()) finish(picker.value()); };
+    dialog.querySelector('[data-continue]').onclick = function(){ if (picker.required()) finish(picker.selection()); };
     document.body.appendChild(dialog); dialog.showModal();
     dialog.querySelector('details').open = true; dialog.querySelector('[type=search]').focus();
   });
